@@ -151,11 +151,26 @@ export async function pickFolderWithFallback(opts?: {
       return;
     }
 
+    // Alpha-7: the alpha-6 focus-return watchdog had a 500ms timeout that
+    // silently raced large folders' file enumeration: user picks a project
+    // folder with thousands of files, browser returns focus, watchdog
+    // expires before `change` fires, the wizard treats the successful pick
+    // as a cancel. Removed. We now rely on:
+    //   - `input.onchange` (universal — fires on a real selection)
+    //   - `input.oncancel` (Chromium 113+ — fires on Cancel in the dialog)
+    //   - a 60-second leak watchdog (releases the promise on Firefox/Safari
+    //     where `oncancel` doesn't fire on file inputs as of 2026-04 — well
+    //     past any plausible enumeration time, so a real pick settles via
+    //     `change` first)
     let settled = false;
+    let leakWatchdog: number | null = null;
     const settle = (result: PickFolderResult) => {
       if (settled) return;
       settled = true;
-      window.removeEventListener("focus", onFocusReturn);
+      if (leakWatchdog) {
+        window.clearTimeout(leakWatchdog);
+        leakWatchdog = null;
+      }
       try {
         if (input.parentNode) input.parentNode.removeChild(input);
       } catch {
@@ -182,20 +197,18 @@ export async function pickFolderWithFallback(opts?: {
       settle({ kind: "browser", folderName });
     };
 
-    // Modern Chromium fires `cancel` on the input when the dialog is
-    // dismissed; older browsers don't. The focus-return watchdog below
-    // catches the rest.
+    // Modern Chromium 113+ fires `cancel` on the input when the dialog is
+    // dismissed. Firefox/Safari don't (yet). Those users get a hung
+    // promise on cancel until the leak watchdog releases it.
     input.oncancel = () => settle({ kind: "cancelled" });
 
-    const onFocusReturn = () => {
-      // The browser returns focus to the window when the dialog closes,
-      // BEFORE the change event fires (if any). Wait one frame plus a
-      // safety margin; if no change event arrived we infer cancel.
-      window.setTimeout(() => {
-        if (!settled) settle({ kind: "cancelled" });
-      }, 500);
-    };
-    window.addEventListener("focus", onFocusReturn, { once: true });
+    leakWatchdog = window.setTimeout(() => {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[tauri.pickFolderWithFallback] no change/cancel within 60s — treating as cancel",
+      );
+      if (!settled) settle({ kind: "cancelled" });
+    }, 60_000);
 
     document.body.appendChild(input);
     try {

@@ -4,6 +4,36 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.7
+
+The folder picker silently dropped successful picks on large project folders. Alpha-7 fixes the race condition and adds visible progress so a slow scan no longer looks identical to a hang.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The bug
+
+The browser-fallback `pickFolderWithFallback` had a 500ms focus-return watchdog: when the user dismissed the picker, focus returned to the window, and a `setTimeout(500ms)` fired — if no `change` event had arrived in that window, the promise settled as `cancelled`. On large project folders (thousands of files), the browser's enumeration of the picked directory took longer than 500ms — so a successful pick fired the watchdog FIRST, the promise settled as `cancelled`, and the wizard stayed on the idle "Choose project folder" screen even though the user had nominated a folder. Pure silent failure with zero feedback. Reproduced live.
+
+### The fix
+
+- **Removed the 500ms focus watchdog entirely.** The new flow: `input.onchange` fires on a successful pick (universal); `input.oncancel` fires on cancel (Chromium 113+); a 60-second leak watchdog releases the promise if neither fires (Firefox/Safari cancel — they don't fire `oncancel` on file inputs as of 2026-04). 60s is well past any plausible enumeration time, so a real pick of even a 100k-file corpus settles via `change` first. Tradeoff: Firefox/Safari users who cancel see the wizard wait up to 60s before resetting; an explicit Cancel button on the page is alpha-8 polish.
+- **Visible scanning progress.** The "Scanning folder…" panel now shows an animated pulse dot, animated trailing dots, and an elapsed-second counter ("Scanning folder.. (12s)"). After 15 seconds in scanning state, an amber callout surfaces with "Still scanning — large folders with thousands of files can take a minute or two on a spinning disk".
+- **Import-phase progress bar verified.** Already present from Stream B (alpha-2): `|████░░░░░░| 47/120 — currently importing AT-GLOBAL-OR-000103.pdf` with `role="progressbar"` and a live current-file display. No change needed; surfacing here so the alpha-7 trail is complete.
+
+### Tests + gauntlet
+
+104 e2e passing in 12.6s (no test changes — the bug was browser-only behaviour). Release gauntlet still 9 steps, all green.
+
+### Carry-overs from alpha-6
+
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Install-time UX polish deferred until install flow stabilises.
+- `Tooltip`-clobbering-onClick latent footgun (alpha-6 worked around it for the folder-pick button; future buttons inside `Tooltip` will silently lose their onClick the same way).
+- `sessionStorage` stale-key issue on bookmarked first-project URL (cosmetic).
+
 ## What's new in v0.2.0-alpha.6
 
 Four bugs from the user's first end-to-end walkthrough of the alpha-5 GUI wizard. The installer flow itself now reaches the wizard reliably (alpha-5 closed that); alpha-6 fixes the wizard's first real round of UX gaps.

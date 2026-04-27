@@ -103,6 +103,23 @@ export default function SetupFirstDocumentsPage() {
     [],
   );
 
+  // Alpha-7: elapsed-time counter while scanning. Without this, a slow
+  // scan (large folder + spinning disk) looks identical to a hang.
+  // Restarts on every entry to the scanning phase.
+  const [scanElapsedSec, setScanElapsedSec] = useState(0);
+  useEffect(() => {
+    if (phase.kind !== "scanning") {
+      setScanElapsedSec(0);
+      return;
+    }
+    setScanElapsedSec(0);
+    const start = Date.now();
+    const handle = window.setInterval(() => {
+      setScanElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [phase.kind]);
+
   /* ---------------------------- folder picking ---------------------------- */
 
   const scanFolder = useCallback(async (folderPath: string) => {
@@ -411,11 +428,21 @@ export default function SetupFirstDocumentsPage() {
           </div>
         ) : null}
 
-        {/* Scanning spinner. */}
+        {/* Scanning spinner with elapsed-time + hang-detection callout. */}
         {phase.kind === "scanning" ? (
-          <div className="rounded-lg border border-border bg-surface-elevated p-4">
+          <div className="rounded-lg border border-accent/40 bg-surface-elevated p-4">
             <p className="text-sm font-medium text-text-primary">
-              Scanning folder…
+              <span
+                className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-accent align-middle"
+                aria-hidden
+              />
+              Scanning folder
+              <span className="ml-1 inline-block w-6 text-text-muted">
+                {".".repeat((scanElapsedSec % 3) + 1)}
+              </span>
+              <span className="ml-2 text-xs text-text-muted">
+                ({scanElapsedSec}s)
+              </span>
             </p>
             <p
               className="mt-1 truncate font-mono text-[11px] text-text-muted"
@@ -423,6 +450,13 @@ export default function SetupFirstDocumentsPage() {
             >
               {phase.folderPath}
             </p>
+            {scanElapsedSec >= 15 ? (
+              <p className="mt-3 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-200">
+                Still scanning — large folders with thousands of files can
+                take a minute or two on a spinning disk. If you suspect it&apos;s
+                hung, you can refresh the page and pick a smaller folder.
+              </p>
+            ) : null}
           </div>
         ) : null}
 
