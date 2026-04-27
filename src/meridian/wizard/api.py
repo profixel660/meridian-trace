@@ -277,7 +277,10 @@ def setup_defaults() -> SetupDefaultsResponse:
     from meridian.config import _meridian_home  # local import — narrow surface
 
     home = _meridian_home()
-    return SetupDefaultsResponse(projects_dir=str(home / "projects"))
+    return SetupDefaultsResponse(
+        projects_dir=str(home / "projects"),
+        home_dir=str(Path.home()),
+    )
 
 
 @wizard_router.post(

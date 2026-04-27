@@ -436,20 +436,26 @@ export interface FolderImportJobStatus {
  * can pre-fill OS-appropriate paths into its inputs without baking them
  * into frontend code.
  *
- * Contract (documented for Stream A — backend):
- *   GET /setup/defaults → 200 { projects_dir: string }
+ * Contract (documented for backend):
+ *   GET /setup/defaults → 200 { projects_dir: string, home_dir: string }
  *   - `projects_dir` is the absolute path the backend would default to
  *     for new project storage (resolves MERIDIAN_HOME env var, then
  *     `C:\Meridian\projects` on Windows installer hosts, then
  *     `~/Meridian/projects`). It must be a real path containing no
  *     placeholder tokens like `<you>` — the frontend submits it
  *     verbatim if the user doesn't edit it.
+ *   - `home_dir` is the running OS user's home (str(Path.home())).
+ *     Alpha-9 added this so first-documents page can build a smart
+ *     pre-fill of <home_dir>/Documents/<folderName> for the typed-path
+ *     input when the browser webkitdirectory picker only returns the
+ *     folder name (browser hides absolute paths from JS for security).
  *   - 404 is acceptable; the frontend falls back to a hardcoded value
  *     and the user can still type their own path. No other status codes
  *     are expected for this endpoint.
  */
 export interface SetupDefaults {
   projects_dir: string;
+  home_dir: string;
 }
 
 /**

@@ -4,6 +4,36 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.9
+
+The folder-pick browser-fallback wasted users' time: pre-fill was just the folder name, no warning that the path needed extending, and the wizard sent the malformed payload to the backend which 400'd. Alpha-9 makes the typed-path step actually usable.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The bug
+
+Browsers (Chrome/Edge/Firefox) hide absolute folder paths from JavaScript by design (security restriction since ~2015). The wizard's `webkitdirectory` picker only learns the folder NAME — never the parent path. The wizard's typed-path prompt was supposed to bridge this gap, but:
+
+1. It pre-filled the input with only the folder name — looked complete to the user.
+2. There was no visible explanation of why a typing step existed at all.
+3. Submitting the form with just the folder name sent `{"folder_path":"Syd02 document repository"}` to the backend — no drive letter, no parent path. Backend correctly returned 400 `folder_not_found`. Until alpha-8 the error was misclassified as "transient hiccup"; alpha-8 fixed the message; alpha-9 stops the malformed submit at the source.
+
+### The fix
+
+- **Backend `/setup/defaults` extended** with a new `home_dir` field (`str(Path.home())`). The frontend uses it to construct a smart pre-fill.
+- **Smart pre-fill**: when the picker returns `folderName="Syd02 document repository"`, the wizard pre-fills the input with `<home_dir>\Documents\<folderName>` — correct for the ~90% case (project folders under Documents). User just presses Enter; one edit if their project lives elsewhere.
+- **Visible amber callout** above the input explains *why* the typing step exists ("Browser security: we only got the folder NAME from your pick. Browsers hide the full filesystem path from web pages by design.") and previews the upcoming Tauri MSI fix that removes the step entirely.
+- **Client-side path-shape validation** refuses to submit if the path doesn't match an absolute-path pattern (Windows drive letter `C:\...`, UNC `\\server\...`, or POSIX `/foo/...`). Inline red error message: "That doesn't look like a full path. Add the drive letter (e.g. `C:\Users\...`)." Prevents another doomed `folder_not_found` round-trip.
+
+### Carry-overs from alpha-8
+
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX — and is the proper fix for the entire browser-path-restriction class.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Install-time UX polish deferred until install flow stabilises.
+- `Tooltip`-clobbering-onClick footgun in the component itself.
+
 ## What's new in v0.2.0-alpha.8
 
 The wizard's folder-pick error message was misleading: any 400 from `/setup/import-folder/scan` showed an amber "We couldn't reach Meridian to scan that folder. Most often this is a transient network hiccup" — even when the actual cause was "you typed a folder path that doesn't exist". Alpha-8 surfaces the backend's specific error code so the user sees exactly what was wrong with the path they entered.

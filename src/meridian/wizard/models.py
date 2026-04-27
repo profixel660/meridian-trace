@@ -390,25 +390,39 @@ class SetupCompleteResponse(SetupStateResponse):
 class SetupDefaultsResponse(BaseModel):
     """Server-side defaults the frontend pre-fills into form fields.
 
-    Currently exposes only ``projects_dir`` — the absolute path under which
-    the wizard should create new project SQLite files. Resolves via the
-    same ``_meridian_home()`` chain backend code uses (``MERIDIAN_HOME``
-    env var, then ``C:\\Meridian`` on Windows when present, then
-    ``~/Meridian``), with ``/projects`` appended.
+    Two real, server-resolved paths so the frontend never has to substitute
+    placeholder tokens like ``C:\\Users\\<you>\\...`` (the alpha-5 bug
+    class — frontend submitted the literal ``<you>`` string and Windows
+    path validation rejected the ``<`` and ``>``). Both fields are real
+    paths the backend's ``Path()`` constructor can parse without raising.
 
-    Alpha-6 motivation: prior alphas put a literal ``C:\\Users\\<you>\\...``
-    string into the first-project page's form default. The user clicked
-    Create without editing, the frontend submitted the placeholder verbatim,
-    Pydantic + Windows path validation rejected the ``<`` and ``>`` chars
-    with 422 Unprocessable Entity. By returning a real default that
-    survives the round-trip, the wizard can never re-introduce that bug
-    class.
+    * ``projects_dir`` — where the wizard should create new project SQLite
+      files (resolves via the same ``_meridian_home()`` chain everything
+      else uses: ``MERIDIAN_HOME`` env var, then ``C:\\Meridian`` on
+      Windows when present, then ``~/Meridian``, with ``/projects``
+      appended).
+    * ``home_dir`` — the running OS user's home directory
+      (``str(Path.home())``). Alpha-9 added this so the first-documents
+      page can build a smart pre-fill for its typed-path input
+      (``<home_dir>\\Documents\\<folderName>``) when the browser
+      webkitdirectory picker only returns the folder name. Browser
+      security hides the absolute path from JS; the Tauri MSI (round 18)
+      eliminates this restriction entirely.
     """
 
     projects_dir: str = Field(
         description=(
             "Absolute path the wizard pre-fills into the first-project "
             "form. Always a real path with no placeholder tokens."
+        ),
+        min_length=1,
+    )
+    home_dir: str = Field(
+        description=(
+            "Running OS user's home directory (str(Path.home())). The "
+            "first-documents page uses it to build a smart typed-path "
+            "pre-fill of <home_dir>\\Documents\\<folderName> when the "
+            "browser folder-picker only exposes the folder name."
         ),
         min_length=1,
     )

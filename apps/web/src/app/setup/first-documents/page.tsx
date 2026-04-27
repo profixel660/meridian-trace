@@ -161,6 +161,28 @@ export default function SetupFirstDocumentsPage() {
     setTauri(isInTauri());
   }, []);
 
+  // Alpha-9: fetch the OS user's home dir from /setup/defaults so the
+  // browser-fallback typed-path input can pre-fill with
+  // <home>\Documents\<folderName> instead of just <folderName>. Browser
+  // webkitdirectory only exposes the folder name (no absolute path) for
+  // security; this gets us a smart guess that works for ~90% of users
+  // (Documents-rooted projects). Tauri MSI eliminates the need entirely.
+  const [homeDir, setHomeDir] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setupApi
+      .defaults()
+      .then((d) => {
+        if (!cancelled && d?.home_dir) setHomeDir(d.home_dir);
+      })
+      .catch(() => {
+        // 404 / network — frontend falls back to no-pre-fill behaviour.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Cleanup any in-flight polling timer on unmount.
   useEffect(
     () => () => {
@@ -241,9 +263,23 @@ export default function SetupFirstDocumentsPage() {
         void scanFolder(result.path);
         return;
       }
-      // Browser fallback — pre-fill the manual-path input with whatever
-      // hint we got and switch to the typed-path prompt.
-      setManualPath(result.folderName ? result.folderName : "");
+      // Browser fallback — pre-fill the manual-path input with the
+      // smartest guess we can construct. Browser webkitdirectory only
+      // exposes the folder NAME (security restriction), so the
+      // alpha-8-and-earlier behaviour of pre-filling with just the
+      // folder name silently sent the backend something like
+      // {"folder_path":"Syd02 document repository"} → folder_not_found
+      // (no drive letter). Alpha-9: prepend <home>\Documents\ if we have
+      // home_dir from /setup/defaults. Correct for ~90% of users; one
+      // edit if the project lives elsewhere.
+      const folderName = result.folderName ?? "";
+      let prefilled = folderName;
+      if (folderName && homeDir) {
+        const sep = homeDir.includes("\\") ? "\\" : "/";
+        const documents = `${homeDir}${sep}Documents`;
+        prefilled = `${documents}${sep}${folderName}`;
+      }
+      setManualPath(prefilled);
       setPhase({ kind: "browser_path_prompt", folderName: result.folderName });
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -256,9 +292,36 @@ export default function SetupFirstDocumentsPage() {
     }
   }, [scanFolder]);
 
+  // Alpha-9: client-side path-shape validation. Browser webkitdirectory
+  // only gives us the folder name, so the typed-path input is the only
+  // way to get a real absolute path into the wizard. If the user submits
+  // something that's clearly NOT an absolute path (e.g. just the folder
+  // name), the backend will 400 with folder_not_found — better to refuse
+  // here with a clear inline message than send a doomed request.
+  const [pathError, setPathError] = useState<string | null>(null);
+  const looksAbsolute = (p: string): boolean => {
+    // Windows drive-letter path: "C:\..." or "C:/..."
+    if (/^[A-Za-z]:[\\/]/.test(p)) return true;
+    // Windows UNC: "\\server\share\..."
+    if (/^\\\\/.test(p)) return true;
+    // POSIX absolute: "/foo/bar"
+    if (p.startsWith("/")) return true;
+    return false;
+  };
+
   const submitManualPath = () => {
     const trimmed = manualPath.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setPathError("Please enter the folder path.");
+      return;
+    }
+    if (!looksAbsolute(trimmed)) {
+      setPathError(
+        `That doesn't look like a full path. Add the drive letter (e.g. C:\\Users\\...). Your browser only gave us the folder NAME — not the full path — so we need you to add the prefix.`,
+      );
+      return;
+    }
+    setPathError(null);
     void scanFolder(trimmed);
   };
 
@@ -453,9 +516,25 @@ export default function SetupFirstDocumentsPage() {
           </div>
         ) : null}
 
-        {/* Browser-fallback typed-path prompt. */}
+        {/* Browser-fallback typed-path prompt. Alpha-9: amber callout
+            explains why the typing step exists at all (browser security
+            hides the absolute path from JS). Smart pre-fill from
+            /setup/defaults' home_dir means most users just press Enter. */}
         {phase.kind === "browser_path_prompt" ? (
           <div className="space-y-3 rounded-lg border border-border bg-surface-elevated p-4">
+            <div className="rounded border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-200">
+              <p className="font-medium">
+                ⚠ Browser security: we only got the folder NAME from your
+                pick.
+              </p>
+              <p className="mt-1 text-amber-200/80">
+                Browsers (Chrome, Edge, Firefox) hide the full filesystem
+                path from web pages by design. We&apos;ve guessed the most
+                likely full path below — check it&apos;s right and press
+                Enter, or edit it. The Tauri desktop build (coming soon)
+                gives us the full path directly and removes this step.
+              </p>
+            </div>
             <label
               htmlFor="folder-path-input"
               className="block text-sm font-medium text-text-primary"
@@ -466,7 +545,10 @@ export default function SetupFirstDocumentsPage() {
               id="folder-path-input"
               type="text"
               value={manualPath}
-              onChange={(e) => setManualPath(e.target.value)}
+              onChange={(e) => {
+                setManualPath(e.target.value);
+                if (pathError) setPathError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -477,9 +559,18 @@ export default function SetupFirstDocumentsPage() {
               className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
               autoFocus
             />
-            <p className="text-xs text-text-muted">
-              {FIRST_DOCS_COPY.browserPathPromptHelper}
-            </p>
+            {pathError ? (
+              <p
+                role="alert"
+                className="rounded border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-300"
+              >
+                {pathError}
+              </p>
+            ) : (
+              <p className="text-xs text-text-muted">
+                {FIRST_DOCS_COPY.browserPathPromptHelper}
+              </p>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -491,7 +582,10 @@ export default function SetupFirstDocumentsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setPhase({ kind: "idle" })}
+                onClick={() => {
+                  setPhase({ kind: "idle" });
+                  setPathError(null);
+                }}
                 className="rounded-full border border-border px-4 py-2 text-sm text-text-muted hover:border-text-muted hover:text-text-primary"
               >
                 Cancel
