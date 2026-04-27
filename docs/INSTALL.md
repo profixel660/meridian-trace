@@ -1,9 +1,45 @@
 # Installing Meridian
 
+Two paths — pick the one that matches you.
+
+## Path 1 — One-click installer (recommended for non-technical users)
+
+This is the right path if you don't already work with Python, virtual
+environments, or terminals. The installer handles everything: Python
+install, virtual environment, Meridian package, your Anthropic API key,
+desktop shortcut. It takes 5–15 minutes mostly waiting on downloads.
+
+1. Open the [latest release page](https://github.com/profixel660/meridian-trace/releases/latest).
+2. Under **Assets**, download **both** files (save them to the same folder,
+   e.g. your Desktop):
+   - `Install-Meridian.bat`
+   - `Install-Meridian.ps1`
+3. Right-click `Install-Meridian.bat` → **Run as administrator**.
+4. Follow the prompts. The installer will pause and ask for your Anthropic
+   API key (paste it — input is hidden), then walks you through Meridian's
+   first-run wizard.
+5. When the installer finishes, look for a **Meridian** shortcut on your
+   Desktop. Double-click it any time you want to use Meridian.
+
+The first time you launch the installer, **Windows may show a SmartScreen
+warning** — click **More info** → **Run anyway**. See `installer/README.md`
+in the release for the full explanation. (Code-signing is on the roadmap;
+this warning will go away once we sign.)
+
+To uninstall later, run `Uninstall-Meridian.bat` from the same release
+download (or from `C:\Meridian\` if you keep a copy there).
+
+---
+
+## Path 2 — Manual install (developers / CI)
+
+This is the path below if you're comfortable with `python`, `pip`, and
+PowerShell — or if you're installing into an existing venv for tooling.
+
 Meridian alpha releases are published as Python wheels on the project's
 [GitHub Releases page](https://github.com/profixel660/meridian-trace/releases).
-There is no installer (`.exe` / `.msi`) yet — that arrives with the §3.7
-Tauri packaging round.
+There is no native installer (`.exe` / `.msi`) yet — that arrives with
+the §3.7 Tauri packaging round.
 
 ## Prerequisites
 
