@@ -4,6 +4,34 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.5
+
+A targeted IPv6/IPv4 fix for an installer hang the user hit on alpha-4. The release gauntlet missed this one because the gauntlet probed `127.0.0.1` directly while the installer probed `localhost`; alpha-5 closes the gap with a new gauntlet step that statically checks installer URL constants.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The bug
+
+On Windows, the name `localhost` resolves to `::1` (IPv6 loopback) before falling back to `127.0.0.1` (IPv4). Uvicorn binds to `127.0.0.1` only by default. PowerShell's `HttpWebRequest` with a 1s timeout doesn't fall back from IPv6 to IPv4 fast enough — the probe targets an empty IPv6 socket, times out, and the installer hangs forever at "Waiting for the backend to come up" even though the backend is fully healthy on `127.0.0.1:8000`.
+
+### The fix
+
+- **Installer:** `$MERIDIAN_HEALTH_URL` and `$MERIDIAN_WIZARD_URL` now use `http://127.0.0.1:8000` instead of `http://localhost:8000`. Backend binds 127.0.0.1, probe targets 127.0.0.1, no DNS fallback timing involved.
+- **CLI `meridian start`:** same swap — `base_url = f"http://127.0.0.1:{port}"`. The browser-open URL is also 127.0.0.1 (browsers handle IPv6→IPv4 fallback well, but consistency keeps the codebase predictable).
+- **Release gauntlet step 2b (new):** static check that no `Install-Meridian.ps1` line contains `http://localhost:` outside comments. The exact bug class is now caught at the gauntlet level — any future re-introduction of `localhost` in installer URL constants fails the gauntlet before a build is cut.
+
+### Tests + gauntlet
+
+99 e2e passing in 12.6s. Gauntlet now has 9 ordered steps (added 2b: installer URL constants). Required-green before any future cut.
+
+### Carry-overs from alpha-4
+
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Install-time UX polish deferred until install flow stabilises.
+
 ## What's new in v0.2.0-alpha.4
 
 The first release that passes a real **release gauntlet** before shipping. Every alpha through alpha-3 broke on the user's box in a way pytest didn't catch; alpha-4 introduces `scripts/release_gauntlet.py` — a one-command end-to-end check that builds the wheel, installs it into a fresh venv, spawns the backend from a tmp cwd with `MERIDIAN_HOME` pointing elsewhere, and asserts /health, /setup/, version, and CLI surface all behave correctly. The gauntlet is required-green before alpha-4 cuts.

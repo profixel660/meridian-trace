@@ -73,9 +73,16 @@ $MERIDIAN_LAUNCH_CMD  = "$MERIDIAN_RUNTIME_DIR\launch_backend.cmd"
 
 # Backend / GUI wizard endpoints. The post-install step starts uvicorn on
 # this port and opens the user's default browser to the wizard page.
+#
+# Use 127.0.0.1, NOT localhost. On Windows, "localhost" resolves to ::1
+# (IPv6 loopback) first; uvicorn binds to 127.0.0.1 (IPv4 loopback) only,
+# so a localhost probe targets a port nothing is listening on. PowerShell's
+# HttpWebRequest with a 1s timeout doesn't fall back to IPv4 fast enough,
+# the probe fails forever, the installer hangs at "Waiting for the backend"
+# even though the backend is fully healthy. Alpha-5 fix.
 $MERIDIAN_BACKEND_PORT  = 8000
-$MERIDIAN_HEALTH_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/health"
-$MERIDIAN_WIZARD_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/setup/"
+$MERIDIAN_HEALTH_URL    = "http://127.0.0.1:$MERIDIAN_BACKEND_PORT/health"
+$MERIDIAN_WIZARD_URL    = "http://127.0.0.1:$MERIDIAN_BACKEND_PORT/setup/"
 
 $GITHUB_OWNER         = "profixel660"
 $GITHUB_REPO          = "meridian-trace"

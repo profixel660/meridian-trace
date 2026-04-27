@@ -2166,7 +2166,11 @@ def start(
     from urllib.error import URLError
     from urllib.request import Request, urlopen
 
-    base_url = f"http://localhost:{port}"
+    # 127.0.0.1, not localhost: Windows resolves "localhost" to ::1 (IPv6)
+    # first, but uvicorn binds to 127.0.0.1 (IPv4). The 1s probe timeout
+    # in urllib doesn't fall back to IPv4 fast enough -> the health check
+    # hangs against an empty IPv6 socket. See alpha-5 release notes.
+    base_url = f"http://127.0.0.1:{port}"
     health_url = f"{base_url}/health"
     setup_state_url = f"{base_url}/setup/state"
     welcome_url = f"{base_url}/setup/"

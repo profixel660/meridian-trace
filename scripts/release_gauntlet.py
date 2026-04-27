@@ -560,6 +560,45 @@ def _step_cli_help_smoke(venv_dir: Path) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Step 2b — installer URL constants
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _step_installer_url_constants(installer_dir: Path) -> bool:
+    """Catches the alpha-5 regression class: Install-Meridian.ps1 must NOT
+    use 'http://localhost:...' in URL constants.
+
+    On Windows, the name 'localhost' resolves to ``::1`` (IPv6 loopback)
+    before falling back to ``127.0.0.1`` (IPv4). Uvicorn binds IPv4 only by
+    default. PowerShell's HttpWebRequest with a 1s timeout doesn't fall
+    back to IPv4 fast enough — the probe targets an empty IPv6 socket,
+    times out, and the installer hangs forever at 'Waiting for the backend'
+    even though the backend is fully healthy. The user lived this in alpha-4.
+
+    All probe / open URL constants in the installer must use ``127.0.0.1``
+    explicitly. Browsers handle IPv6→IPv4 fallback well; PowerShell does not.
+    """
+    bad: list[str] = []
+    for ps1 in installer_dir.rglob("*.ps1"):
+        for line_num, raw in enumerate(ps1.read_text(encoding="utf-8").splitlines(), start=1):
+            line = raw.strip()
+            if line.startswith("#"):
+                continue  # tolerate localhost in comments / docstrings
+            if "://localhost" in line:
+                bad.append(f"  {ps1.name}:{line_num}: {line}")
+    if bad:
+        _fail(
+            "step 2b: installer URL constants",
+            "found 'http://localhost' URL(s) in installer .ps1 files. Use 127.0.0.1 "
+            "— Windows resolves localhost to IPv6 ::1 first; uvicorn binds IPv4. "
+            "Probes hang forever.\n" + "\n".join(bad),
+        )
+        return False
+    _ok("step 2b: installer URL constants", "no 'http://localhost' URLs in installer .ps1 files")
+    return True
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -574,6 +613,8 @@ def main() -> int:
     if not _step_powershell_parse(installer_dir):
         return 1
     if not _step_ascii_only(installer_dir):
+        return 1
+    if not _step_installer_url_constants(installer_dir):
         return 1
 
     ok, wheel = _step_build_wheel(repo)
