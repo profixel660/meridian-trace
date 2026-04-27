@@ -1,8 +1,59 @@
 # Release notes
 
-Round-by-round delta in plain English. Round numbers map to alpha versions: round 7 → alpha-7, round 8 → alpha-8, and so on. The current release is alpha-12.
+Round-by-round delta in plain English. Round numbers map to alpha versions for the v0.1.x line (round 7 → alpha-7, round 12 → alpha-12). From v0.2.0-alpha onwards, releases are tagged `v0.2.0-alpha.N` and bundle multiple rounds (the Tauri rebuild rolls 13 → 17.5 into one release).
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
+
+## What's new in v0.2.0-alpha.1
+
+First SME-testable build of the v0.2 line. Bundles seven rounds of work on top of alpha-12: the v0.1.x finishers (rounds 13–15), v0.1.x polish (round 14), the Tauri/Next-export refactor (round 16), the setup wizard + FastAPI sidecar (round 17), the company rebrand, and the §3.6/§3.8 deployment prep (round 17.5).
+
+**Heads up before you upgrade:** schema v5 → v6 (one `meridian db-migrate <project>` step). The Tauri `.msi` is **not** in this release — installation is still the PowerShell installer or `pip install meridian`. The .msi lands in alpha-2 once Rust + MSVC + WiX are installed on the build machine.
+
+### Major user-facing additions
+
+- **Onboarding wizard.** `meridian init` walks a six-step setup flow (API key → TOTP → first project → first document → bootstrap LLM sweep → next-steps agenda). State persists between steps so partial completion resumes cleanly.
+- **Backup/restore.** `meridian backup create|restore|verify|list` — bundles `<slug>.sqlite` plus all sibling artefact dirs into one zip with SHA-256 manifest. Online backup, safe mid-extraction.
+- **Smart taxonomy auto-assessment.** The bootstrap LLM sweep now self-assesses each proposed taxonomy value (`confirm` / `merge_into` / `defer_to_user`) with a confidence score; high-confidence merges auto-apply, lower-confidence routes to the standard review queue with the LLM's recommendation visible. `meridian review walk-taxonomy` renders the recommendation per row and offers `[A]ccept LLM recommendation` as the default keystroke.
+- **End-user documentation suite.** Eight docs files (~12,500 words): README index, getting-started, concepts, full CLI reference, troubleshooting, security, architecture, release-notes — all PM-readable, no jargon without first-use definition.
+- **Multi-user concurrency safety.** Project locks (`acquire_project_lock` + `ProjectLock` context manager) wrap every extraction job and write-heavy API endpoint. Atomic file create + three-outcome liveness check (alive / dead / unknown). CLI prints friendly holder info on conflict; API returns 409 with holder details. SQLite `busy_timeout` PRAGMA hardened (5s default, 30s on write-heavy paths).
+- **Routing-preset operator aliases.** `cloud-default` / `hybrid` / `air-gapped` resolve to the technical preset names. Both forms work at the CLI; existing project DBs unaffected.
+
+### Tauri rebuild (foundation only — no .msi yet)
+
+- **Tauri 2.x scaffold.** `src-tauri/` crate root with the three Tauri plugins wired (dialog, shell, fs), `tauri.conf.json` (1280×800 window, msi bundler, identifier `com.tbionic.meridian`), capabilities tightened to scoped sidecar spawn + dialog open + fs default.
+- **Next.js static-export refactor.** All 14 dynamic project pages converted from server components to client components with `useEffect` + `apiFetch` data fetching, three-state UX (loading skeleton / error panel / data render). `output: "export"` enables Tauri to bundle the static `out/` directory as the frontend.
+- **Setup wizard (5 pages).** `welcome → api-key → first-project → first-documents → ready` at `/setup/*`. WHY-before-HOW prose in PM language, three-outcome validation per step (valid / invalid / unable_to_verify with skip-with-warning), native Tauri file pickers with browser fallback, full keyboard nav, `?` shortcut sheet on every page.
+- **FastAPI sidecar wiring.** Round 17 wires Tauri to spawn the bundled PyInstaller binary (round-18 drop-in) with a `python -m uvicorn` dev fallback, TCP health-gate before window display, idempotent kill on close. Won't actually compile until Rust + MSVC are installed (round 18).
+- **§3.6 crash Worker scaffold.** Cloudflare Worker code at `infra/cloudflare/crash-worker/` ready to deploy. Local crash-send refuses to POST to a placeholder endpoint until configured.
+- **§3.8 license keypair script.** `scripts/gen_license_keypair.py` generates the Ed25519 signing keypair; private key written to user-supplied path, public key printed as hex for embedding in `meridian.licensing.verify`.
+
+### Rebrand: Undivided Systems → T-Bionic
+
+Company-name change across 11 files (Tauri identifier `com.undivided.meridian` → `com.tbionic.meridian`, pyproject author, brand strings in apps/web, licensing CLI strings, docs). Every previously-`support@undivided.systems` string is now phrased "T-Bionic support" with no specific email — the company TLD is being registered separately and the wrong email shipped in binaries is hard to roll back.
+
+### Defects fixed since alpha-12
+
+- Cross-reference sweep noise reduced 86% (98 borderline → 13) via tightened equipment-tag regex + false-positive blocklist + multi-line-capture cleanup + four-outcome classification (`confirmed` / `borderline` / `external_reference` / `rejected`).
+- Tender flag pills now resolve `conflicts_with_source_<uuid>` to filename(s) via the conflict → conflict_party → deliverable → source_document chain.
+- Chunk-level resume: interrupted extractions now restart at the chunk boundary (not the source boundary). Per-chunk state machine + transactional source-completion.
+- Standards-extraction prompt strengthened (v1.1) with region-grouped recognition cues (AU/NZ, UK/EU/intl, US codes + industry).
+- Bootstrap auto-trigger on first import (interactive default-Yes; silent-skip when stdin isn't a TTY).
+
+### Test + schema state
+
+- **65/65 e2e tests passing** in ~11s (16 baseline + 14 in round 14 + 7 in round 15 + 13 in round 17 + 15 from rounds 10/11).
+- **Schema v6** — adds the LLM auto-assessment columns to the three taxonomy tables. `meridian db-migrate <project>` is idempotent; safe to re-run.
+- **Ruff clean** across `src/meridian/` and `tests/`.
+
+### Known carry-overs
+
+- **Tauri `.msi` requires Rust + MSVC + WiX** on the build machine. Until installed, this release ships as the Python wheel + PowerShell installer.
+- **Three Tauri 2 API uncertainties** in the round-17 sidecar wiring (capability JSON shape for scoped `shell:allow-spawn`, `CommandChild::kill()` ownership signature, `RunEvent::WindowEvent` field name) need verification post-Rust-install. Round-18 first task: `cargo build` and fix anything that doesn't compile.
+- **Next.js 15.1.6 has CVE-2025-66478** — bump to a patched 15.x before any external-facing release.
+- **Crash endpoint URL** awaits Cloudflare Worker deployment.
+- **License public key** awaits keypair generation.
+- **T-Bionic TLD** still TBD; support strings are placeholder-phrased pending domain registration.
 
 ## What's new in alpha-12
 
