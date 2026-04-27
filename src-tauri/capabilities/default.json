@@ -1,12 +1,34 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set for the main Meridian window. Round 17 will narrow this — in particular, fs: scope should be restricted to the per-project directory once the project-state path resolver lands.",
+  "description": "Default capability set for the main Meridian window. Round 17 adds the shell-plugin spawn surface needed to launch the FastAPI backend (sidecar in prod, dev-mode `python -m uvicorn` in round-17 dev). Round 18 will tighten the `python` allow shape once the PyInstaller sidecar removes the dev-fallback need.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:default",
     "shell:allow-open",
-    "fs:default"
+    "fs:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/meridian-server",
+          "sidecar": true
+        },
+        {
+          "name": "python",
+          "cmd": "python",
+          "args": [
+            "-m",
+            "uvicorn",
+            "meridian.api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8000"
+          ]
+        }
+      ]
+    }
   ]
 }

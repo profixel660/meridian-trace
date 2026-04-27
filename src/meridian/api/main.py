@@ -1320,3 +1320,10 @@ from meridian.auth.login_api import auth_router  # noqa: E402
 
 app.include_router(auth_router)
 
+# ── Round 17: GUI setup-wizard endpoints (/setup/*) ──────────────────────
+# All endpoints in this router are PUBLIC — the wizard runs pre-auth. See
+# the file-top docstring of meridian.wizard.api for the §3.2 deferral note.
+from meridian.wizard import wizard_router  # noqa: E402
+
+app.include_router(wizard_router)
+

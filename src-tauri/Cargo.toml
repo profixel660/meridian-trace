@@ -19,6 +19,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# ROUND-18: PyInstaller will produce
+#   src-tauri/binaries/meridian-server-x86_64-pc-windows-msvc.exe
+# (the `-<target-triple>` suffix is required by Tauri 2's externalBin lookup).
+# `tauri.conf.json` → `bundle.externalBin = ["binaries/meridian-server"]` declares
+# the unsuffixed prefix; Tauri appends the host triple at bundle time and
+# `Command::sidecar("meridian-server")` resolves to it at runtime.
+#
+# `tauri-plugin-shell` 2.x re-exports the `Command` / `CommandChild` /
+# `CommandEvent` types from `tauri_plugin_shell::process::*` — no extra feature
+# flag needed for the spawn surface used in `src/lib.rs`.
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

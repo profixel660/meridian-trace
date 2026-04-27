@@ -31,6 +31,8 @@ This file records the resolution of each deferred-decision item from `data/proje
 
 **Status:** shipped this session. Web build verified clean (§3.9).
 
+**Round-17 follow-up:** the new `/setup/*` wizard endpoints (round 17) are intentionally public — no `Depends(require_session)`. Chicken-and-egg: the wizard is what sets up auth, so it can't itself require auth. Marked in source with `# DEFERRED §3.2`. Revisit alongside the team-edition / multi-tenant decision (likely "first user enrols TOTP at the end of the wizard, subsequent admin actions require it"). See round-17 follow-up bullet at the bottom of this file.
+
 ---
 
 ## §3.3 — POST /auth/login endpoint → **already shipped (round 12)**
@@ -154,6 +156,24 @@ These surfaced during the walkthrough and deserve their own backlog entries:
 - **YubiKey migration plan** — stub it when you cross 10 paying customers.
 - **Round-16 Tauri scaffold** — `src-tauri/` directory exists; `cargo build` will fail today because Rust isn't installed and the icon set is intentionally absent (see `src-tauri/icons/README.md`). Round 18 installs the Rust toolchain + MSVC Build Tools 2022 + WiX Toolset and produces the first signed-or-unsigned `.msi`. Sidecar spawn of the bundled FastAPI backend lands round 17 alongside the wizard pages.
 - **v0.1.3 — installer auth for private repos.** v0.1.2's installer hits HTTP 404 when calling `https://api.github.com/repos/profixel660/meridian-trace/releases/latest` because the repo is private and the installer is anonymous (carries no GitHub credentials, even though the SME-as-a-human IS a collaborator). Confirmed via `curl` against both `/releases/latest` and the repo root — both return 404 to anonymous callers. **Recommended fix (Path A, ~30 min subagent work):** installer prompts the SME for a fine-scoped PAT (Contents: Read + Metadata: Read on `meridian-trace` only, 90-day expiry), validates it via a test API call, stores it in Windows Credential Manager (same backend as the §3.1 TOTP secret), uses it as `Authorization: Bearer <PAT>` on every GitHub API call. README needs a screenshotted walkthrough of how to generate the PAT. **Interim workarounds for SME testing this week:** (a) flip repo to Public temporarily for the test window (10s setting change; `releases/latest` becomes anonymously fetchable); (b) Peter generates a PAT on his own account and shares it with the SME alongside the Anthropic key (less hygienic — ties her install to Peter's credentials). Looping back to v0.1.3 once the SME's first-pass test is unblocked.
+
+---
+
+## Round 17 follow-ups
+
+These surfaced during round 17 (`/setup` wizard + Tauri sidecar wiring + backend wizard API). Each is a deliberate deferral, not an oversight — capturing here so the next sweep doesn't have to re-derive them.
+
+- **Round-17 wizard pre-auth posture** — the `/setup/*` endpoints (six new in `src/meridian/wizard/api.py`) are intentionally public. No `Depends(require_session)`. Chicken-and-egg: the wizard sets up auth, so the wizard itself can't require auth. Marked in source with `# DEFERRED §3.2`. When team-edition / multi-tenant landing is on the table, revisit per §3.2 and tighten — likely an "admin TOTP" model where the first user enrols TOTP at the end of the wizard and subsequent admin actions require it (the wizard's `/setup/complete` step becomes the natural enrolment hook). Until then, the public posture is correct. Tracked.
+
+- **Round-17 sidecar dev-mode fallback** — Tauri currently falls back to `python -m uvicorn meridian.api.main:app` when no bundled PyInstaller binary is present at `src-tauri/binaries/meridian-server-x86_64-pc-windows-msvc.exe`. Round 18's first task post-Rust-install is replacing this fallback path with the real `meridian-server.exe` — or, more accurately, dropping the binary at the expected location so the existing `tauri_plugin_shell::ShellExt::shell().sidecar(...)` lookup picks it up automatically (no Rust code change required, just file placement). The fallback **can** remain as a dev-mode escape hatch — useful for "I want the desktop UI without rebuilding the sidecar after every Python change". Decide round 18 whether to keep it (gated on `#[cfg(debug_assertions)]`) or rip out entirely. Lean is keep-as-debug-only.
+
+- **Round-17 wizard state-file compat** — the GUI wizard reads/writes the same `_meridian/onboarding_state.json` the existing CLI wizard (`src/meridian/onboarding/wizard.py`) uses. Round 17 added GUI-only fields (`documents_skipped`, `wizard_completed_at_iso`); older CLI-only state files are forward-compatible (missing fields default sensibly), and new state files written by GUI are consumable by CLI. **Do not introduce divergent state file formats.** The user has explicitly committed to the cross-surface compat invariant — a CLI-started → GUI-finished flow (or vice-versa) must work. If a future round needs a structurally-incompatible field, bump a `schema_version` discriminator in the state file and migrate both readers in lockstep.
+
+- **Round-17 wizard skip semantics** — only the `first-documents` step is skippable (via `POST /setup/import/skip`). API key and first-project are hard-gated — the wizard cannot complete without them. Rationale: a Meridian install with no API key and no project is a non-functional install; better to fail the wizard loudly than ship a half-set-up app that breaks on first real use. If round-19's SME re-test surfaces friction here (e.g. SME wants to "look around" before committing an API key), revisit — likely shape is a "demo-mode" flag that lets the wizard skip the api-key step but parks the install in a read-only state until configured.
+
+- **Round-17 e2e test count — soft.** The round-17 final-state line claims ~62/62 e2e tests passing (52 round-16 baseline + ~10 new). Stream C's actual delivered count may differ; the integration step should reconcile against `pytest -q tests/e2e/ | tail -1` and update the round-17 section if the count diverges. Not a defect — just a soft number until verified.
+
+- **TODO:** placeholder for any contract surprise from Stream C that this docs stream couldn't anticipate. Fill in during the round-17 integration step.
 
 ---
 

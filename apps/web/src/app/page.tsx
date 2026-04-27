@@ -1,23 +1,47 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { StatusCard } from "@/components/StatusCard";
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { type ProjectListItem, type ProjectStatus } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import type { SetupState } from "@/lib/setupClient";
 
 const FALLBACK_PROJECT = "syd2-shell-cd";
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  // Round-17: gate the projects grid behind a setup-state check so a
+  // brand-new install lands on /setup rather than an empty projects list.
+  const [setupChecked, setSetupChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // 1) First, ask the API whether setup is complete. If not, bounce
+      //    to /setup. Failures here fall through to the existing
+      //    projects flow — never block the operator if the setup
+      //    endpoint is unreachable (Stream C may not have shipped yet).
+      try {
+        const setupState = await apiFetch<SetupState>("/setup/state");
+        if (cancelled) return;
+        if (setupState.complete === false) {
+          router.replace("/setup");
+          return;
+        }
+      } catch {
+        // ignore — proceed to load projects
+      }
+      if (cancelled) return;
+      setSetupChecked(true);
+
+      // 2) Load projects as before.
       try {
         const result = await apiFetch<ProjectListItem[]>("/projects");
         if (!cancelled) setProjects(result);
@@ -30,7 +54,7 @@ export default function ProjectsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   return (
     <div className="space-y-6">
@@ -44,7 +68,9 @@ export default function ProjectsPage() {
         </p>
       </div>
 
-      {loading ? (
+      {!setupChecked ? (
+        <div className="text-text-muted text-sm">Checking setup…</div>
+      ) : loading ? (
         <div className="text-text-muted text-sm">Loading…</div>
       ) : listError ? (
         <ApiErrorPanel error={listError} />
