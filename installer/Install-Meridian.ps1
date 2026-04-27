@@ -8,7 +8,7 @@
     the latest Meridian wheel from the GitHub release, prompts for the Anthropic
     API key, drops a Desktop shortcut, and runs `meridian init`.
 
-    Designed for non-technical users — every step prints WHAT it is doing and
+    Designed for non-technical users -- every step prints WHAT it is doing and
     WHY. Idempotent: safe to re-run.
 
     Logs to C:\Meridian\install.log.
@@ -20,7 +20,7 @@
 
 .PARAMETER Verbose
     Standard PowerShell flag. When set, network failures print the full
-    underlying exception instead of just the friendly summary — useful when
+    underlying exception instead of just the friendly summary -- useful when
     debugging proxy or TLS issues.
 #>
 [CmdletBinding()]
@@ -29,7 +29,7 @@ param(
 )
 
 # -----------------------------------------------------------------------------
-# TLS + proxy setup — run before ANY network call.
+# TLS + proxy setup -- run before ANY network call.
 #   - Force TLS 1.2 (older Windows defaults to TLS 1.0/1.1 which GitHub rejects).
 #   - Tell .NET WebRequest + Invoke-* cmdlets to use the system's default proxy
 #     with the current user's credentials. On non-corporate machines the
@@ -49,11 +49,11 @@ try {
         [System.Net.WebRequest]::DefaultWebProxy = $defaultProxy
     }
 } catch {
-    # Same — non-fatal here; the probe will surface details if it matters.
+    # Same -- non-fatal here; the probe will surface details if it matters.
 }
 
 # -----------------------------------------------------------------------------
-# Constants — bump when a new Python 3.12 patch is released.
+# Constants -- bump when a new Python 3.12 patch is released.
 # Latest tested: Python 3.12.8 (Dec 2024). Update PYTHON_VERSION here and the
 # installer will fetch that exact build from python.org.
 # -----------------------------------------------------------------------------
@@ -83,7 +83,7 @@ $GITHUB_RELEASES_URL  = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/
 $DOCS_URL             = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/tree/main/docs"
 
 # -----------------------------------------------------------------------------
-# Output helpers — coloured, prefixed, and mirrored to the install log.
+# Output helpers -- coloured, prefixed, and mirrored to the install log.
 # Log writes are best-effort: until C:\Meridian exists, we buffer.
 # -----------------------------------------------------------------------------
 $script:LogBuffer = New-Object System.Collections.Generic.List[string]
@@ -108,7 +108,7 @@ function Write-Log {
                 $script:LogBuffer.Clear()
             }
         } catch {
-            # Swallow — logging must never crash the installer.
+            # Swallow -- logging must never crash the installer.
         }
     }
 }
@@ -220,7 +220,7 @@ function Test-Internet {
         return
     }
 
-    # Try several endpoints in order. The probe passes if ANY one succeeds —
+    # Try several endpoints in order. The probe passes if ANY one succeeds --
     # corporate networks sometimes block the GitHub API specifically while
     # allowing the assets host, or vice versa.
     $probeTargets = @(
@@ -254,7 +254,7 @@ function Test-Internet {
         }
     }
 
-    # All probes failed. Surface the actual exception details — these are
+    # All probes failed. Surface the actual exception details -- these are
     # the only signal that distinguishes a TLS pin / proxy / DNS / firewall
     # block. Without this, support gets blind reports of "didn't work".
     $detail = ""
@@ -769,7 +769,7 @@ function Start-BackendAndOpenBrowser {
     $envMap = Read-EnvFile -Path $MERIDIAN_ENV_FILE
     foreach ($k in $envMap.Keys) { Set-Item -Path "Env:$k" -Value $envMap[$k] }
 
-    # alpha-3 — explicitly tell the spawned Python where Meridian lives. The
+    # alpha-3 -- explicitly tell the spawned Python where Meridian lives. The
     # installer runs as Administrator, which means cwd defaults to System32;
     # without these env vars, meridian.config._project_root() falls back to
     # cwd and tries to write logs/projects under C:\Windows\System32 (the
@@ -787,7 +787,7 @@ function Start-BackendAndOpenBrowser {
             New-Item -ItemType Directory -Path $MERIDIAN_RUNTIME_DIR -Force | Out-Null
         }
 
-        # alpha-3 — backend runs in a visible cmd window during the debugging
+        # alpha-3 -- backend runs in a visible cmd window during the debugging
         # phase so a crash on import is visible to the operator. Output is
         # ALSO tee'd to backend.log via cmd /c >> redirection so even if the
         # window closes (unhandled exception), we have a forensic trail. Once
@@ -808,7 +808,7 @@ function Start-BackendAndOpenBrowser {
                 -ErrorAction Stop
             try {
                 Set-Content -LiteralPath $MERIDIAN_PID_FILE -Value $proc.Id -Encoding ASCII
-                Say-OK "Backend started (PID $($proc.Id) — cmd wrapper). Recorded to $MERIDIAN_PID_FILE."
+                Say-OK "Backend started (PID $($proc.Id) -- cmd wrapper). Recorded to $MERIDIAN_PID_FILE."
             } catch {
                 Say-Warn "Backend started (PID $($proc.Id)) but could not write the PID file: $($_.Exception.Message)"
             }
@@ -833,7 +833,7 @@ function Start-BackendAndOpenBrowser {
 
         if (-not $healthy) {
             Say-Warn "Backend did not come up in 60 seconds. Falling back to terminal setup."
-            # alpha-3 — show the last 30 lines of backend.log inline so the
+            # alpha-3 -- show the last 30 lines of backend.log inline so the
             # operator doesn't have to hunt for the failure cause.
             if (Test-Path -LiteralPath $MERIDIAN_BACKEND_LOG) {
                 Write-Host ""
