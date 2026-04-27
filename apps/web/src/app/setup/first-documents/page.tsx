@@ -10,6 +10,7 @@ import { Tooltip } from "@/components/review/Tooltip";
 import { FolderManifestPreview } from "@/components/setup/FolderManifestPreview";
 import { SetupShell } from "@/components/setup/SetupShell";
 import { FIRST_DOCS_COPY } from "@/components/setup/copy";
+import { MeridianApiError } from "@/lib/api";
 import {
   setupApi,
   type FolderImportJobStatus,
@@ -67,6 +68,20 @@ type Phase =
   | { kind: "failed"; status: FolderImportJobStatus | null; message: string }
   | { kind: "skipped" };
 
+// Backend error codes from /setup/import-folder/scan 400 responses.
+// See `_validate_folder_path` in src/meridian/wizard/api.py.
+type ScanBackendError =
+  | "folder_not_found"
+  | "folder_not_a_directory"
+  | "folder_access_denied"
+  | "unknown";
+
+interface ScanErrorClassification {
+  kind: "invalid" | "unable";
+  backendError: ScanBackendError;
+  serverMessage: string | null;
+}
+
 const SCAN_INVALID_HINT_MARKERS = [
   "not a directory",
   "not a folder",
@@ -76,10 +91,61 @@ const SCAN_INVALID_HINT_MARKERS = [
   "does not exist",
 ];
 
-function classifyScanError(err: unknown): "invalid" | "unable" {
+/**
+ * Pull the backend's structured error out of a 400 response body. Alpha-8
+ * fix: the previous classifier only inspected `err.message` (which is the
+ * generic "Meridian API 400 Bad Request for /setup/...") and routed every
+ * 400 to the amber "transient network hiccup" panel — wrong direction
+ * entirely. The actual reason lives in `MeridianApiError.body` as JSON
+ * shaped `{"detail": {"error": "<code>", "message": "..."}}`.
+ */
+function classifyScanError(err: unknown): ScanErrorClassification {
+  // Default — no information beyond "something went wrong".
+  let backendError: ScanBackendError = "unknown";
+  let serverMessage: string | null = null;
+
+  if (err instanceof MeridianApiError && err.status === 400) {
+    try {
+      const parsed = JSON.parse(err.body) as {
+        detail?: { error?: string; message?: string } | string;
+      };
+      const detail = parsed.detail;
+      if (detail && typeof detail === "object") {
+        const code = detail.error;
+        if (
+          code === "folder_not_found" ||
+          code === "folder_not_a_directory" ||
+          code === "folder_access_denied"
+        ) {
+          backendError = code;
+        }
+        if (typeof detail.message === "string") {
+          serverMessage = detail.message;
+        }
+      } else if (typeof detail === "string") {
+        serverMessage = detail;
+      }
+    } catch {
+      // body wasn't JSON — fall through to substring check below.
+    }
+  }
+
+  // If we identified a structured backend error code, all three are
+  // user-fixable -> "invalid" panel (red), not "unable" (amber).
+  if (backendError !== "unknown") {
+    return { kind: "invalid", backendError, serverMessage };
+  }
+
+  // Legacy fallback: substring-match the message. Catches cases where the
+  // backend returns 400 with a non-structured detail or a different status
+  // code path (e.g. uvicorn-level error before reaching the validator).
   const msg = err instanceof Error ? err.message.toLowerCase() : "";
-  if (SCAN_INVALID_HINT_MARKERS.some((m) => msg.includes(m))) return "invalid";
-  return "unable";
+  const hint = SCAN_INVALID_HINT_MARKERS.some((m) => msg.includes(m));
+  return {
+    kind: hint ? "invalid" : "unable",
+    backendError,
+    serverMessage,
+  };
 }
 
 export default function SetupFirstDocumentsPage() {
@@ -143,8 +209,14 @@ export default function SetupFirstDocumentsPage() {
       setPhase({ kind: "scanned", manifest });
     } catch (err) {
       const cls = classifyScanError(err);
-      const message = err instanceof Error ? err.message : "Unknown error";
-      if (cls === "invalid") {
+      // Prefer the backend's specific message (e.g. "Folder does not
+      // exist: C:\\Users\\Foo\\..."); fall back to the generic "Meridian
+      // API 400 Bad Request..." string only when the body wasn't the
+      // expected structured shape.
+      const message =
+        cls.serverMessage ??
+        (err instanceof Error ? err.message : "Unknown error");
+      if (cls.kind === "invalid") {
         setPhase({ kind: "scan_invalid", folderPath, message });
       } else {
         setPhase({ kind: "scan_unable", folderPath, message });

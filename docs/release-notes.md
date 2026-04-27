@@ -4,6 +4,33 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.8
+
+The wizard's folder-pick error message was misleading: any 400 from `/setup/import-folder/scan` showed an amber "We couldn't reach Meridian to scan that folder. Most often this is a transient network hiccup" — even when the actual cause was "you typed a folder path that doesn't exist". Alpha-8 surfaces the backend's specific error code so the user sees exactly what was wrong with the path they entered.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The bug
+
+`classifyScanError` in the wizard's first-documents page only inspected `err.message`, which is the generic "Meridian API 400 Bad Request for /setup/import-folder/scan" string. The backend's structured `{"detail": {"error": "folder_not_found", "message": "Folder does not exist: ..."}}` body is on `err.body`, but the classifier ignored it. Result: every 400 routed to the amber "transient hiccup" panel — the wrong direction entirely. Confirmed live by the user typing a path with a typo and getting the misleading error.
+
+### The fix
+
+- **`classifyScanError` parses `err.body`** for `MeridianApiError` 400 responses, extracts the backend's structured `error` code (`folder_not_found` / `folder_not_a_directory` / `folder_access_denied`) and `message`. All three known codes route to the **red "invalid path" panel** (user-fixable) rather than the amber "transient hiccup" panel (network-flaky).
+- **The error message displayed is the backend's specific message** ("Folder does not exist: `<path you typed>`"), not the generic "Meridian API 400". The user can see exactly what was rejected without retyping or guessing.
+- **Legacy substring fallback retained** — the previous heuristic (`err.message` contains "does not exist", "ENOENT", etc.) still runs as a fallback for non-structured 400 responses.
+
+### Carry-overs from alpha-7
+
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Install-time UX polish deferred until install flow stabilises.
+- `Tooltip`-clobbering-onClick footgun in the component itself (worked around for the folder-pick button).
+- Firefox/Safari users who cancel the picker wait up to 60s before the wizard resets.
+- Browser-fallback users still have to type the full Windows path themselves (browser security hides absolute paths from JS); Tauri MSI eliminates this.
+
 ## What's new in v0.2.0-alpha.7
 
 The folder picker silently dropped successful picks on large project folders. Alpha-7 fixes the race condition and adds visible progress so a slow scan no longer looks identical to a hang.
