@@ -2210,6 +2210,16 @@ def start(
                 f"Paste this URL into one yourself: [cyan]{url}[/cyan]"
             )
 
+    # alpha-3 — print the resolved Meridian-home + projects-dir up front so a
+    # config-resolution surprise (the alpha-2 elevated-cwd PermissionError
+    # class of bug) is visible at a glance instead of failing silently inside
+    # configure_logging during uvicorn's import of the app module.
+    from meridian.config import _meridian_home  # local import — avoid widening cli's top-level surface
+    console.print(
+        f"[dim]Meridian home: {_meridian_home()}[/dim]\n"
+        f"[dim]Projects dir: {settings.projects_dir}[/dim]"
+    )
+
     # Fast path: backend already up.
     if _probe(health_url) == 200:
         target = _pick_target_url()

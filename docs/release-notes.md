@@ -4,6 +4,49 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.3
+
+A targeted fix for the elevated-Admin-cwd bug that prevented alpha-2 from launching the GUI wizard. The PowerShell installer runs as Administrator, so the spawned Python backend inherited `C:\Windows\System32` as its working directory, which then tried to write logs and project DBs there → `PermissionError: [Errno 13]`. The class of bug was previously documented in deferred-installer-fixes notes but the lesson was not applied during alpha-2.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The fix (3 layers, defence-in-depth)
+
+- **`config.py` — defensive `_project_root()`.** New `_is_unsafe_cwd()` recognises Windows system paths (System32 / SysWOW64 / Program Files / ProgramData). New `_meridian_home()` resolves to `MERIDIAN_HOME` env var, OR `C:\Meridian` if it exists on Windows, OR `~/Meridian` cross-platform. When the running Python's cwd lands in an unsafe place AND no `pyproject.toml` is reachable from the package source path, `_project_root()` substitutes `_meridian_home()` instead of returning the unsafe cwd. The bug becomes silent-impossible at the source.
+- **`config.py` — multi-path `.env` discovery.** The bootstrap dotenv loader now searches `<project_root>/.env` then `<MERIDIAN_HOME>/.env`. The installer writes the Anthropic API key to `C:\Meridian\.env`; alpha-2 didn't load it because cwd was System32 (no `pyproject.toml` above it). alpha-3 picks it up regardless.
+- **Installer — explicit env vars + `-WorkingDirectory`.** `Start-Process` for the backend now passes `-WorkingDirectory $MERIDIAN_ROOT`, sets `$env:MERIDIAN_HOME` and `$env:MERIDIAN_PROJECTS_DIR` in the parent shell so the child inherits them. The bug becomes silent-impossible from the launch side too.
+
+### Debug-phase install visibility
+
+Per the deferred install-polish design note, the installer's debug-phase posture is "visibility over polish":
+
+- **Backend window is visible during install.** Replaces alpha-2's `-WindowStyle Hidden`. The user (debugging the install flow) can see import errors, port conflicts, etc. as they happen. A polished hidden launch lands once the install flow stabilises.
+- **`backend.log` tee.** Backend stdout+stderr are also redirected to `C:\Meridian\runtime\backend.log` via `cmd /c "<python> -m meridian.api.main >> backend.log 2>&1"`. Forensic trail survives even if the window closes.
+- **On `/health` poll timeout, the installer prints the last 30 lines of `backend.log` inline** before falling back to the legacy CLI wizard. No more "silent backend death".
+
+### CLI start banner
+
+`meridian start` now prints the resolved `Meridian home` and `Projects dir` up front — so a config-resolution surprise is visible at a glance instead of failing inside `configure_logging`.
+
+### Tests
+
+98 passing in 12.9s. Adds `tests/e2e/test_install_path_safety.py` covering:
+- `_is_unsafe_cwd` happy/sad path table
+- `_meridian_home` resolution order (env override / Windows canonical / cross-platform fallback)
+- `_project_root` substitutes when cwd is unsafe
+- `.env` discovered in MERIDIAN_HOME when project root has none
+- Smoke: importing `meridian.api.main` from an unsafe cwd does not raise
+
+The slow concurrency suite (`test_concurrency.py`) remains excluded from the release gate — same posture as alpha-2.
+
+### Carry-overs unchanged from alpha-2
+
+- Tauri `.msi` still requires Rust + MSVC + WiX (round 18).
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Next.js 15.1.6 CVE-2025-66478 — still pending the version bump.
+
 ## What's new in v0.2.0-alpha.2
 
 A UX-focused follow-up to alpha-1. The headline is that the setup experience is now a **GUI wizard in your browser** with **folder-pick** for documents — built for non-technical construction PMs. alpha-1 dropped users into a `cmd.exe` prompt asking for "a source document" and the SME had no idea what to do; alpha-2 fixes that.

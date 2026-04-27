@@ -24,44 +24,105 @@ def _resolve_app_version() -> str:
         return "0.0.0+source"
 
 
-def _project_root() -> Path:
-    """Repo root — the directory that contains pyproject.toml.
+def _is_unsafe_cwd(p: Path) -> bool:
+    """True if ``p`` looks like a Windows system directory we should never
+    treat as the project root.
 
-    Walks up from this file until pyproject.toml is found. Falls back to CWD.
+    Elevated-Admin shells default cwd to ``C:\\Windows\\System32``; an
+    installed-wheel run from there used to silently route project state to
+    ``C:\\Windows\\System32\\data\\projects\\...`` and PermissionError on
+    first write (alpha-1 SME bug + alpha-2 installer bug — see
+    ``project_v013_deferred.md``). Conservative match list — only the
+    canonical Windows infrastructure paths.
+    """
+    parts = [s.lower() for s in p.parts]
+    if "windows" in parts and (
+        "system32" in parts or "syswow64" in parts or "system" in parts
+    ):
+        return True
+    posix = p.as_posix().lower()
+    if "/program files" in posix or "/programdata" in posix:
+        return True
+    return False
+
+
+def _meridian_home() -> Path:
+    """Per-machine Meridian data root — projects, .env, runtime/, install.log.
+
+    Resolution order:
+        1. ``MERIDIAN_HOME`` env var (operator override).
+        2. ``C:\\Meridian`` on Windows when it exists (installer's canonical
+           layout — every PowerShell-installed box has this).
+        3. ``~/Meridian`` cross-platform fallback for dev / non-installer runs.
+    """
+    if env := os.environ.get("MERIDIAN_HOME"):
+        return Path(env)
+    if os.name == "nt":
+        canonical = Path("C:/Meridian")
+        if canonical.exists():
+            return canonical
+    return Path.home() / "Meridian"
+
+
+def _project_root() -> Path:
+    """Repo root for dev trees, Meridian home for installed wheels.
+
+    Walks up from this file until ``pyproject.toml`` is found (dev-tree
+    answer). Falls back to ``cwd()`` only when cwd is a sane working
+    directory; if cwd is a Windows system path (System32 / Program Files /
+    ProgramData) we substitute :func:`_meridian_home` instead. This is the
+    fix for the alpha-1/alpha-2 elevated-admin install bug where the backend
+    inherited ``C:\\Windows\\System32`` as cwd and tried to write logs and
+    project DBs there.
     """
     here = Path(__file__).resolve()
     for parent in [here, *here.parents]:
         if (parent / "pyproject.toml").exists():
             return parent
-    return Path.cwd()
+    cwd = Path.cwd()
+    if _is_unsafe_cwd(cwd):
+        return _meridian_home()
+    return cwd
 
 
 def _bootstrap_env_from_dotenv() -> None:
-    """Load `<repo>/.env` (KEY=value lines) into os.environ for SDKs to pick up.
+    """Load ``.env`` (KEY=value lines) into os.environ for SDKs to pick up.
 
-    `.env` WINS over any pre-existing os.environ value. This is the dev-friendly
-    convention (matches python-dotenv default) and avoids confusion when stale
-    Windows-level env vars mask a freshly-edited project `.env`.
+    ``.env`` WINS over any pre-existing os.environ value. This is the
+    dev-friendly convention (matches python-dotenv default) and avoids
+    confusion when stale Windows-level env vars mask a freshly-edited
+    project ``.env``.
 
-    Runs at module import so every code path that imports config sees the keys.
+    Search order (first hit wins):
+        1. ``<project_root>/.env`` (dev-tree convention).
+        2. ``<MERIDIAN_HOME>/.env`` (installed-wheel convention — installer
+           writes the API key here).
+
+    Runs at module import so every code path that imports config sees the
+    keys.
     """
-    env_path = _project_root() / ".env"
-    if not env_path.exists():
-        return
-    try:
-        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            # Skip placeholder values so they never override real env-supplied keys.
-            if not key or not value or value.startswith("PASTE-"):
-                continue
-            os.environ[key] = value
-    except OSError:
-        pass
+    candidates: list[Path] = [_project_root() / ".env"]
+    home_env = _meridian_home() / ".env"
+    if home_env not in candidates:
+        candidates.append(home_env)
+    for env_path in candidates:
+        if not env_path.exists():
+            continue
+        try:
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                # Skip placeholder values so they never override real env-supplied keys.
+                if not key or not value or value.startswith("PASTE-"):
+                    continue
+                os.environ[key] = value
+        except OSError:
+            pass
+        return  # first found wins
 
 
 _bootstrap_env_from_dotenv()

@@ -68,6 +68,7 @@ $MERIDIAN_LAUNCHER    = "$MERIDIAN_ROOT\Meridian-Console.ps1"
 $MERIDIAN_LOG         = "$MERIDIAN_ROOT\install.log"
 $MERIDIAN_RUNTIME_DIR = "$MERIDIAN_ROOT\runtime"
 $MERIDIAN_PID_FILE    = "$MERIDIAN_RUNTIME_DIR\backend.pid"
+$MERIDIAN_BACKEND_LOG = "$MERIDIAN_RUNTIME_DIR\backend.log"
 
 # Backend / GUI wizard endpoints. The post-install step starts uvicorn on
 # this port and opens the user's default browser to the wizard page.
@@ -768,28 +769,46 @@ function Start-BackendAndOpenBrowser {
     $envMap = Read-EnvFile -Path $MERIDIAN_ENV_FILE
     foreach ($k in $envMap.Keys) { Set-Item -Path "Env:$k" -Value $envMap[$k] }
 
+    # alpha-3 — explicitly tell the spawned Python where Meridian lives. The
+    # installer runs as Administrator, which means cwd defaults to System32;
+    # without these env vars, meridian.config._project_root() falls back to
+    # cwd and tries to write logs/projects under C:\Windows\System32 (the
+    # alpha-2 elevated-cwd PermissionError). Setting MERIDIAN_HOME +
+    # MERIDIAN_PROJECTS_DIR + -WorkingDirectory makes the bug impossible.
+    $env:MERIDIAN_HOME         = $MERIDIAN_ROOT
+    $env:MERIDIAN_PROJECTS_DIR = $MERIDIAN_PROJECTS
+
     # If something else already responds on /health, don't double-spawn.
     if (Test-BackendHealth -Url $MERIDIAN_HEALTH_URL -TimeoutMs 1000) {
         Say-Info "Backend already responding at $MERIDIAN_HEALTH_URL -- reusing it."
     } else {
-        # Ensure the runtime directory exists for the PID file.
+        # Ensure the runtime directory exists for the PID + log files.
         if (-not (Test-Path -LiteralPath $MERIDIAN_RUNTIME_DIR)) {
             New-Item -ItemType Directory -Path $MERIDIAN_RUNTIME_DIR -Force | Out-Null
         }
 
-        Say-Info "Launching the Meridian backend in the background (no console window)..."
+        # alpha-3 — backend runs in a visible cmd window during the debugging
+        # phase so a crash on import is visible to the operator. Output is
+        # ALSO tee'd to backend.log via cmd /c >> redirection so even if the
+        # window closes (unhandled exception), we have a forensic trail. Once
+        # the install flow is bedded down, swap -WindowStyle to Hidden.
+        # See project_install_polish_deferred.md (memory).
+        Say-Info "Launching the Meridian backend in a visible window (debug-phase)."
+        Say-Info "Backend output is also being tee'd to $MERIDIAN_BACKEND_LOG."
         try {
-            # Detached -- WindowStyle Hidden keeps it off the user's taskbar.
-            # PassThru gives us back the Process object so we can record the PID.
+            # Use cmd.exe as the actual spawn target so we can redirect both
+            # stdout and stderr to a log file in one shell-level command.
+            # Shape: cmd /c "<python> -m meridian.api.main >> <log> 2>&1"
+            $cmdLine = "`"$venvPython`" -m meridian.api.main 1>>`"$MERIDIAN_BACKEND_LOG`" 2>&1"
             $proc = Start-Process `
-                -FilePath $venvPython `
-                -ArgumentList @("-m", "meridian.api.main") `
-                -WindowStyle Hidden `
+                -FilePath "cmd.exe" `
+                -ArgumentList @("/c", $cmdLine) `
+                -WorkingDirectory $MERIDIAN_ROOT `
                 -PassThru `
                 -ErrorAction Stop
             try {
                 Set-Content -LiteralPath $MERIDIAN_PID_FILE -Value $proc.Id -Encoding ASCII
-                Say-OK "Backend started (PID $($proc.Id)). Recorded to $MERIDIAN_PID_FILE."
+                Say-OK "Backend started (PID $($proc.Id) — cmd wrapper). Recorded to $MERIDIAN_PID_FILE."
             } catch {
                 Say-Warn "Backend started (PID $($proc.Id)) but could not write the PID file: $($_.Exception.Message)"
             }
@@ -814,6 +833,22 @@ function Start-BackendAndOpenBrowser {
 
         if (-not $healthy) {
             Say-Warn "Backend did not come up in 60 seconds. Falling back to terminal setup."
+            # alpha-3 — show the last 30 lines of backend.log inline so the
+            # operator doesn't have to hunt for the failure cause.
+            if (Test-Path -LiteralPath $MERIDIAN_BACKEND_LOG) {
+                Write-Host ""
+                Write-Host " Last 30 lines of $MERIDIAN_BACKEND_LOG :" -ForegroundColor Yellow
+                Write-Host " -----------------------------------------" -ForegroundColor Gray
+                try {
+                    Get-Content -LiteralPath $MERIDIAN_BACKEND_LOG -Tail 30 -ErrorAction Stop | ForEach-Object {
+                        Write-Host "   $_" -ForegroundColor Gray
+                    }
+                } catch {
+                    Write-Host "   (could not read backend.log: $($_.Exception.Message))" -ForegroundColor Red
+                }
+                Write-Host " -----------------------------------------" -ForegroundColor Gray
+                Write-Host ""
+            }
             Run-CliInitFallback -MeridianExe $meridianExe -Reason "Backend health probe at $MERIDIAN_HEALTH_URL never returned 200 within 60s."
             return
         }
