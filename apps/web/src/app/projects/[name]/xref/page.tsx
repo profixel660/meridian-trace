@@ -1,36 +1,58 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
-import { meridianApi, type ProjectCoverage } from "@/lib/api";
+import { type ProjectCoverage } from "@/lib/api";
 import {
   xrefApi,
   type XrefReportResponse,
 } from "@/lib/apiClient/xref";
+import { apiFetch } from "@/lib/fetcher";
 
 import { XrefPanel } from "./XrefPanel";
 
-export const dynamic = "force-dynamic";
-
-export default async function XrefPage({
+export default function XrefPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let report: XrefReportResponse | null = null;
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [report, setReport] = useState<XrefReportResponse | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [report, coverage] = await Promise.all([
-      xrefApi.report(name),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [rep, cov] = await Promise.all([
+          xrefApi.report(name),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setReport(rep);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -75,6 +97,8 @@ export default async function XrefPage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
+        ) : loading && report === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
         ) : (
           <XrefPanel projectName={name} report={report} />
         )}

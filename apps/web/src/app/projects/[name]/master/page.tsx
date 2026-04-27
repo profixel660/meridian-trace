@@ -1,35 +1,58 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import {
-  meridianApi,
   type MasterRow,
   type ProjectCoverage,
 } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
 import { MasterTable } from "./MasterTable";
 
-export const dynamic = "force-dynamic";
-
-export default async function MasterPage({
+export default function MasterPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let rows: MasterRow[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [rows, setRows] = useState<MasterRow[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [rows, coverage] = await Promise.all([
-      meridianApi.projectMaster(name),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [list, cov] = await Promise.all([
+          apiFetch<MasterRow[]>(
+            `/projects/${encodeURIComponent(name)}/master`,
+          ),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setRows(list);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -60,6 +83,8 @@ export default async function MasterPage({
     >
       {listError ? (
         <ApiErrorPanel error={listError} />
+      ) : loading || rows === null ? (
+        <div className="text-text-muted text-sm">Loading…</div>
       ) : rows.length === 0 ? (
         <EmptyState
           title="Master register is empty"

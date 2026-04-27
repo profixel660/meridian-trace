@@ -1,37 +1,58 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
 import {
-  meridianApi,
   type AuditItem,
   type ProjectCoverage,
 } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
 import { AuditQueue } from "./AuditQueue";
 
-export const dynamic = "force-dynamic";
-
-export default async function AuditPage({
+export default function AuditPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let items: AuditItem[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [items, setItems] = useState<AuditItem[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [items, coverage] = await Promise.all([
-      meridianApi.projectAudit(name),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const auditPath = `/projects/${encodeURIComponent(name)}/audit`;
+        const coveragePath = `/projects/${encodeURIComponent(name)}/coverage`;
+        const [list, cov] = await Promise.all([
+          apiFetch<AuditItem[]>(auditPath),
+          apiFetch<ProjectCoverage>(coveragePath).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setItems(list);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -70,6 +91,8 @@ export default async function AuditPage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
+        ) : loading || items === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
         ) : items.length === 0 ? (
           <EmptyState
             title="No audit rows"

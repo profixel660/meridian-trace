@@ -1,36 +1,58 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
-import { meridianApi, type ProjectCoverage } from "@/lib/api";
+import { type ProjectCoverage } from "@/lib/api";
 import {
   evidenceApi,
   type EvidencePackListItem,
 } from "@/lib/apiClient/evidence";
+import { apiFetch } from "@/lib/fetcher";
 
 import { EvidencePanel } from "./EvidencePanel";
 
-export const dynamic = "force-dynamic";
-
-export default async function EvidencePage({
+export default function EvidencePage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let packs: EvidencePackListItem[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [packs, setPacks] = useState<EvidencePackListItem[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [packs, coverage] = await Promise.all([
-      evidenceApi.list(name),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [list, cov] = await Promise.all([
+          evidenceApi.list(name),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setPacks(list);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -81,6 +103,8 @@ export default async function EvidencePage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
+        ) : loading || packs === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
         ) : (
           <EvidencePanel projectName={name} packs={packs} />
         )}

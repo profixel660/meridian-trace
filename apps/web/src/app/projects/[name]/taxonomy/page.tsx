@@ -1,58 +1,86 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
 import {
-  meridianApi,
+  type MasterRow,
   type ProjectCoverage,
   type TaxonomyProposal,
 } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
 import { TaxonomyQueue } from "./TaxonomyQueue";
 
-export const dynamic = "force-dynamic";
-
-export default async function TaxonomyPage({
+export default function TaxonomyPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let proposals: TaxonomyProposal[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
-  let canonicalByTable: Record<string, string[]> = {
+  const [proposals, setProposals] = useState<TaxonomyProposal[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [canonicalByTable, setCanonicalByTable] = useState<
+    Record<string, string[]>
+  >({
     trade: [],
     service: [],
     category: [],
-  };
+  });
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [proposals, coverage] = await Promise.all([
-      meridianApi.projectTaxonomyPending(name),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-    // Master register is the easiest place to harvest the canonical values
-    // a reviewer can merge into. We just take the distinct non-null values.
-    const master = await meridianApi.projectMaster(name).catch(() => []);
-    const set = (axis: "trade" | "service" | "category") => {
-      const values = new Set<string>();
-      for (const r of master) {
-        const v = r[axis];
-        if (v) values.add(v);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [props, cov] = await Promise.all([
+          apiFetch<TaxonomyProposal[]>(
+            `/projects/${encodeURIComponent(name)}/taxonomy/pending`,
+          ),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        // Master register is the easiest place to harvest the canonical values
+        // a reviewer can merge into. We just take the distinct non-null values.
+        const master = await apiFetch<MasterRow[]>(
+          `/projects/${encodeURIComponent(name)}/master`,
+        ).catch(() => [] as MasterRow[]);
+        const set = (axis: "trade" | "service" | "category") => {
+          const values = new Set<string>();
+          for (const r of master) {
+            const v = r[axis];
+            if (v) values.add(v);
+          }
+          return Array.from(values).sort();
+        };
+        if (!cancelled) {
+          setProposals(props);
+          setCoverage(cov);
+          setCanonicalByTable({
+            trade: set("trade"),
+            service: set("service"),
+            category: set("category"),
+          });
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      return Array.from(values).sort();
+    })();
+    return () => {
+      cancelled = true;
     };
-    canonicalByTable = {
-      trade: set("trade"),
-      service: set("service"),
-      category: set("category"),
-    };
-  } catch (err) {
-    listError = err;
-  }
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -99,6 +127,8 @@ export default async function TaxonomyPage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
+        ) : loading || proposals === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
         ) : proposals.length === 0 ? (
           <EmptyState
             title="No pending taxonomy proposals"

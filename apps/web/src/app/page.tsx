@@ -1,22 +1,36 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { StatusCard } from "@/components/StatusCard";
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
-import { meridianApi, type ProjectListItem } from "@/lib/api";
+import { type ProjectListItem, type ProjectStatus } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
 const FALLBACK_PROJECT = "syd2-shell-cd";
 
-// Always render fresh — counts move as the backend processes documents.
-export const dynamic = "force-dynamic";
+export default function ProjectsPage() {
+  const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [loading, setLoading] = useState(true);
 
-export default async function ProjectsPage() {
-  let projects: ProjectListItem[] | null = null;
-  let listError: unknown = null;
-  try {
-    projects = await meridianApi.projects();
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await apiFetch<ProjectListItem[]>("/projects");
+        if (!cancelled) setProjects(result);
+      } catch (e) {
+        if (!cancelled) setListError(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -30,7 +44,9 @@ export default async function ProjectsPage() {
         </p>
       </div>
 
-      {listError ? (
+      {loading ? (
+        <div className="text-text-muted text-sm">Loading…</div>
+      ) : listError ? (
         <ApiErrorPanel error={listError} />
       ) : projects && projects.length > 0 ? (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -99,20 +115,45 @@ function Stat({
   );
 }
 
-async function FallbackProjectCard() {
+function FallbackProjectCard() {
   // No projects from the list endpoint — fall back to the smoke-test slug
   // so the original scaffold experience still works for first-time users.
+  const [status, setStatus] = useState<ProjectStatus | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await apiFetch<ProjectStatus>(
+          `/projects/${encodeURIComponent(FALLBACK_PROJECT)}/status`,
+        );
+        if (!cancelled) setStatus(result);
+      } catch (e) {
+        if (!cancelled) setErr(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   let body: React.ReactNode;
-  try {
-    const status = await meridianApi.projectStatus(FALLBACK_PROJECT);
+  if (loading) {
+    body = <div className="text-text-muted text-sm">Loading…</div>;
+  } else if (err) {
+    body = <ApiErrorPanel error={err} />;
+  } else if (status) {
     body = (
       <Link href={`/projects/${encodeURIComponent(FALLBACK_PROJECT)}`}>
         <StatusCard projectName={FALLBACK_PROJECT} status={status} />
       </Link>
     );
-  } catch (err) {
-    body = <ApiErrorPanel error={err} />;
   }
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-text-muted">

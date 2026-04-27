@@ -88,7 +88,7 @@ This file records the resolution of each deferred-decision item from `data/proje
 
 **Action for you:** install the Rust toolchain on your dev machine when you're ready to start building installers. Then we scaffold the Tauri config + the static refactor in one round.
 
-**Status:** no code change today. This is a future round.
+**Status:** scaffold landed in round 16 (file generation only — no Rust/MSVC install yet). `src-tauri/` directory ready; Next.js shell now configured for static export (`output: "export"`); `tauri:dev` / `tauri:build` scripts wired into `apps/web/package.json`. Round 17 will land the `/setup` wizard pages; round 18 installs Rust + MSVC and produces the first `.msi`. See `data/projects/OVERNIGHT_REPORT.md` round-16 section for detail.
 
 ---
 
@@ -152,6 +152,7 @@ These surfaced during the walkthrough and deserve their own backlog entries:
 - **Tauri scaffold + Next.js static-export refactor** — large. Becomes the path to a real installer once you're ready (see §3.7).
 - **POST /projects auth tightening for v2** — left open in §3.2 for first-run bootstrap; revisit when there's a "team edition" or hosted multi-tenant model.
 - **YubiKey migration plan** — stub it when you cross 10 paying customers.
+- **Round-16 Tauri scaffold** — `src-tauri/` directory exists; `cargo build` will fail today because Rust isn't installed and the icon set is intentionally absent (see `src-tauri/icons/README.md`). Round 18 installs the Rust toolchain + MSVC Build Tools 2022 + WiX Toolset and produces the first signed-or-unsigned `.msi`. Sidecar spawn of the bundled FastAPI backend lands round 17 alongside the wizard pages.
 - **v0.1.3 — installer auth for private repos.** v0.1.2's installer hits HTTP 404 when calling `https://api.github.com/repos/profixel660/meridian-trace/releases/latest` because the repo is private and the installer is anonymous (carries no GitHub credentials, even though the SME-as-a-human IS a collaborator). Confirmed via `curl` against both `/releases/latest` and the repo root — both return 404 to anonymous callers. **Recommended fix (Path A, ~30 min subagent work):** installer prompts the SME for a fine-scoped PAT (Contents: Read + Metadata: Read on `meridian-trace` only, 90-day expiry), validates it via a test API call, stores it in Windows Credential Manager (same backend as the §3.1 TOTP secret), uses it as `Authorization: Bearer <PAT>` on every GitHub API call. README needs a screenshotted walkthrough of how to generate the PAT. **Interim workarounds for SME testing this week:** (a) flip repo to Public temporarily for the test window (10s setting change; `releases/latest` becomes anonymously fetchable); (b) Peter generates a PAT on his own account and shares it with the SME alongside the Anthropic key (less hygienic — ties her install to Peter's credentials). Looping back to v0.1.3 once the SME's first-pass test is unblocked.
 
 ---
@@ -166,11 +167,11 @@ These surfaced during the walkthrough and deserve their own backlog entries:
 | 3.4 | Unsigned then standard cert | — | Buy cert when commercial |
 | 3.5 | GitHub Releases (profixel660/meridian-trace) | Yes | — |
 | 3.6 | Email-via-serverless | — | Set up endpoint + swap constant |
-| 3.7 | Tauri + D-static | — | Future round (Rust toolchain) |
+| 3.7 | Tauri + D-static | Scaffold (round 16) | Round 18 — Rust + MSVC install |
 | 3.8 | Password manager + USB | — | Generate keypair + embed pubkey |
 | 3.9 | Web build | Yes | — |
 | 3.10 | Confirm canonical (this project); auto-assess (future) | Both shipped | — |
 
-Net of session: **6 of 10 decisions implemented end-to-end** (§3.1 keychain, §3.2 POST-only auth + login UI, §3.5 update URL swapped, §3.9 web build verified, §3.10-both-halves: confirm + round-15 auto-assessment); 3 deferred awaiting external action (§3.4 cert purchase, §3.6 endpoint setup, §3.8 keypair generation); 1 already shipped before walkthrough (§3.3); 1 future round (§3.7 Tauri scaffold).
+Net of session: **6 of 10 decisions implemented end-to-end** (§3.1 keychain, §3.2 POST-only auth + login UI, §3.5 update URL swapped, §3.9 web build verified, §3.10-both-halves: confirm + round-15 auto-assessment); 3 deferred awaiting external action (§3.4 cert purchase, §3.6 endpoint setup, §3.8 keypair generation); 1 already shipped before walkthrough (§3.3); 1 partially complete (§3.7 scaffold landed round 16; Rust install + .msi build awaits round 18).
 
 **Round 15 also delivered** (driven by §3.10): 7 new e2e tests, schema v6, bootstrap prompt v1.1, full surface update across CLI / API / Next.js TaxonomyQueue.

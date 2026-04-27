@@ -1,22 +1,23 @@
+"use client";
+
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+
 import { LoginForm } from "./LoginForm";
 
-export const dynamic = "force-dynamic";
-
 /**
- * Login page (server-component shell). Reads the optional `?from=...`
- * query so that on a successful login the form can hand the user back
- * to the page they tried to open before being bounced.
+ * Login page. Reads the optional `?from=...` query so that on a successful
+ * login the form can hand the user back to the page they tried to open
+ * before being bounced.
  *
  * The page itself is unauthenticated — `meridianRequest` allows-lists
  * anything under `/auth/...` and the global 401-redirect interceptor
  * skips this path so a stale token doesn't trap the user in a loop.
+ *
+ * `useSearchParams` must live inside a Suspense boundary so the static
+ * export still prerenders this route (Next.js bails out otherwise).
  */
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ from?: string }>;
-}) {
-  const { from } = await searchParams;
+export default function LoginPage() {
   return (
     <div className="mx-auto max-w-md space-y-6">
       <header className="space-y-2">
@@ -33,7 +34,15 @@ export default async function LoginPage({
           ones you saved at enrolment.
         </p>
       </header>
-      <LoginForm fromPath={from ?? null} />
+      <Suspense fallback={<LoginForm fromPath={null} />}>
+        <LoginFormWithFrom />
+      </Suspense>
     </div>
   );
+}
+
+function LoginFormWithFrom() {
+  const params = useSearchParams();
+  const from = params?.get("from") ?? null;
+  return <LoginForm fromPath={from} />;
 }

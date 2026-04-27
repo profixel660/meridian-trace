@@ -1,37 +1,60 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
 import {
-  meridianApi,
   type ProjectCoverage,
   type QuestionItem,
 } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
 import { QuestionsQueue } from "./QuestionsQueue";
 
-export const dynamic = "force-dynamic";
-
-export default async function QuestionsPage({
+export default function QuestionsPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let items: QuestionItem[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [items, setItems] = useState<QuestionItem[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [items, coverage] = await Promise.all([
-      meridianApi.projectQuestions(name, "pending"),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [list, cov] = await Promise.all([
+          apiFetch<QuestionItem[]>(
+            `/projects/${encodeURIComponent(name)}/questions?status=pending`,
+          ),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setItems(list);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -69,6 +92,8 @@ export default async function QuestionsPage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
+        ) : loading || items === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
         ) : items.length === 0 ? (
           <EmptyState
             title="No open questions"

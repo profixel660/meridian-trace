@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability set for the main Meridian window. Round 17 will narrow this — in particular, fs: scope should be restricted to the per-project directory once the project-state path resolver lands.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "shell:allow-open",
+    "fs:default"
+  ]
+}

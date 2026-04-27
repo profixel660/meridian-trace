@@ -1,14 +1,16 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { StatusBadge } from "@/components/review/StatusBadge";
 import {
-  meridianApi,
   type ProjectCoverage,
   type SourceItem,
 } from "@/lib/api";
-
-export const dynamic = "force-dynamic";
+import { apiFetch } from "@/lib/fetcher";
 
 function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -16,25 +18,46 @@ function bytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default async function SourcesPage({
+export default function SourcesPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let items: SourceItem[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [items, setItems] = useState<SourceItem[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [items, coverage] = await Promise.all([
-      meridianApi.projectSources(name),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [list, cov] = await Promise.all([
+          apiFetch<SourceItem[]>(
+            `/projects/${encodeURIComponent(name)}/sources`,
+          ),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setItems(list);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -55,6 +78,8 @@ export default async function SourcesPage({
     >
       {listError ? (
         <ApiErrorPanel error={listError} />
+      ) : loading || items === null ? (
+        <div className="text-text-muted text-sm">Loading…</div>
       ) : items.length === 0 ? (
         <EmptyState
           title="No sources imported"

@@ -1,37 +1,60 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
 import {
-  meridianApi,
   type ConflictItem,
   type ProjectCoverage,
 } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
 import { ConflictsQueue } from "./ConflictsQueue";
 
-export const dynamic = "force-dynamic";
-
-export default async function ConflictsPage({
+export default function ConflictsPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let items: ConflictItem[] = [];
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [items, setItems] = useState<ConflictItem[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [items, coverage] = await Promise.all([
-      meridianApi.projectConflicts(name, "pending"),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [list, cov] = await Promise.all([
+          apiFetch<ConflictItem[]>(
+            `/projects/${encodeURIComponent(name)}/conflicts?status=pending`,
+          ),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setItems(list);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -71,6 +94,8 @@ export default async function ConflictsPage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
+        ) : loading || items === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
         ) : items.length === 0 ? (
           <EmptyState
             title="No open conflicts"

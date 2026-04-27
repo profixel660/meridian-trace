@@ -1,30 +1,46 @@
+"use client";
+
 import Link from "next/link";
+import { use, useEffect, useState } from "react";
 
 import { AuthGate } from "@/components/AuthGate";
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { StatusBadge } from "@/components/review/StatusBadge";
 import { Tooltip, TooltipMore } from "@/components/review/Tooltip";
-import {
-  meridianApi,
-  type ProjectCoverage,
-} from "@/lib/api";
+import { type ProjectCoverage } from "@/lib/api";
+import { apiFetch } from "@/lib/fetcher";
 
-export const dynamic = "force-dynamic";
-
-export default async function ProjectDashboardPage({
+export default function ProjectDashboardPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
-  let coverage: ProjectCoverage | null = null;
-  let coverageError: unknown = null;
-  try {
-    coverage = await meridianApi.projectCoverage(name);
-  } catch (err) {
-    coverageError = err;
-  }
+  const { name } = use(params);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [coverageError, setCoverageError] = useState<unknown>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setCoverageError(null);
+    (async () => {
+      try {
+        const result = await apiFetch<ProjectCoverage>(
+          `/projects/${encodeURIComponent(name)}/coverage`,
+        );
+        if (!cancelled) setCoverage(result);
+      } catch (err) {
+        if (!cancelled) setCoverageError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -43,14 +59,14 @@ export default async function ProjectDashboardPage({
       subtitle="Project dashboard — coverage at a glance, plus quick access to every review queue."
       counts={counts}
     >
-      {/* Browser-side guard: bounce to /login if no live token. SSR
-          pass renders nothing here; the meaningful bounce happens
-          client-side once localStorage is reachable. */}
+      {/* Browser-side guard: bounce to /login if no live token. */}
       <AuthGate />
       {coverageError ? (
         <ApiErrorPanel error={coverageError} />
       ) : coverage ? (
         <DashboardBody projectName={name} coverage={coverage} />
+      ) : loading ? (
+        <div className="text-text-muted text-sm">Loading…</div>
       ) : null}
     </ReviewLayout>
   );
@@ -339,8 +355,6 @@ function ToolCard({
   description: string;
   glossaryAnchor: string;
 }) {
-  // Tooltip kept outside the <Link> so clicking "What is this?" doesn't
-  // also trigger card navigation.
   return (
     <div className="group relative rounded-lg border border-border bg-surface-elevated p-5 transition hover:border-accent/60">
       <div className="flex items-baseline justify-between gap-3">

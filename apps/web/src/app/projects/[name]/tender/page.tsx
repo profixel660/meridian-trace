@@ -1,40 +1,65 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { ToastHostProvider } from "@/components/review/ToastHost";
-import { meridianApi, type ProjectCoverage } from "@/lib/api";
+import { type ProjectCoverage } from "@/lib/api";
 import {
   tenderApi,
   type TradeListResponse,
   type TenderOutputDirResponse,
 } from "@/lib/apiClient/tender";
+import { apiFetch } from "@/lib/fetcher";
 
 import { TenderBuilder } from "./TenderBuilder";
 
-export const dynamic = "force-dynamic";
-
-export default async function TenderPage({
+export default function TenderPage({
   params,
 }: {
   params: Promise<{ name: string }>;
 }) {
-  const { name } = await params;
+  const { name } = use(params);
 
-  let trades: TradeListResponse | null = null;
-  let outputDir: TenderOutputDirResponse | null = null;
-  let listError: unknown = null;
-  let coverage: ProjectCoverage | null = null;
+  const [trades, setTrades] = useState<TradeListResponse | null>(null);
+  const [outputDir, setOutputDir] = useState<TenderOutputDirResponse | null>(
+    null,
+  );
+  const [listError, setListError] = useState<unknown>(null);
+  const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  try {
-    [trades, outputDir, coverage] = await Promise.all([
-      tenderApi.trades(name),
-      tenderApi.outputDir(name).catch(() => null),
-      meridianApi.projectCoverage(name).catch(() => null),
-    ]);
-  } catch (err) {
-    listError = err;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setListError(null);
+    (async () => {
+      try {
+        const [tradeList, outDir, cov] = await Promise.all([
+          tenderApi.trades(name),
+          tenderApi.outputDir(name).catch(() => null),
+          apiFetch<ProjectCoverage>(
+            `/projects/${encodeURIComponent(name)}/coverage`,
+          ).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setTrades(tradeList);
+          setOutputDir(outDir);
+          setCoverage(cov);
+        }
+      } catch (err) {
+        if (!cancelled) setListError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   const counts = coverage
     ? {
@@ -80,7 +105,9 @@ export default async function TenderPage({
 
         {listError ? (
           <ApiErrorPanel error={listError} />
-        ) : !trades || trades.trades.length === 0 ? (
+        ) : loading || trades === null ? (
+          <div className="text-text-muted text-sm">Loading…</div>
+        ) : trades.trades.length === 0 ? (
           <EmptyState
             title="No accepted deliverables yet"
             body={
