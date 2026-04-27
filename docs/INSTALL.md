@@ -19,7 +19,7 @@ desktop shortcut. It takes 5–15 minutes mostly waiting on downloads.
    API key (paste it — input is hidden).
 5. **The installer ends by starting the Meridian backend in the background
    and opening your default browser at the GUI setup wizard**
-   (`http://localhost:8000/setup/welcome`). The wizard walks you through
+   (`http://localhost:8000/setup/`). The wizard walks you through
    creating your first project and importing your first documents — point
    it at a folder of PDFs / Word docs / drawings and it picks them up.
 
@@ -27,7 +27,7 @@ desktop shortcut. It takes 5–15 minutes mostly waiting on downloads.
    yourself:
 
    ```
-   http://localhost:8000/setup/welcome
+   http://localhost:8000/setup/
    ```
 
    If the backend fails to start (rare — usually a port-8000 conflict), the
@@ -218,7 +218,7 @@ The built wheel has the GUI wizard's static assets baked in, so a
 plain `pip install meridian-X.Y.Z-py3-none-any.whl` is enough — no
 separate `npm` step on the install side. The FastAPI backend resolves
 `<package>/_web` at runtime to serve the wizard at
-`http://localhost:8000/setup/welcome`.
+`http://localhost:8000/setup/`.
 
 If you forget step 1 and run `uv build` against a fresh checkout, hatch
 will fail with `Forced include not found: apps/web/out`. Run `npm run

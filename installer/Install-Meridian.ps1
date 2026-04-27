@@ -69,12 +69,13 @@ $MERIDIAN_LOG         = "$MERIDIAN_ROOT\install.log"
 $MERIDIAN_RUNTIME_DIR = "$MERIDIAN_ROOT\runtime"
 $MERIDIAN_PID_FILE    = "$MERIDIAN_RUNTIME_DIR\backend.pid"
 $MERIDIAN_BACKEND_LOG = "$MERIDIAN_RUNTIME_DIR\backend.log"
+$MERIDIAN_LAUNCH_CMD  = "$MERIDIAN_RUNTIME_DIR\launch_backend.cmd"
 
 # Backend / GUI wizard endpoints. The post-install step starts uvicorn on
 # this port and opens the user's default browser to the wizard page.
 $MERIDIAN_BACKEND_PORT  = 8000
 $MERIDIAN_HEALTH_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/health"
-$MERIDIAN_WIZARD_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/setup/welcome"
+$MERIDIAN_WIZARD_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/setup/"
 
 $GITHUB_OWNER         = "profixel660"
 $GITHUB_REPO          = "meridian-trace"
@@ -87,6 +88,17 @@ $DOCS_URL             = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/tree/main
 # Log writes are best-effort: until C:\Meridian exists, we buffer.
 # -----------------------------------------------------------------------------
 $script:LogBuffer = New-Object System.Collections.Generic.List[string]
+
+# Capture parent process id once so the locked-venv probe can exclude the
+# powershell that launched us (otherwise re-running the installer from inside
+# an elevated shell could try to Stop-Process its own caller).
+$script:ParentPid = $null
+try {
+    $script:ParentPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop).ParentProcessId
+} catch {
+    # Best-effort; falling back to $null is fine -- we only use this as an
+    # exclusion filter, not as a guarantee.
+}
 
 function Write-Log {
     param(
@@ -402,6 +414,57 @@ function Ensure-InstallDirs {
 # -----------------------------------------------------------------------------
 # 7. Venv creation
 # -----------------------------------------------------------------------------
+function Stop-LockingPythonProcesses {
+    param([string]$VenvPath)
+    # Find python/pythonw processes whose main module path is under the venv.
+    # alpha-2 tripped on this: a leftover backend held mask.cp312-win_amd64.pyd
+    # open and Remove-Item failed with "Access denied". Accessing
+    # MainModule.FileName on a process you don't own raises -- swallow that.
+    Say-Info "Checking for stray Meridian backend processes that may be holding $VenvPath open..."
+    $candidates = Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProcessName -in @('python', 'pythonw') }
+    $lockers = @()
+    foreach ($candidate in $candidates) {
+        if ($candidate.Id -eq $PID) { continue }
+        if ($candidate.Id -eq $script:ParentPid) { continue }
+        $modulePath = $null
+        try {
+            $modulePath = $candidate.MainModule.FileName
+        } catch {
+            # Either we don't have rights to inspect the process or it exited.
+            continue
+        }
+        if ($modulePath -and $modulePath.StartsWith($VenvPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $lockers += $candidate
+        }
+    }
+    if (-not $lockers -or $lockers.Count -eq 0) {
+        Say-OK "No stray python processes found under $VenvPath."
+        return
+    }
+    foreach ($lockingProc in $lockers) {
+        Say-Warn "Found python process PID $($lockingProc.Id) running from $($lockingProc.MainModule.FileName) -- stopping it."
+        try {
+            Stop-Process -Id $lockingProc.Id -Force -ErrorAction Stop
+        } catch {
+            Say-Warn "Stop-Process failed for PID $($lockingProc.Id): $($_.Exception.Message)"
+        }
+    }
+    Start-Sleep -Seconds 2
+    # Re-probe.
+    $stillAlive = @()
+    foreach ($lockingProc in $lockers) {
+        $still = Get-Process -Id $lockingProc.Id -ErrorAction SilentlyContinue
+        if ($still) { $stillAlive += $still }
+    }
+    if ($stillAlive.Count -gt 0) {
+        $ids = ($stillAlive | ForEach-Object { $_.Id }) -join ', '
+        Stop-WithError -Message "A Meridian backend appears to be running and we couldn't stop it (PIDs: $ids)." -ExitCode 8 `
+            -NextStep "Reboot Windows and re-run the installer. (A non-admin shell cannot kill an admin-spawned python process.)"
+    }
+    Say-OK "Stray python processes stopped."
+}
+
 function Ensure-Venv {
     Say-Step "Creating Python virtual environment at $MERIDIAN_VENV..."
     Say-Why  "A virtual environment keeps Meridian's libraries isolated so they cannot break other Python tools on your machine."
@@ -410,6 +473,7 @@ function Ensure-Venv {
         Write-Host "   A virtual environment already exists at $MERIDIAN_VENV." -ForegroundColor Yellow
         $answer = Read-Host "   Recreate it from scratch? Type 'yes' to recreate, anything else to keep it"
         if ($answer -eq "yes") {
+            Stop-LockingPythonProcesses -VenvPath $MERIDIAN_VENV
             Say-Info "Removing old virtual environment..."
             try {
                 Remove-Item -LiteralPath $MERIDIAN_VENV -Recurse -Force -ErrorAction Stop
@@ -787,28 +851,37 @@ function Start-BackendAndOpenBrowser {
             New-Item -ItemType Directory -Path $MERIDIAN_RUNTIME_DIR -Force | Out-Null
         }
 
-        # alpha-3 -- backend runs in a visible cmd window during the debugging
+        # alpha-4 -- backend runs in a visible cmd window during the debugging
         # phase so a crash on import is visible to the operator. Output is
-        # ALSO tee'd to backend.log via cmd /c >> redirection so even if the
-        # window closes (unhandled exception), we have a forensic trail. Once
-        # the install flow is bedded down, swap -WindowStyle to Hidden.
-        # See project_install_polish_deferred.md (memory).
+        # ALSO tee'd to backend.log via redirection so even if the window
+        # closes (unhandled exception), we have a forensic trail. Once the
+        # install flow is bedded down, swap -WindowStyle to Hidden.
+        #
+        # alpha-3 used `Start-Process cmd.exe /c "<python> ... >>log 2>&1"`,
+        # but cmd.exe's /c quote-stripping rule mangled the redirection: the
+        # PID was recorded but Python never actually ran and backend.log was
+        # never created (silent total failure). Fix: write a small .cmd
+        # helper at install time and Start-Process the .cmd directly --
+        # cmd.exe is happy executing a .cmd file with redirects, no
+        # quote-parsing pathology.
         Say-Info "Launching the Meridian backend in a visible window (debug-phase)."
         Say-Info "Backend output is also being tee'd to $MERIDIAN_BACKEND_LOG."
         try {
-            # Use cmd.exe as the actual spawn target so we can redirect both
-            # stdout and stderr to a log file in one shell-level command.
-            # Shape: cmd /c "<python> -m meridian.api.main >> <log> 2>&1"
-            $cmdLine = "`"$venvPython`" -m meridian.api.main 1>>`"$MERIDIAN_BACKEND_LOG`" 2>&1"
+            $launchCmdLines = @(
+                "@echo off",
+                "`"$venvPython`" -m meridian.api.main 1>>`"$MERIDIAN_BACKEND_LOG`" 2>&1"
+            )
+            Set-Content -LiteralPath $MERIDIAN_LAUNCH_CMD -Value $launchCmdLines -Encoding ASCII
+            Say-Info "Wrote launcher helper: $MERIDIAN_LAUNCH_CMD"
+
             $proc = Start-Process `
-                -FilePath "cmd.exe" `
-                -ArgumentList @("/c", $cmdLine) `
+                -FilePath $MERIDIAN_LAUNCH_CMD `
                 -WorkingDirectory $MERIDIAN_ROOT `
                 -PassThru `
                 -ErrorAction Stop
             try {
                 Set-Content -LiteralPath $MERIDIAN_PID_FILE -Value $proc.Id -Encoding ASCII
-                Say-OK "Backend started (PID $($proc.Id) -- cmd wrapper). Recorded to $MERIDIAN_PID_FILE."
+                Say-OK "Backend started (PID $($proc.Id) -- via launch_backend.cmd). Recorded to $MERIDIAN_PID_FILE."
             } catch {
                 Say-Warn "Backend started (PID $($proc.Id)) but could not write the PID file: $($_.Exception.Message)"
             }

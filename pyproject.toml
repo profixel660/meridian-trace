@@ -1,6 +1,6 @@
 [project]
 name = "meridian"
-version = "0.2.0a3"
+version = "0.2.0a4"
 description = "Meridian — per-trade deliverables register from heterogeneous construction project documents."
 readme = "CONTEXT.md"
 requires-python = ">=3.12"
@@ -88,3 +88,7 @@ ignore = ["E501"]  # line length handled by formatter
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m 'not slow'"
+markers = [
+    "slow: marks tests as slow (deselected by default; run with `-m slow`). Used by tests/release/test_release_gauntlet.py which builds a wheel + spins up a backend (~60s).",
+]

@@ -32,7 +32,7 @@ PowerShell.
      read your documents with Claude. Keep it private; do not share it.)
    - Put a **Meridian** icon on your Desktop.
    - Start the Meridian backend in the background and **open your default
-     browser at the GUI setup wizard** (`http://localhost:8000/setup/welcome`).
+     browser at the GUI setup wizard** (`http://localhost:8000/setup/`).
 
    Total time: 5 to 15 minutes. Most of that is waiting for files to
    download. If the screen looks frozen for a minute, that is normal --
@@ -60,7 +60,7 @@ The wizard walks you through:
   to deliver. This is the "wow" moment.
 
 If a browser doesn't pop up within 10 seconds, copy this URL into one
-yourself: <http://localhost:8000/setup/welcome>.
+yourself: <http://localhost:8000/setup/>.
 
 If the backend fails to start (rare -- usually a port-8000 conflict), the
 installer prints "couldn't start the backend, falling back to terminal

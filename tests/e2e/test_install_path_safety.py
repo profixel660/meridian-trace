@@ -154,6 +154,55 @@ def test_project_root_returns_repo_when_pyproject_reachable() -> None:
     )
 
 
+def test_project_root_substitutes_meridian_home_when_no_pyproject_reachable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Alpha-4 regression: from an installed wheel ``_project_root`` must
+    return ``_meridian_home()`` regardless of where ``cwd`` happens to be.
+
+    Alpha-3 only substituted ``_meridian_home`` when ``cwd`` was a known
+    Windows system path (System32 / SysWOW64 / Program Files / ProgramData).
+    The alpha-4 release gauntlet caught the gap: a wheel run from any
+    "ordinary-looking" cwd (Downloads, a tmp dir, the user's home) silently
+    routed logs and project state into that cwd. The fix dropped the
+    cwd-as-fallback entirely for installed wheels — the only branch where
+    cwd-equivalent behaviour ever made sense was the dev tree, which is
+    gated by a reachable ``pyproject.toml``.
+
+    This test exercises a "safe-looking" cwd (a tmp dir, NOT a system path)
+    with no ``pyproject.toml`` above it and asserts the project root is
+    ``_meridian_home``, never the cwd.
+    """
+    home = tmp_path / "meridian-home"
+    home.mkdir()
+    monkeypatch.setenv("MERIDIAN_HOME", str(home))
+
+    # Set cwd to a perfectly "safe" tmp dir (NOT System32 / Program Files).
+    user_cwd = tmp_path / "Downloads"
+    user_cwd.mkdir()
+    monkeypatch.chdir(user_cwd)
+
+    # Force the walk-up to fail by claiming pyproject.toml never exists.
+    real_exists = Path.exists
+
+    def _exists(self: Path) -> bool:
+        if self.name == "pyproject.toml":
+            return False
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", _exists)
+
+    root = _project_root()
+    assert root == home, (
+        f"alpha-4 fix: expected MERIDIAN_HOME={home!r}, got {root!r}"
+    )
+    assert root != user_cwd, (
+        "alpha-3 bug must not return: cwd-as-fallback returned the user's "
+        "Downloads-style cwd as the project root"
+    )
+
+
 def test_project_root_substitutes_meridian_home_when_cwd_unsafe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

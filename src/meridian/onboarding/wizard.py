@@ -700,7 +700,7 @@ def run_wizard(*, force_restart: bool = False) -> OnboardingState:
 
     _console.print(
         Panel.fit(
-            "[bold]Welcome to Meridian.[/bold]\n\n"
+            "[bold]Welcome to Meridian - Trace.[/bold]\n\n"
             "Meridian extracts per-trade design deliverables from mixed project "
             "documents (drawings, specs, BODs, emails) into a single review-ready "
             "Excel register. This wizard will walk you through first-time setup "

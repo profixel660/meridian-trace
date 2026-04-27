@@ -20,8 +20,13 @@
 
 import { withAuth } from "./auth";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_MERIDIAN_API ?? "http://localhost:8000";
+// Empty default = same-origin relative URLs. The static export is served
+// by the FastAPI backend itself, so the page origin (whether it's
+// `127.0.0.1:8000`, `localhost:8000`, a future Tauri custom protocol, or
+// an LAN IP) is exactly the API origin — no CORS, no host-mismatch.
+// Set `NEXT_PUBLIC_MERIDIAN_API` at build time to override (e.g. for a
+// deployment that splits frontend and backend across different hosts).
+const API_BASE = process.env.NEXT_PUBLIC_MERIDIAN_API ?? "";
 
 export class MeridianApiError extends Error {
   status: number;

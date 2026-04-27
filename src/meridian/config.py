@@ -67,22 +67,33 @@ def _meridian_home() -> Path:
 def _project_root() -> Path:
     """Repo root for dev trees, Meridian home for installed wheels.
 
-    Walks up from this file until ``pyproject.toml`` is found (dev-tree
-    answer). Falls back to ``cwd()`` only when cwd is a sane working
-    directory; if cwd is a Windows system path (System32 / Program Files /
-    ProgramData) we substitute :func:`_meridian_home` instead. This is the
-    fix for the alpha-1/alpha-2 elevated-admin install bug where the backend
-    inherited ``C:\\Windows\\System32`` as cwd and tried to write logs and
-    project DBs there.
+    Resolution order:
+      1. Walk up from this file looking for ``pyproject.toml`` -- the
+         dev-tree answer. Authoritative when present.
+      2. Otherwise we're running from an installed wheel. In that case
+         ``cwd()`` is *never* the right answer -- it's just wherever the
+         user happens to be standing (System32 under elevated install,
+         Downloads under a manual launch, anywhere else under a desktop
+         shortcut). Always substitute :func:`_meridian_home` so writes
+         land under the canonical install root regardless.
+
+    History: alpha-3 only substituted ``_meridian_home`` when ``cwd`` was a
+    known-unsafe Windows system path (System32 / Program Files / ...).  The
+    alpha-4 release gauntlet caught the gap: a wheel run from any
+    "ordinary-looking" cwd (a tmp dir, a user's Downloads folder) silently
+    routed logs and project state into that cwd. Fix is to drop the
+    cwd-as-fallback entirely for installed wheels -- the dev-tree path
+    above is the only branch where ``cwd``-equivalent behaviour ever made
+    sense, and that branch is gated by the presence of ``pyproject.toml``.
+
+    :func:`_is_unsafe_cwd` is retained for direct callers (tests / future
+    diagnostics) but is no longer load-bearing for project-root resolution.
     """
     here = Path(__file__).resolve()
     for parent in [here, *here.parents]:
         if (parent / "pyproject.toml").exists():
             return parent
-    cwd = Path.cwd()
-    if _is_unsafe_cwd(cwd):
-        return _meridian_home()
-    return cwd
+    return _meridian_home()
 
 
 def _bootstrap_env_from_dotenv() -> None:

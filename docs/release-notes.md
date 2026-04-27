@@ -4,6 +4,49 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.4
+
+The first release that passes a real **release gauntlet** before shipping. Every alpha through alpha-3 broke on the user's box in a way pytest didn't catch; alpha-4 introduces `scripts/release_gauntlet.py` — a one-command end-to-end check that builds the wheel, installs it into a fresh venv, spawns the backend from a tmp cwd with `MERIDIAN_HOME` pointing elsewhere, and asserts /health, /setup/, version, and CLI surface all behave correctly. The gauntlet is required-green before alpha-4 cuts.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### Bug fixes
+
+- **`_project_root()` now always substitutes `_meridian_home()` for installed wheels.** Alpha-3 only triggered the substitution when cwd was a known Windows system path (System32 / SysWOW64 / Program Files / ProgramData). The release gauntlet caught the gap: a wheel run from any "ordinary" cwd (Downloads, a tmp dir, the user's home) silently routed logs and project state into that cwd. Alpha-4 drops the cwd-as-fallback entirely — the dev tree is the only branch where cwd-equivalent behaviour ever made sense, and that branch is gated by the presence of `pyproject.toml` (which an installed wheel never has).
+- **Installer `cmd /c "redirect-trick"` replaced by a generated `runtime/launch_backend.cmd` helper.** Alpha-3's `Start-Process cmd.exe /c "<python> -m meridian.api.main >> backend.log 2>&1"` was eaten by cmd.exe's quote-stripping rule — the recorded PID was alive, but Python never actually ran and `backend.log` was never created. Alpha-4 writes `runtime/launch_backend.cmd` at install time and `Start-Process`es the .cmd file; cmd.exe handles its own redirects natively, no quote pathology.
+- **Wizard URL was wrong.** Alpha-3 pointed the installer + CLI at `/setup/welcome`; the Next.js static export bundles the welcome page at `/setup/index.html`. Result: 404 on first browser load. Alpha-4 swaps to `/setup/` everywhere (installer, CLI, docs, troubleshooting).
+- **Locked-venv auto-recovery.** The installer now detects any `python.exe` / `pythonw.exe` whose `MainModule.FileName` is under `C:\Meridian\venv` BEFORE attempting to recreate the venv, kills them via `Stop-Process -Force`, re-checks, and only proceeds if all are gone. Stops the alpha-2 leftover-process scenario where the user had to reboot.
+- **Frontend API client now uses relative URLs.** `apps/web/src/lib/api.ts` and the master-page Excel-download `<a href>` were defaulting to `http://localhost:8000` — a different origin from `127.0.0.1:8000` per browser security, so opening the wizard at `127.0.0.1` triggered a CORS-style fail and the wizard rendered "Couldn't reach the Meridian API yet — running in offline preview mode". Alpha-4 defaults `API_BASE` to empty string, making every fetch same-origin relative — works regardless of how the user landed on the page.
+- **Brand string updated to "Meridian - Trace"** in the wizard welcome card, layout title, top-nav, and the CLI's `meridian init` panel.
+
+### Release gauntlet
+
+`scripts/release_gauntlet.py` runs 8 ordered steps and exits 0 only on full pass:
+
+1. **PowerShell parser check** — every `.ps1` / `.psm1` in `installer/` round-trips through `[Parser]::ParseFile()` with zero errors. Catches the alpha-3 em-dash-encoded-as-cp1252 bug class.
+2. **ASCII-only check** — every `.ps1` / `.psm1` / `.bat` / `.cmd` contains only codepoints 0x00–0x7F. Belt-and-braces against future encoding regressions.
+3. **Wheel build** — `uv build` produces a wheel that contains `meridian/_web/setup/index.html` (the bundled Next.js wizard).
+4. **Fresh-venv install** — wheel pip-installs cleanly into an isolated venv.
+5. **Cwd-System32 simulation (the headline)** — spawns `python -m meridian.api.main` from a tmp dir with `MERIDIAN_HOME` set to a separate tmp dir, polls `/health` until 200, asserts log files appear under `MERIDIAN_HOME` and NOT under spawn cwd. The exact alpha-2 failure scenario — caught alpha-3's incomplete fix.
+6. **`/setup/` probe** — GET returns 200 with "Meridian" in the body. Catches the alpha-3 `/setup/welcome` 404.
+7. **Version assertion** — `/health` JSON `version` field matches `pyproject.toml`'s `version`. Catches the alpha-1 stale-`0.1.0` class.
+8. **CLI help-renders** — `meridian --help`, `meridian start --help`, `meridian init --help` all exit 0.
+
+Wrapped in `tests/release/test_release_gauntlet.py` with `@pytest.mark.slow` (deselected from the default test run). Runs in ~40-60s. **`[ ALL ] release gauntlet PASSED` is now a hard gate before any future alpha cuts.**
+
+### Tests
+
+99 e2e passing in 12.6s. New regression test `test_project_root_substitutes_meridian_home_when_no_pyproject_reachable` proves the alpha-4 fix — cwd is a tmp dir (NOT a system path), no `pyproject.toml` reachable, `_project_root()` must return `_meridian_home()`.
+
+### Carry-overs unchanged from alpha-3
+
+- Tauri `.msi` still requires Rust + MSVC + WiX (round 18). Alpha-4 is still the Python wheel + PowerShell installer + browser GUI.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Next.js 15.1.6 CVE-2025-66478 — still pending the version bump.
+- Install-time UX polish (WPF splash / Inno Setup / Tauri MSI) deferred until install flow is stable. Alpha-4 is "make the existing installer reliable enough that the bundled-installer work isn't being layered on top of a broken foundation".
+
 ## What's new in v0.2.0-alpha.3
 
 A targeted fix for the elevated-Admin-cwd bug that prevented alpha-2 from launching the GUI wizard. The PowerShell installer runs as Administrator, so the spawned Python backend inherited `C:\Windows\System32` as its working directory, which then tried to write logs and project DBs there → `PermissionError: [Errno 13]`. The class of bug was previously documented in deferred-installer-fixes notes but the lesson was not applied during alpha-2.
@@ -55,7 +98,7 @@ No schema change. Existing projects upgrade with `pip install --upgrade` and no 
 
 ### The simplification
 
-- **GUI wizard auto-launches in your browser.** The PowerShell installer now starts the FastAPI backend in the background and opens your default browser at `http://localhost:8000/setup/welcome` after install. The CLI `meridian init` flow stays as a fallback only if the backend doesn't come up.
+- **GUI wizard auto-launches in your browser.** The PowerShell installer now starts the FastAPI backend in the background and opens your default browser at `http://localhost:8000/setup/` after install. The CLI `meridian init` flow stays as a fallback only if the backend doesn't come up.
 - **Folder-pick for first documents.** The wizard now asks **"Where are your project documents?"** with one button: **"📁 Choose project folder"**. It walks the folder recursively (`os.walk`, full tree, smart pruning of `.git`/`node_modules`/etc.), shows a manifest preview ("Found 47 PDFs, 12 docx, 3 xlsx in `<folder name>` — import them?"), and ingests everything supported in one go. Native folder picker via Tauri when running the desktop build, browser-fallback typed-path input otherwise.
 - **Project name auto-derived from the folder.** When you pick a folder, the project name pre-fills from the folder's basename. Pick `Shell-C-D` and the project becomes `shell-c-d` — change it if you'd like, otherwise just press Enter.
 - **Step order swapped.** New flow: welcome → api-key → first-documents (pick folder) → first-project (confirm/rename) → ready. The `/setup/import-folder` endpoint creates the project on the fly the first time it's called, so by the time you reach first-project it's a confirm step, not a create step.
@@ -74,7 +117,7 @@ No schema change. Existing projects upgrade with `pip install --upgrade` and no 
 - `POST /setup/import-folder` — walks + ingests in one job; auto-creates the project if it doesn't yet exist.
 - `GET /setup/import-folder/{job_id}` — poll progress (`{imported, deduped, failed, total, current_file}`).
 - `POST /setup/projects/suggest-name` — returns the slugified folder-basename and bumps `-2`, `-3` on collision.
-- **FastAPI StaticFiles mount** — serves the bundled Next.js export at `/`, with API routes registered first so `/setup/state` (GET, JSON) and `/setup/welcome` (GET, HTML) coexist correctly.
+- **FastAPI StaticFiles mount** — serves the bundled Next.js export at `/`, with API routes registered first so `/setup/state` (GET, JSON) and `/setup/` (GET, HTML) coexist correctly.
 - **`meridian.ingest.dispatcher.walk_directory`** — reusable directory-walk helper. `os.walk(followlinks=False)`, prunes `.git`/`node_modules`/`__pycache__`/`_meridian`, skips Windows hidden/system files, captures access-denied per-file rather than aborting.
 
 ### Wheel-bundling change (build pre-step required)

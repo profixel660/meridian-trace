@@ -5,7 +5,7 @@ import "./globals.css";
 import { AuthIndicator } from "@/components/AuthIndicator";
 
 export const metadata: Metadata = {
-  title: "Meridian",
+  title: "Meridian - Trace",
   description: "Per-trade deliverables register — operator UI.",
 };
 
@@ -23,7 +23,7 @@ export default function RootLayout({
               href="/"
               className="text-lg font-semibold tracking-tight text-text-primary"
             >
-              Meridian
+              Meridian - Trace
             </Link>
             <nav className="flex items-center gap-6 text-sm text-text-muted">
               <Link href="/" className="hover:text-text-primary">

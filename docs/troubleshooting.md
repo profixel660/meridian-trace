@@ -134,7 +134,7 @@ If the borderline count is still high (more than ~20% of total findings), file a
 
 The round-17 installer ends by starting the FastAPI backend in the
 background and opening your default browser at
-`http://localhost:8000/setup/welcome`. A few ways this can fail:
+`http://localhost:8000/setup/`. A few ways this can fail:
 
 ### Symptom: The browser opens but shows "This site can't be reached" / "ERR_CONNECTION_REFUSED"
 
@@ -164,7 +164,7 @@ blocked. After you finish there, you can try `meridian start` again.
 
 Check `C:\Meridian\install.log` for the line "Browser launched." If
 that's missing, the `Start-Process` call to open the URL failed — paste
-this URL into a browser yourself: <http://localhost:8000/setup/welcome>.
+this URL into a browser yourself: <http://localhost:8000/setup/>.
 
 ### Symptom: I want to run setup again from scratch
 

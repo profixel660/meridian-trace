@@ -2169,7 +2169,7 @@ def start(
     base_url = f"http://localhost:{port}"
     health_url = f"{base_url}/health"
     setup_state_url = f"{base_url}/setup/state"
-    welcome_url = f"{base_url}/setup/welcome"
+    welcome_url = f"{base_url}/setup/"
     home_url = f"{base_url}/"
 
     def _probe(url: str, timeout: float = 1.0) -> int | None:

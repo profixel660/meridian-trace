@@ -36,7 +36,7 @@ export default function OnboardingLandingPage() {
     <div className="space-y-8">
       <header className="max-w-[70ch] space-y-2">
         <p className="text-xs uppercase tracking-wide text-text-muted">
-          Welcome to Meridian
+          Welcome to Meridian - Trace
         </p>
         <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
           A 3-minute setup before you start

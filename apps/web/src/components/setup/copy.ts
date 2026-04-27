@@ -27,7 +27,7 @@ import { Fragment, createElement as h } from "react";
 /* ----------------------------- step 0 — welcome --------------------------- */
 
 export const WELCOME_COPY = {
-  title: "Welcome to Meridian",
+  title: "Welcome to Meridian - Trace",
   subtitle: "Let's get your first project up and running. About 10 minutes.",
   hero: () =>
     h(
@@ -407,7 +407,7 @@ export const READY_COPY = {
 /* ---------------------------- shared chrome ----------------------------- */
 
 export const SHELL_COPY = {
-  brand: "Meridian setup",
+  brand: "Meridian - Trace setup",
   closeLabel: "Close setup",
   closeConfirm: {
     title: "Quit setup?",

@@ -73,7 +73,7 @@ export default function MasterPage({
       actions={
         <a
           href={`${
-            process.env.NEXT_PUBLIC_MERIDIAN_API ?? "http://localhost:8000"
+            process.env.NEXT_PUBLIC_MERIDIAN_API ?? ""
           }/projects/${encodeURIComponent(name)}/export.xlsx`}
           className="rounded-full border border-border px-4 py-2 text-sm text-text-primary hover:border-text-muted"
         >
