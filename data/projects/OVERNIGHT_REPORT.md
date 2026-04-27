@@ -415,4 +415,52 @@ The 10 deferred items in §3 above. In rough priority for unblocking distributio
 
 ---
 
+## 10. Session handoff — end of 2026-04-27
+
+The interactive working session that produced rounds 12–15, walked the §3 decisions, shipped v0.1.0/v0.1.1/v0.1.2 to GitHub, and attempted the first SME install ended here. A new Claude Code session picks up from this state. **The next planned work is round 16 (Path A — Tauri scaffold + Next.js static-export refactor).**
+
+### Where we ended
+
+- **Repo:** github.com/profixel660/meridian-trace (currently Public — flipped from Private to unblock anonymous API access from the v0.1.2 installer; revert when v0.1.3 PAT-prompt or Tauri lands)
+- **Latest release:** v0.1.2 (PowerShell installer + wheel + sdist as assets)
+- **Schema:** v6; 52/52 e2e tests passing in ~10s; ruff clean
+- **Local Anthropic API key:** in `.env` (gitignored). User issued a separate fine-scoped key for the SME with a $50 spend cap (the SME's key, not the dev key).
+
+### SME test status — PAUSED
+
+First real install attempt (2026-04-27 evening) succeeded mechanically (Python install, venv, pip install, wheel install, key prompt) but failed for the SME's actual workflow:
+
+- Project DB landed in `C:\Windows\System32\data\projects\` instead of `C:\Meridian\projects\` (elevated cmd cwd + `.env` not loaded into process env when `meridian init` ran)
+- SME ended up in `cmd.exe` not the Meridian PowerShell shortcut, so `meridian` wasn't on PATH and recovery PowerShell commands were treated as cmd syntax errors
+- `anthropic` SDK import warning (harmless but confusing)
+
+User concluded: **"this install/setup needs a web interface with clear guidance — not fit for purpose as it stands"**. SME paused her test; she resumes once the Tauri-based installer lands.
+
+### Path A committed (rounds 16–19 plan)
+
+Per end-of-session conversation:
+
+- **Round 16:** Tauri scaffold (`src-tauri/` Rust crate, `tauri.conf.json`, native window config) + Next.js static-export refactor (round-11 server-component pages → client-only data fetching). No Rust/MSVC install needed yet — file generation + page refactor only.
+- **Round 17:** `/setup` wizard pages (5 pages — welcome / api-key / first-project / first-documents / ready-to-go) with construction-PM language explaining WHY each step matters. Native file pickers via Tauri's dialog API. Backend endpoints to support the wizard flow.
+- **Round 18:** PyInstaller-bundle the FastAPI backend into one `meridian-server.exe`. Tauri spawns it as a sidecar at app launch, kills it cleanly on quit. `npm run tauri build` produces the actual `Meridian-Setup.msi`. **Rust + MSVC Build Tools install on dev machine becomes essential here.** User confirmed they can install whatever's needed without IT pushback.
+- **Round 19:** Real-machine validation on a fresh Windows VM (no Python, no Node, no Rust). Find what breaks. Fix. SME re-test follows.
+
+### Deferred follow-ups (DO NOT lose these)
+
+Captured in `docs/DECISIONS.md` follow-ups section + `project_v013_deferred.md` memory:
+
+- **v0.1.3 fixes** — pre-load .env in installer; litellm fallback in wizard validation; PAT prompt for private repos. Most resolved by Tauri itself; capture lessons before they're forgotten.
+- **§3.4 code-signing cert** — budget AUD $500/year when commercial; ship Tauri .msi unsigned for now.
+- **§3.6 crash endpoint URL** — choose email-via-serverless when ready; placeholder still in `src/meridian/crash/sender.py`.
+- **§3.8 Ed25519 license keypair** — generate when commercial; embed pubkey in `src/meridian/licensing/verify.py`.
+- **`apps/web/` ESLint config scaffolding** — `npm run lint` is interactive on first run.
+
+### Kickoff prompt for the new session
+
+Paste this verbatim to start the next session:
+
+> Continuing the Meridian build (`github.com/profixel660/meridian-trace`). Read `data/projects/OVERNIGHT_REPORT.md` §10 and `docs/DECISIONS.md` in full first — they're the authoritative state. Then dispatch round 16 (Tauri scaffold + Next.js static-export refactor) per the Path A plan. SME test is paused; we resume after round 19. Same parallel-subagents pattern that worked for rounds 7–15. The three locked memories (Path A Tauri commitment, parallel subagents default, UX discoverability discipline non-negotiable) all apply.
+
+---
+
 *End of overnight report. Sleep well; talk in the morning.*
