@@ -2,8 +2,8 @@
 
 /*
  * Tailwind v4 design tokens live in the CSS layer via @theme.
- * Provisional palette — see CONTEXT.md §22; replace when the Undivided
- * Systems brand kit lands.
+ * Provisional palette — see CONTEXT.md §22; replace when the T-Bionic
+ * brand kit lands.
  */
 @theme {
   --color-background: #0B0F14;

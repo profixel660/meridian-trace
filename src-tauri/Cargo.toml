@@ -2,7 +2,7 @@
 name = "meridian"
 version = "0.2.0"
 description = "Meridian — AEC project requirements tester desktop shell"
-authors = ["Undivided Systems"]
+authors = ["T-Bionic"]
 edition = "2021"
 rust-version = "1.77"
 

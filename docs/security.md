@@ -4,8 +4,8 @@ This page describes what Meridian sends, where, and what stays on your machine. 
 
 ## Headline summary
 
-- Meridian sends document content to **the LLM provider you choose** (Anthropic by default). Nothing about your documents reaches Meridian's developer (Undivided Systems).
-- The only network call to Undivided Systems is **license activation**, and even that uses a license file you have already downloaded — there is no install-time phone-home.
+- Meridian sends document content to **the LLM provider you choose** (Anthropic by default). Nothing about your documents reaches Meridian's developer (T-Bionic).
+- The only network call to T-Bionic is **license activation**, and even that uses a license file you have already downloaded — there is no install-time phone-home.
 - Everything else — the project SQLite, logs, taxonomies, taxonomy proposals, queues, evidence packs — stays on your local disk.
 - No telemetry runs without your explicit opt-in.
 
@@ -38,7 +38,7 @@ Meridian's auth model is single-user, self-enrolled at first launch via `meridia
 
 ## License keys
 
-Meridian licenses are issued by Undivided Systems support and verified locally with an Ed25519 signature. The model:
+Meridian licenses are issued by T-Bionic support and verified locally with an Ed25519 signature. The model:
 
 - The **public key** is embedded in the Meridian binary. Anyone can read it; it cannot mint licenses.
 - The **private key** is held by support. Used once per license issued, then put away.

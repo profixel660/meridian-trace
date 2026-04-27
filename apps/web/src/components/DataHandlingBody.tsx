@@ -27,9 +27,8 @@ export function DataHandlingBody() {
           <strong>Ollama</strong> for air-gapped projects.
         </p>
         <p>
-          Nothing is sent to Undivided Systems beyond what is needed to
-          activate your license. Your documents do not pass through our
-          servers.
+          Nothing is sent to T-Bionic beyond what is needed to activate
+          your license. Your documents do not pass through our servers.
         </p>
       </section>
 

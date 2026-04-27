@@ -63,7 +63,7 @@ def license_install(
     path: Annotated[
         Path,
         typer.Argument(
-            help="Path to the license file you received from support@undivided.systems.",
+            help="Path to the license file you received from T-Bionic support.",
             exists=True,
             dir_okay=False,
             readable=True,
@@ -91,12 +91,12 @@ def license_install(
         console.print(
             "[yellow]License could not be parsed (needs review). "
             "Please re-paste the license you received, or contact "
-            "support@undivided.systems.[/yellow]"
+            "T-Bionic support.[/yellow]"
         )
         raise typer.Exit(code=2)
     console.print(
         f"[red]License is not usable ({result.status.value}). "
-        "Contact support@undivided.systems for a replacement.[/red]"
+        "Contact T-Bionic support for a replacement.[/red]"
     )
     raise typer.Exit(code=1)
 
@@ -110,7 +110,7 @@ def license_status() -> None:
             "[yellow]No license installed.[/yellow] "
             f"Expected at {license_path()}. "
             "Run 'meridian license install <path>' after receiving a "
-            "license from support@undivided.systems."
+            "license from T-Bionic support."
         )
         raise typer.Exit(code=1)
 
@@ -125,7 +125,7 @@ def license_status() -> None:
         if days is not None and days <= 14:
             console.print(
                 f"[yellow]Heads up: license expires in {days} day(s). "
-                "Contact support@undivided.systems to renew.[/yellow]"
+                "Contact T-Bionic support to renew.[/yellow]"
             )
 
 

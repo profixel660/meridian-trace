@@ -70,7 +70,7 @@ This file records the resolution of each deferred-decision item from `data/proje
 
 ## §3.6 — Crash report endpoint URL → **C (email-via-serverless), placeholder for now**
 
-**Decision:** direct email to support@undivided.systems via a tiny serverless SMTP function for v1. **Move to (B) Sentry** once volume justifies it (~5+ reports/week — when manual triage stops scaling).
+**Decision:** direct email to T-Bionic support via a tiny serverless SMTP function for v1 (exact `support@` address pending domain confirmation — see Round 17 follow-ups). **Move to (B) Sentry** once volume justifies it (~5+ reports/week — when manual triage stops scaling).
 
 **Why:** crash reports will be rare given the LLM-assisted-explanation gate already in place. Email keeps everything in one inbox you already check.
 
@@ -173,7 +173,7 @@ These surfaced during round 17 (`/setup` wizard + Tauri sidecar wiring + backend
 
 - **Round-17 e2e test count — soft.** The round-17 final-state line claims ~62/62 e2e tests passing (52 round-16 baseline + ~10 new). Stream C's actual delivered count may differ; the integration step should reconcile against `pytest -q tests/e2e/ | tail -1` and update the round-17 section if the count diverges. Not a defect — just a soft number until verified.
 
-- **TODO:** placeholder for any contract surprise from Stream C that this docs stream couldn't anticipate. Fill in during the round-17 integration step.
+- **Brand rebrand to T-Bionic — domain TBD.** Round 17 (post-stream) replaced `Undivided Systems` with `T-Bionic` across the codebase: `Cargo.toml` authors, `pyproject.toml` author, `tauri.conf.json` reverse-DNS identifier (`com.undivided.meridian` → `com.tbionic.meridian` — hyphen stripped per Java/Apple package convention), user-facing wizard prose, `docs/security.md`, license CLI strings, and CONTEXT.md. The exact `support@<domain>` address is **deliberately unbaked** — every previously-emailed string now reads "T-Bionic support" without an explicit address, since the chosen domain (`.com`, `.io`, `.systems`, etc.) hasn't been confirmed. Once the domain lands, a single sweep replaces the phrase with `support@<domain>` in: `src/meridian/licensing/cli.py` (5 strings), `docs/security.md`, this file (§3.6), `CONTEXT.md` §17, `data/projects/OVERNIGHT_REPORT.md` §3.5/§3.6 placeholder bullets. The `_PLACEHOLDER_MANIFEST_URL` style — a single grep-able constant — is the right pattern to apply to the eventual support email so future moves are one-line.
 
 ---
 

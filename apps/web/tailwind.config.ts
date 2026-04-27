@@ -4,7 +4,7 @@ import type { Config } from "tailwindcss";
  * Tailwind v4 reads most config from the CSS layer (see globals.css `@theme`),
  * but a TS config is still supported for `content` globs and JS-side token
  * exposure. The colour palette below is PROVISIONAL — replace once the
- * Undivided Systems brand kit lands (CONTEXT.md §22).
+ * T-Bionic brand kit lands (CONTEXT.md §22).
  */
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],

@@ -464,11 +464,11 @@ UI must clearly communicate that Excel is a render target, not the working data;
 
 - Single-user **TOTP**, self-enrolled at first launch (`pyotp` + `qrcode`).
 - One-time recovery codes shown at enrolment.
-- Self-contained — no coordination with Undivided Systems required.
+- Self-contained — no coordination with T-Bionic required.
 
 ## 17. Licensing (locked)
 
-- Flow: install → app shows machine fingerprint → user emails `support@undivided.systems` → Peter issues signed key (Ed25519, private key held by Peter, public key embedded in app) → user pastes key → app validates → TOTP enrolment.
+- Flow: install → app shows machine fingerprint → user emails T-Bionic support → Peter issues signed key (Ed25519, private key held by Peter, public key embedded in app) → user pastes key → app validates → TOTP enrolment.
 - **Term: 6 months.** Then **8-week grace** with escalating reminders, then **read-only lockout** (open + re-export of prior Excels permitted; no new processing).
 - Renewal wording must NOT imply replacement keys are free (preserves commercialisation option).
 - License log: SQLite file in Peter's OneDrive, written by a single-writer CLI on Peter's machine.
@@ -495,7 +495,7 @@ UI must clearly communicate that Excel is a render target, not the working data;
 Three screens after license activation, before TOTP enrolment:
 
 1. **Why frontier AI is required** — drawings + cross-doc reasoning need vision capability that cannot run on a PM laptop.
-2. **How your data is handled** — honest framing: document content goes to the chosen provider; nothing is sent to Undivided Systems beyond license activation; provider's policies apply (links provided).
+2. **How your data is handled** — honest framing: document content goes to the chosen provider; nothing is sent to T-Bionic beyond license activation; provider's policies apply (links provided).
 3. **Recommended setup** — Anthropic preferred, alternatives if your org mandates otherwise.
 
 Plus:
@@ -532,7 +532,7 @@ These are **not deferred polish**. Treat skipped UX as a regression against this
 
 ## 22. Branding & naming
 
-Dark-themed web app with Undivided Systems branding. Logo to be provided; design tokens (palette, typography, spacing) to be derived from it.
+Dark-themed web app with T-Bionic branding. Logo to be provided; design tokens (palette, typography, spacing) to be derived from it.
 
 Working under "Meridian" parent brand. Candidate sub-product names: **Meridian Trace** (favoured for source-traceability angle), Meridian Register, Meridian Atlas, Meridian Compass. Final name TBD.
 

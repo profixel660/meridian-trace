@@ -5,7 +5,7 @@ description = "Meridian — per-trade deliverables register from heterogeneous c
 readme = "CONTEXT.md"
 requires-python = ">=3.12"
 authors = [
-    { name = "Undivided Systems" },
+    { name = "T-Bionic" },
 ]
 dependencies = [
     "fastapi>=0.115",
