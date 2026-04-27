@@ -151,6 +151,28 @@ Two options:
    itself -- not your work and not anything that other programs might
    need.
 
+## How to fully reset (debug / testing)
+
+Distinct from the uninstaller above: `Reset-Meridian.ps1` is a quick
+"give me a clean slate" tool intended for the alpha-iteration phase. It
+audits then removes the `C:\Meridian\` directory, the desktop shortcut,
+any `Install-Meridian.*` / `Uninstall-Meridian.*` files in your
+Downloads folder, and any python processes the previous backend left
+running (which would otherwise block `Remove-Item` with "Access
+denied").
+
+1. Download `Reset-Meridian.ps1` from the release page.
+2. Right-click it, choose **Run with PowerShell**. It self-elevates if
+   you didn't start it as admin.
+3. It shows you what it will remove, asks for confirmation, then wipes.
+   Pass `-KeepDownloads` if you want to keep the cached installer files,
+   or `-Yes` to skip the prompt (use sparingly -- destructive).
+
+Reset is heavier than Uninstall: it doesn't ask which pieces of data to
+keep. Use Uninstall when you want a graceful tear-down with your work
+preserved; use Reset when you're iterating between installer alphas and
+just want a known-clean state fast.
+
 ## A note on the SmartScreen warning
 
 The first time you run `Install-Meridian.bat`, Windows may show a blue
