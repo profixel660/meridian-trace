@@ -47,11 +47,14 @@ from meridian.wizard.models import (
     ProjectCreateRequest,
     ProjectCreateResponse,
     SetupCompleteResponse,
+    SetupDefaultsResponse,
     SetupStateResponse,
     SuggestNameRequest,
     SuggestNameResponse,
 )
 from meridian.wizard.state import (
+    _KEYRING_ACCOUNT,
+    _KEYRING_SERVICE,
     OnboardingState,
     WizardState,
     load_wizard_state,
@@ -259,6 +262,24 @@ def setup_state() -> SetupStateResponse:
     return _state_to_response(load_wizard_state())
 
 
+@wizard_router.get("/defaults", response_model=SetupDefaultsResponse)
+def setup_defaults() -> SetupDefaultsResponse:
+    """Server-side defaults the frontend pre-fills into form fields.
+
+    Returns ``projects_dir`` resolved from the same ``_meridian_home()``
+    chain the rest of the backend uses (MERIDIAN_HOME env, then
+    ``C:\\Meridian`` on Windows when present, then ``~/Meridian``), with
+    ``/projects`` appended. Always a real, valid filesystem path —
+    never a placeholder like ``C:\\Users\\<you>\\...`` (the alpha-5 bug
+    class). The frontend submits this verbatim, so the round-trip must
+    survive Pydantic + the OS path validators.
+    """
+    from meridian.config import _meridian_home  # local import — narrow surface
+
+    home = _meridian_home()
+    return SetupDefaultsResponse(projects_dir=str(home / "projects"))
+
+
 @wizard_router.post(
     "/api-key",
     response_model=ApiKeyResponse,
@@ -324,7 +345,7 @@ def _persist_api_key(key: str) -> None:
     try:
         import keyring  # noqa: PLC0415
 
-        keyring.set_password("meridian.api_key", "anthropic", key)
+        keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, key)
     except Exception as exc:  # noqa: BLE001 — keyring backends vary wildly
         _log.warning(
             "wizard.api_key.keyring_unavailable",

@@ -4,6 +4,39 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.6
+
+Four bugs from the user's first end-to-end walkthrough of the alpha-5 GUI wizard. The installer flow itself now reaches the wizard reliably (alpha-5 closed that); alpha-6 fixes the wizard's first real round of UX gaps.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### Bug fixes
+
+- **Wizard re-asked for the API key after the CLI installer already saved it** (cosmetic). The CLI installer writes the Anthropic key to `C:\Meridian\.env` AND Windows Credential Manager (via `keyring.set_password("meridian.api_key", "anthropic", key)`). The GUI wizard's `/setup/state` only checked the JSON state file, missed both other sources, and re-prompted. Alpha-6 broadens `WizardState.api_key_set` to check (1) the JSON state flag, (2) `ANTHROPIC_API_KEY` env var, (3) keyring at the canonical service/account. Single-source-of-truth constants in `meridian/wizard/state.py` mean the read path can never drift from the write path again.
+
+- **"Couldn't reach Anthropic" warning fired even with valid keys** (cosmetic). The wizard's validator imported the `anthropic` SDK directly. The SDK isn't a hard meridian dependency (only litellm is) so `import anthropic` raised `ModuleNotFoundError` → caught → "unable_to_verify". Documented in `project_v013_deferred.md` since alpha-1; finally fixed. Alpha-6 wraps the SDK import in `try/except ImportError`; on miss, falls back to a one-shot `litellm.completion(model="anthropic/claude-haiku-4-5-20251001", messages=[{"role":"user","content":"ping"}], max_tokens=1, api_key=...)` call. AuthenticationError → `invalid`; PermissionDeniedError → `invalid`; everything else → `unable_to_verify` (conservative — better to surface "we couldn't check" than to misclassify a transient 5xx as `invalid`).
+
+- **`/setup/projects` returned 422 because the form's projects_dir contained literal `<you>`** (blocker). The first-project page's "Projects folder" input had the default value `C:\Users\<you>\Meridian\projects`. The user clicked Create without editing, the frontend POSTed that string, the backend's path validator rejected the `<` and `>` (Windows-reserved chars), 422. Two-part fix: (1) new backend endpoint `GET /setup/defaults` returns a server-resolved `projects_dir` from the same `_meridian_home()` chain everything else uses (no placeholders); (2) frontend's `useEffect` calls it on mount and pre-fills the input. Falls back to a navigator-platform-derived guess on 404 so the frontend works against older backends too.
+
+- **"Choose project folder" button did nothing on click** (blocker). Root cause: the `Tooltip` component clobbered the button's `onClick` via `React.cloneElement` — Tooltip injects its own click handler to toggle visibility, **overwriting** the wrapped child's `onClick`. The button only opened the tooltip; `handlePickFolder` was never called. Pure silent failure. Alpha-6 moves the tooltip onto a separate "What goes in the folder?" affordance so the button keeps its native onClick. Hardening: browser fallback now uses a window-focus watchdog to detect picker-cancel reliably (most browsers don't fire `oncancel` on `webkitdirectory` pickers); inline `pickerError` panel surfaces any future silent failure visibly.
+
+### Tests + gauntlet
+
+104 e2e passing in 12.6s (was 99 + 5 new — keyring round-trip, env-var read, litellm-fallback-valid, litellm-fallback-auth-invalid, conservative-classification). Release gauntlet still 9 steps, all green. The new `GET /setup/defaults` endpoint adds nothing to the gauntlet — the existing `/setup/state` probe already exercises the same import chain.
+
+### Known limitations
+
+- The `Tooltip`-clobbering-onClick footgun is a latent bug in the component itself. Alpha-6 worked around it for the folder-pick button; future buttons placed inside a `Tooltip` will silently lose their onClick the same way. Worth a 5-line follow-up to make `Tooltip` compose the child's onClick rather than overwrite it.
+- The first-project page's auto-name `useEffect` reads `sessionStorage["meridian.setup.folder_path"]`. If a PM bookmarks first-project directly with a stale value, they'll see a "we suggested this from your folder" hint without ever picking a folder this run. Cosmetic; not in alpha-6 scope.
+
+### Carry-overs from alpha-5
+
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Install-time UX polish deferred until install flow stabilises.
+
 ## What's new in v0.2.0-alpha.5
 
 A targeted IPv6/IPv4 fix for an installer hang the user hit on alpha-4. The release gauntlet missed this one because the gauntlet probed `127.0.0.1` directly while the installer probed `localhost`; alpha-5 closes the gap with a new gauntlet step that statically checks installer URL constants.

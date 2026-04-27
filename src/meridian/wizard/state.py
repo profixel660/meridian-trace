@@ -70,6 +70,13 @@ from meridian.onboarding.wizard import (
     load_state as _cli_load_state,
 )
 
+# Canonical keyring service/account the PowerShell installer writes to and
+# the GUI wizard's /setup/api-key endpoint persists into. Single source of
+# truth so the read path in :pyattr:`WizardState.api_key_set` cannot drift
+# from the write path in :func:`meridian.wizard.api._persist_api_key`.
+_KEYRING_SERVICE = "meridian.api_key"
+_KEYRING_ACCOUNT = "anthropic"
+
 # Re-export so callers don't need to reach into the CLI module directly.
 __all__ = [
     "OnboardingState",
@@ -143,7 +150,35 @@ class WizardState:
 
     @property
     def api_key_set(self) -> bool:
-        return self.cli.api_key_configured
+        """True iff a usable Anthropic key is reachable from any canonical source.
+
+        The CLI wizard, the GUI wizard, and the PowerShell installer write
+        the user's key to *different* places depending on which path the
+        user took:
+
+        * GUI wizard (``/setup/api-key``) — stamps
+          ``cli.api_key_configured = True`` in the JSON state file AND
+          writes to keyring (service ``meridian.api_key`` / account
+          ``anthropic``).
+        * CLI installer (``installer/Install-Meridian.ps1``) — writes to
+          BOTH ``C:\\Meridian\\.env`` (as ``ANTHROPIC_API_KEY=...``) AND
+          keyring at the same service/account. It does NOT touch the
+          wizard JSON state file.
+        * Headless / advanced users — set ``ANTHROPIC_API_KEY`` directly in
+          their environment or in a project ``.env``; ``meridian.config``
+          loads ``.env`` into ``os.environ`` at import.
+
+        Reading only the JSON-state flag (the pre-fix behaviour) caused the
+        GUI wizard to re-prompt for the key after a CLI install had
+        already saved it — see ``project_v013_deferred.md``. Probing all
+        three sources here keeps every install path coherent without the
+        write paths having to know about each other.
+        """
+        if self.cli.api_key_configured:
+            return True
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return True
+        return _keyring_has_anthropic_key()
 
     @property
     def first_project_slug(self) -> str | None:
@@ -178,7 +213,7 @@ class WizardState:
         """
         if self.is_complete:
             return "complete"
-        if not self.cli.api_key_configured:
+        if not self.api_key_set:
             return "api_key"
         if not (self.gui_documents_imported > 0 or self.gui_documents_skipped):
             return "first_documents"
@@ -188,10 +223,30 @@ class WizardState:
 
     def _has_required_gates(self) -> bool:
         return (
-            self.cli.api_key_configured
+            self.api_key_set
             and bool(self.cli.first_project_slug)
             and (self.gui_documents_imported > 0 or self.gui_documents_skipped)
         )
+
+
+def _keyring_has_anthropic_key() -> bool:
+    """Probe the OS keychain for a non-empty Anthropic key at the canonical slot.
+
+    Returns False (not raise) when the keyring backend is unavailable,
+    misconfigured, or when no entry exists. This is intentionally
+    conservative: a "maybe" reads as "no" so the GUI defaults to
+    *prompting* the user rather than silently advancing on a stale or
+    half-configured state.
+    """
+    try:
+        import keyring  # noqa: PLC0415 — keyring backends differ; lazy import keeps the module importable in environments without one
+    except Exception:  # noqa: BLE001 — any import-time failure should be soft
+        return False
+    try:
+        value = keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
+    except Exception:  # noqa: BLE001 — backend errors (locked keychain, no daemon, etc.)
+        return False
+    return bool(value)
 
 
 def _read_raw_json() -> dict[str, Any]:

@@ -135,22 +135,36 @@ export default function SetupFirstDocumentsPage() {
     }
   }, []);
 
+  const [pickerError, setPickerError] = useState<string | null>(null);
+
   const handlePickFolder = useCallback(async () => {
-    const result = await pickFolderWithFallback({
-      title: "Choose your project folder",
-    });
-    if (result.kind === "cancelled") {
-      // Stay on idle — the page already invites them to try again.
-      return;
+    setPickerError(null);
+    try {
+      const result = await pickFolderWithFallback({
+        title: "Choose your project folder",
+      });
+      if (result.kind === "cancelled") {
+        // Stay on idle — the page already invites them to try again.
+        // Don't surface an error: cancel is a legitimate user action.
+        return;
+      }
+      if (result.kind === "native") {
+        void scanFolder(result.path);
+        return;
+      }
+      // Browser fallback — pre-fill the manual-path input with whatever
+      // hint we got and switch to the typed-path prompt.
+      setManualPath(result.folderName ? result.folderName : "");
+      setPhase({ kind: "browser_path_prompt", folderName: result.folderName });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[setup/first-documents] folder picker failed", err);
+      setPickerError(
+        err instanceof Error
+          ? `Folder picker failed: ${err.message}`
+          : "Folder picker failed for an unknown reason — please try again or refresh the page.",
+      );
     }
-    if (result.kind === "native") {
-      void scanFolder(result.path);
-      return;
-    }
-    // Browser fallback — pre-fill the manual-path input with whatever
-    // hint we got and switch to the typed-path prompt.
-    setManualPath(result.folderName ? result.folderName : "");
-    setPhase({ kind: "browser_path_prompt", folderName: result.folderName });
   }, [scanFolder]);
 
   const submitManualPath = () => {
@@ -292,24 +306,49 @@ export default function SetupFirstDocumentsPage() {
           phase.kind === "scan_invalid" ||
           phase.kind === "scan_unable") ? (
           <div className="space-y-3">
-            <Tooltip
-              content={FIRST_DOCS_COPY.pickFolderTooltip}
-              widthClass="w-80"
+            {/*
+              The folder-pick button must NOT be wrapped in a `<Tooltip>` —
+              Tooltip uses cloneElement to inject its own onClick, which
+              silently clobbers the child's onClick handler. That was the
+              alpha-5 "Choose project folder does nothing" bug. Keep the
+              tooltip on a separate "what does this do?" affordance below
+              the button instead. The button itself uses the native `title`
+              attribute for hover discoverability — clunkier but reliable.
+            */}
+            <button
+              type="button"
+              onClick={() => void handlePickFolder()}
+              disabled={isBusy}
+              title={FIRST_DOCS_COPY.pickFolderTooltip}
+              className="w-full rounded-xl border-2 border-accent/60 bg-accent/10 px-6 py-6 text-left text-lg font-medium text-text-primary transition hover:border-accent hover:bg-accent/15 disabled:opacity-40"
             >
-              <button
-                type="button"
-                onClick={() => void handlePickFolder()}
-                disabled={isBusy}
-                className="w-full rounded-xl border-2 border-accent/60 bg-accent/10 px-6 py-6 text-left text-lg font-medium text-text-primary transition hover:border-accent hover:bg-accent/15 disabled:opacity-40"
+              <span className="block">{FIRST_DOCS_COPY.pickFolderButton}</span>
+              <span className="mt-1 block text-xs font-normal text-text-muted">
+                {tauri
+                  ? "Opens your operating system's folder picker."
+                  : "Browser preview — we'll ask for the path after you pick."}
+              </span>
+            </button>
+
+            <p className="text-xs text-text-muted">
+              <Tooltip
+                content={FIRST_DOCS_COPY.pickFolderTooltip}
+                widthClass="w-80"
               >
-                <span className="block">{FIRST_DOCS_COPY.pickFolderButton}</span>
-                <span className="mt-1 block text-xs font-normal text-text-muted">
-                  {tauri
-                    ? "Opens your operating system's folder picker."
-                    : "Browser preview — we'll ask for the path after you pick."}
+                <span className="cursor-help underline decoration-dotted">
+                  What goes in the folder?
                 </span>
-              </button>
-            </Tooltip>
+              </Tooltip>
+            </p>
+
+            {pickerError ? (
+              <p
+                role="alert"
+                className="rounded border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-300"
+              >
+                {pickerError}
+              </p>
+            ) : null}
 
             <p className="text-xs text-text-muted">
               Or{" "}

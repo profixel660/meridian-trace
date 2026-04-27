@@ -126,21 +126,50 @@ export async function pickFolderWithFallback(opts?: {
   title?: string;
 }): Promise<PickFolderResult> {
   if (isInTauri()) {
-    const path = await pickFolder(opts);
-    if (path) return { kind: "native", path };
-    return { kind: "cancelled" };
+    try {
+      const path = await pickFolder(opts);
+      if (path) return { kind: "native", path };
+      return { kind: "cancelled" };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[tauri.pickFolderWithFallback] native path failed", err);
+      throw err;
+    }
   }
   // Browser path — show webkitdirectory and harvest the folder name only.
+  //
+  // Cancel-detection note: most browsers DO NOT fire `oncancel` when the
+  // user dismisses a `webkitdirectory` picker. The conventional workaround
+  // is a window-focus watchdog: after the picker opens, the document
+  // briefly loses focus; when focus returns AND no `change` event fired
+  // within a short grace window, we treat it as a cancel. Without this
+  // the promise hangs forever and the wizard's button "does nothing on
+  // click" — exactly the alpha-5 bug we're fixing.
   return new Promise((resolve) => {
-    if (typeof document === "undefined") {
+    if (typeof document === "undefined" || typeof window === "undefined") {
       resolve({ kind: "cancelled" });
       return;
     }
+
+    let settled = false;
+    const settle = (result: PickFolderResult) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("focus", onFocusReturn);
+      try {
+        if (input.parentNode) input.parentNode.removeChild(input);
+      } catch {
+        // ignore — element may already be detached.
+      }
+      resolve(result);
+    };
+
     const input = document.createElement("input");
     input.type = "file";
     input.setAttribute("webkitdirectory", "");
     input.setAttribute("directory", "");
     input.style.display = "none";
+
     input.onchange = () => {
       const files = input.files;
       let folderName: string | null = null;
@@ -150,15 +179,32 @@ export async function pickFolderWithFallback(opts?: {
         const segs = rel.split("/").filter(Boolean);
         folderName = segs[0] ?? null;
       }
-      document.body.removeChild(input);
-      resolve({ kind: "browser", folderName });
+      settle({ kind: "browser", folderName });
     };
-    input.oncancel = () => {
-      document.body.removeChild(input);
-      resolve({ kind: "cancelled" });
+
+    // Modern Chromium fires `cancel` on the input when the dialog is
+    // dismissed; older browsers don't. The focus-return watchdog below
+    // catches the rest.
+    input.oncancel = () => settle({ kind: "cancelled" });
+
+    const onFocusReturn = () => {
+      // The browser returns focus to the window when the dialog closes,
+      // BEFORE the change event fires (if any). Wait one frame plus a
+      // safety margin; if no change event arrived we infer cancel.
+      window.setTimeout(() => {
+        if (!settled) settle({ kind: "cancelled" });
+      }, 500);
     };
+    window.addEventListener("focus", onFocusReturn, { once: true });
+
     document.body.appendChild(input);
-    input.click();
+    try {
+      input.click();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[tauri.pickFolderWithFallback] input.click() failed", err);
+      settle({ kind: "cancelled" });
+    }
   });
 }
 

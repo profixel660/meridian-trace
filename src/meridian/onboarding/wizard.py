@@ -227,18 +227,29 @@ def _validate_anthropic_key() -> tuple[str, str]:
     """Return one of ``valid`` / ``invalid`` / ``unable_to_verify`` plus detail.
 
     Three-outcome (per user MEMORY: classification tasks default to
-    pass/fail/borderline). "unable_to_verify" covers offline / SDK-import /
+    pass/fail/borderline). "unable_to_verify" covers offline /
     transient-network so we don't punish a user for a flaky connection.
+
+    Resolution ladder (first importable wins):
+        1. ``anthropic`` SDK — preferred when present (richer error
+           reporting via ``models.list``); but it is NOT a hard meridian
+           dependency so a wheel install will typically miss it.
+        2. ``litellm`` — hard dependency of meridian, routes to Anthropic
+           via its own transport. Used as the fallback so the wizard's
+           validator does not silently degrade to ``unable_to_verify``
+           (and the user does not see the misleading "couldn't reach
+           Anthropic" warning) on every install that lacks the optional
+           ``anthropic`` SDK.
     """
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return "invalid", "ANTHROPIC_API_KEY not set"
     try:
         # Lightweight: list models. Anthropic's SDK exposes ``models.list()``.
-        # We import lazily so a missing dep degrades to "unable_to_verify"
-        # rather than crashing the wizard.
-        from anthropic import Anthropic  # type: ignore[import-not-found]
-    except Exception as exc:  # pragma: no cover — env-dependent
-        return "unable_to_verify", f"anthropic SDK not importable: {exc}"
+        # We import lazily so a missing dep falls through to litellm rather
+        # than crashing the wizard.
+        from anthropic import Anthropic  # type: ignore[import-not-found]  # noqa: PLC0415
+    except ImportError:
+        return _validate_anthropic_key_via_litellm()
     try:
         client = Anthropic()
         # Some SDK versions expose .models.list(); fall back to a tiny
@@ -259,6 +270,57 @@ def _validate_anthropic_key() -> tuple[str, str]:
         if any(t in msg for t in ("401", "unauthorized", "invalid_api_key", "authentication")):
             return "invalid", str(exc)
         return "unable_to_verify", str(exc)
+
+
+def _validate_anthropic_key_via_litellm() -> tuple[str, str]:
+    """Fallback validator when the optional ``anthropic`` SDK isn't installed.
+
+    Issues a 1-token completion through litellm (a hard meridian dep) and
+    classifies the result the same way the SDK path does:
+
+    * Success      → ``valid``.
+    * ``litellm.exceptions.AuthenticationError`` /
+      ``PermissionDeniedError`` → ``invalid`` (Anthropic rejected the key).
+    * Anything else (network error, rate-limit, server-side, import
+      failure) → ``unable_to_verify``. We deliberately do NOT classify
+      ``BadRequestError`` etc. as ``invalid`` — it is a poor proxy for
+      "key is wrong" and misclassifying a transient as invalid is the
+      worst possible UX (it blocks a user with a perfectly good key).
+    """
+    try:
+        import litellm  # noqa: PLC0415
+        from litellm.exceptions import (  # noqa: PLC0415
+            AuthenticationError,
+            PermissionDeniedError,
+        )
+    except ImportError as exc:  # pragma: no cover — litellm is a hard dep
+        return "unable_to_verify", f"litellm not importable: {exc}"
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    try:
+        litellm.completion(
+            model="anthropic/claude-haiku-4-5-20251001",
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=1,
+            api_key=api_key,
+        )
+    except AuthenticationError as exc:
+        return "invalid", f"litellm AuthenticationError: {exc}"
+    except PermissionDeniedError as exc:
+        # 403 — typically means the key is valid but lacks model access.
+        # Treat as ``invalid`` for wizard purposes: the user cannot use
+        # this key with Meridian's chosen model and re-prompting is the
+        # right remediation (vs. silently advancing).
+        return "invalid", f"litellm PermissionDeniedError: {exc}"
+    except Exception as exc:  # noqa: BLE001 — surface anything else as transient
+        msg = str(exc).lower()
+        # Belt-and-braces: some litellm versions surface 401 via APIError
+        # rather than AuthenticationError. String-match the canonical
+        # auth markers as a last-resort classification.
+        if any(t in msg for t in ("401", "unauthorized", "invalid_api_key", "authentication")):
+            return "invalid", str(exc)
+        return "unable_to_verify", str(exc)
+    return "valid", "litellm.completion() probe succeeded"
 
 
 def _step_totp_enrol(state: OnboardingState) -> OnboardingState:

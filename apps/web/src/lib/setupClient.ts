@@ -364,6 +364,33 @@ export const setupApi = {
   complete(): Promise<SetupState> {
     return apiFetch<SetupState>("/setup/complete", { method: "POST" });
   },
+
+  /**
+   * Sensible per-machine defaults the wizard should pre-fill into inputs
+   * BEFORE the user has saved anything. Currently only used for
+   * `projects_dir` — the backend resolves `MERIDIAN_HOME` (env override)
+   * → `C:\Meridian\projects` on Windows installer hosts → `~/Meridian/projects`
+   * elsewhere, producing a real path the user can submit unedited.
+   *
+   * If the backend hasn't shipped this endpoint yet (404), the caller
+   * receives `null` and falls back to a hardcoded sensible value so the
+   * wizard never freezes on a missing endpoint.
+   */
+  async defaults(): Promise<SetupDefaults | null> {
+    try {
+      return await apiFetch<SetupDefaults>("/setup/defaults");
+    } catch (err) {
+      if (err instanceof MeridianApiError && err.status === 404) {
+        return null;
+      }
+      // Other errors (network, 500) — also non-fatal; the wizard still
+      // works with the hardcoded fallback. Log so the dev console
+      // surfaces the issue.
+      // eslint-disable-next-line no-console
+      console.warn("[setupApi.defaults] failed, using fallback", err);
+      return null;
+    }
+  },
 };
 
 /* ---------- folder-pick types (alpha-2 reframe — Stream A shapes) ---------- */
@@ -402,6 +429,27 @@ export interface FolderImportJobStatus {
   total: number;
   current_file: string | null;
   status: "running" | "done" | "failed";
+}
+
+/**
+ * Response from `/setup/defaults`. Returned by the backend so the wizard
+ * can pre-fill OS-appropriate paths into its inputs without baking them
+ * into frontend code.
+ *
+ * Contract (documented for Stream A — backend):
+ *   GET /setup/defaults → 200 { projects_dir: string }
+ *   - `projects_dir` is the absolute path the backend would default to
+ *     for new project storage (resolves MERIDIAN_HOME env var, then
+ *     `C:\Meridian\projects` on Windows installer hosts, then
+ *     `~/Meridian/projects`). It must be a real path containing no
+ *     placeholder tokens like `<you>` — the frontend submits it
+ *     verbatim if the user doesn't edit it.
+ *   - 404 is acceptable; the frontend falls back to a hardcoded value
+ *     and the user can still type their own path. No other status codes
+ *     are expected for this endpoint.
+ */
+export interface SetupDefaults {
+  projects_dir: string;
 }
 
 /**

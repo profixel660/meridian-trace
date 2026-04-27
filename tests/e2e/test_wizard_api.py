@@ -34,14 +34,39 @@ def _reset_wizard_state(
     tmp_projects_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[None]:
-    """Clear the rate-limit bucket and the in-memory job registry before each test.
+    """Clear the rate-limit bucket, in-memory job registry, and OS keyring lookups.
 
     ``tmp_projects_dir`` already isolates the JSON state file under a
-    per-test tmp dir; we additionally clear the module-level dicts.
+    per-test tmp dir; we additionally clear the module-level dicts. The
+    keyring read path used by ``WizardState.api_key_set`` would otherwise
+    surface a real prior-install secret on the developer's machine and
+    flip ``api_key_set`` to True for tests that expect a virgin state.
+    Stubbing ``keyring.get_password`` to return None gives us deterministic
+    isolation without monkey-patching ``sys.modules`` for every test.
     """
     wizard_api._rate_buckets.clear()
     with wizard_api._jobs_lock:
         wizard_api._jobs.clear()
+
+    # Sandbox keyring reads. Tests that need a populated keyring use the
+    # ``stub_keyring`` fixture, which runs *after* this autouse fixture
+    # and replaces sys.modules['keyring'] wholesale with a fake. This
+    # default fallback installs an empty stub so a real prior-install
+    # secret on the developer's machine cannot leak into
+    # ``WizardState.api_key_set`` and flip ``next_step`` away from
+    # ``api_key`` for tests that expect a virgin state.
+    import sys
+
+    class _NullKeyring:
+        @staticmethod
+        def get_password(service: str, user: str) -> str | None:
+            return None
+
+        @staticmethod
+        def set_password(service: str, user: str, value: str) -> None:
+            return None
+
+    monkeypatch.setitem(sys.modules, "keyring", _NullKeyring)
     yield
 
 
@@ -822,6 +847,187 @@ def test_static_files_mount_serves_index_when_web_dir_set(
         # reloading without the env var.
         monkeypatch.delenv("MERIDIAN_WEB_DIR", raising=False)
         importlib.reload(main_mod)
+
+
+# --------------------------------------------------------------------------
+# CLI-installer / GUI-wizard handoff (alpha-5 bug fix)
+#
+# The PowerShell installer writes the API key to BOTH C:\Meridian\.env and
+# Windows Credential Manager (keyring service "meridian.api_key" / account
+# "anthropic"). The GUI wizard's /setup/state must recognise either source
+# so the user is not re-prompted for a key the installer already saved.
+# Pre-fix, ``api_key_set`` only consulted the JSON state file's
+# ``cli.api_key_configured`` flag and missed both writes entirely.
+# --------------------------------------------------------------------------
+
+
+def test_setup_state_reflects_keyring_after_cli_install(
+    fastapi_client: TestClient,
+    stub_keyring: dict[tuple[str, str], str],
+) -> None:
+    """Installer-style write: keyring populated, JSON state untouched.
+
+    /setup/state must report api_key_set=True and skip the api_key step.
+    """
+    # Simulate installer write to keyring (no JSON state mutation).
+    stub_keyring[("meridian.api_key", "anthropic")] = "sk-ant-installer-wrote-this"
+
+    response = fastapi_client.get("/setup/state")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["api_key_set"] is True
+    # Without a project yet, next step must skip past api_key.
+    assert body["next_step"] == "first_documents"
+
+
+def test_setup_state_reflects_env_var_when_state_file_blank(
+    fastapi_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Headless / .env-only install: env var is the only signal.
+
+    The bootstrap loader in meridian.config copies .env entries into
+    os.environ at import time, so this also covers the C:\\Meridian\\.env
+    write path the PowerShell installer takes.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-from-env")
+
+    response = fastapi_client.get("/setup/state")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["api_key_set"] is True
+    assert body["next_step"] == "first_documents"
+
+
+# --------------------------------------------------------------------------
+# litellm fallback (alpha-5 bug fix)
+#
+# ``anthropic`` is NOT a hard meridian dependency (only litellm is). When
+# the SDK is missing, the validator must fall through to a litellm probe
+# rather than returning ``unable_to_verify`` — otherwise every install
+# without the optional SDK shows a misleading "couldn't reach Anthropic"
+# warning even with a valid key. See ``project_v013_deferred.md``.
+# --------------------------------------------------------------------------
+
+
+def test_validate_anthropic_key_falls_back_to_litellm_when_sdk_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """anthropic SDK ImportError → litellm.completion() probe → 'valid'."""
+    import builtins
+    import sys
+
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fallback-test")
+
+    # Force `from anthropic import Anthropic` to raise ImportError, even if
+    # the SDK happens to be installed in the test environment.
+    real_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "anthropic" or name.startswith("anthropic."):
+            raise ImportError("simulated: anthropic SDK not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    # Also evict any cached module so the lazy import re-runs the hook.
+    monkeypatch.delitem(sys.modules, "anthropic", raising=False)
+
+    # Stub litellm.completion to short-circuit network. We only care that
+    # the function is *called* with the right shape and returns success.
+    captured: dict[str, object] = {}
+
+    def _fake_completion(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()  # the validator only checks for non-exception
+
+    import litellm
+
+    monkeypatch.setattr(litellm, "completion", _fake_completion)
+
+    outcome, detail = cli_wizard._validate_anthropic_key()
+    assert outcome == "valid", (outcome, detail)
+    # Verify the fallback actually used litellm, not some other path.
+    assert captured["api_key"] == "sk-ant-fallback-test"
+    assert captured["max_tokens"] == 1
+    # litellm uses the "anthropic/" prefix to route to Anthropic.
+    assert str(captured["model"]).startswith("anthropic/")
+
+
+def test_validate_anthropic_key_litellm_fallback_classifies_auth_error_as_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """anthropic SDK ImportError + litellm AuthenticationError → 'invalid'."""
+    import builtins
+    import sys
+
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-bad-key")
+
+    real_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "anthropic" or name.startswith("anthropic."):
+            raise ImportError("simulated: anthropic SDK not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.delitem(sys.modules, "anthropic", raising=False)
+
+    import litellm
+    from litellm.exceptions import AuthenticationError
+
+    def _raise_auth(**kwargs: object) -> object:
+        raise AuthenticationError(
+            message="401 Unauthorized: invalid x-api-key",
+            llm_provider="anthropic",
+            model="claude-haiku-4-5-20251001",
+        )
+
+    monkeypatch.setattr(litellm, "completion", _raise_auth)
+
+    outcome, detail = cli_wizard._validate_anthropic_key()
+    assert outcome == "invalid", (outcome, detail)
+    assert "AuthenticationError" in detail
+
+
+def test_validate_anthropic_key_litellm_fallback_network_error_is_unable_to_verify(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """anthropic SDK ImportError + transient network → 'unable_to_verify'.
+
+    Belt-and-braces: misclassifying a network blip as 'invalid' would block
+    a user with a perfectly good key. The fallback must surface the
+    middle-ground outcome.
+    """
+    import builtins
+    import sys
+
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-some-key")
+
+    real_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "anthropic" or name.startswith("anthropic."):
+            raise ImportError("simulated: anthropic SDK not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.delitem(sys.modules, "anthropic", raising=False)
+
+    import litellm
+
+    def _raise_connection(**kwargs: object) -> object:
+        raise ConnectionError("simulated DNS failure")
+
+    monkeypatch.setattr(litellm, "completion", _raise_connection)
+
+    outcome, _detail = cli_wizard._validate_anthropic_key()
+    assert outcome == "unable_to_verify"
 
 
 def test_static_files_mount_absent_when_web_dir_unset(

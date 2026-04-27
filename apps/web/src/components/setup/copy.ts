@@ -227,7 +227,7 @@ export const FIRST_PROJECT_COPY = {
       helper:
         "Where Meridian will store this project's database, logs, and exported files.",
       defaultHint:
-        "Default: C:\\Users\\<you>\\Meridian\\projects. We'll create the folder if it doesn't exist.",
+        "We've pre-filled this with Meridian's recommended location for your machine. Edit it if you'd like the project to live somewhere else; we'll create the folder if it doesn't exist.",
       onedriveWarning:
         "Avoid OneDrive-, Dropbox-, or iCloud-synced folders. File syncing while Meridian is writing the database can cause corruption — pick a local folder.",
       pickButton: "Choose folder…",
@@ -292,10 +292,10 @@ export const FIRST_DOCS_COPY = {
   firstUseBody:
     "Your construction project folder — anything you'd normally read to understand what gets built. PDFs of specs, drawings, BOD spreadsheets, emails, etc. We'll scan the folder, show you what we found, and let you confirm before we import anything.",
   /** Browser fallback prompt. */
-  browserPathPromptLabel: "Type or paste the full path to your project folder",
+  browserPathPromptLabel: "Now paste the full path to that folder",
   browserPathPromptPlaceholder: "e.g. C:\\Projects\\MyProject",
   browserPathPromptHelper:
-    "Browsers can't tell us the full path of a folder you pick, so we need you to type it in. The desktop app picks folders directly without this step.",
+    "Browsers don't tell us the full path of folders you pick, for security reasons — only the folder's name. So we need you to paste the full Windows path here so Meridian can scan it. (Tip: in Windows Explorer, click the address bar to copy the path.) The desktop app picks folders directly without this step.",
   /** Empty manifest state. */
   emptyManifestTitle: "We didn't find any importable files in that folder",
   emptyManifestBody:

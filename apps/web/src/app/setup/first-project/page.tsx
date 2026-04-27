@@ -23,6 +23,20 @@ type Outcome =
   | { kind: "invalid"; message: string; osError?: string | null }
   | { kind: "error"; message: string };
 
+/**
+ * Hardcoded fallback used only when `/setup/defaults` is unreachable
+ * (the most common reason being that Stream A hasn't wired it yet).
+ * Matches the backend's own _meridian_home() default for installed
+ * Windows hosts; PMs without an unusual `MERIDIAN_HOME` override see
+ * this same path resolved server-side.
+ */
+function fallbackProjectsDir(): string {
+  if (typeof navigator === "undefined") return "~/Meridian/projects";
+  const ua = `${navigator.platform || ""} ${navigator.userAgent || ""}`;
+  if (/Win/i.test(ua)) return "C:\\Meridian\\projects";
+  return "~/Meridian/projects";
+}
+
 interface AutoName {
   /** The suggested name as the backend returned it (already de-duplicated). */
   suggested: string;
@@ -32,8 +46,14 @@ interface AutoName {
   originalFolderName: string;
 }
 
-/** Reasonable Windows default until the API tells us otherwise. */
-const DEFAULT_DIR_HINT = "C:\\Users\\<you>\\Meridian\\projects";
+/**
+ * Placeholder shape shown only as the input's `placeholder` HTML
+ * attribute (i.e. when the resolved default fails to load AND the user
+ * has cleared the input). This is HELP TEXT not a default VALUE — the
+ * `<you>` token must never reach the backend, which would 422 on the
+ * angle brackets.
+ */
+const DIR_PLACEHOLDER_HINT = "e.g. C:\\Meridian\\projects";
 
 /**
  * Step 3 (alpha-2 reframe) — Confirm your project name.
@@ -77,6 +97,35 @@ function SetupFirstProjectPageInner() {
 
   useEffect(() => {
     setTauri(isInTauri());
+  }, []);
+
+  /* ----------- pre-fill projects_dir from the backend default ------------ */
+  // The backend resolves a real, valid path (no `<you>` token); falling
+  // back to the OS-shaped guess only when the endpoint is unavailable
+  // ensures the user always sees a submittable path on first paint.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const defaults = await setupApi.defaults();
+        if (cancelled) return;
+        const resolved = defaults?.projects_dir || fallbackProjectsDir();
+        // Only pre-fill if the user hasn't typed anything yet — never
+        // clobber user input on a slow-arriving network response.
+        setProjectsDir((prev) => (prev ? prev : resolved));
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[setup/first-project] could not resolve default projects_dir, using local fallback",
+          err,
+        );
+        if (cancelled) return;
+        setProjectsDir((prev) => (prev ? prev : fallbackProjectsDir()));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /* ------------------------ auto-name from folder ------------------------- */
@@ -340,7 +389,7 @@ function SetupFirstProjectPageInner() {
               type="text"
               value={projectsDir}
               onChange={(e) => setProjectsDir(e.target.value)}
-              placeholder={DEFAULT_DIR_HINT}
+              placeholder={DIR_PLACEHOLDER_HINT}
               className="flex-1 rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
             />
             <button
