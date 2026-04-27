@@ -1,0 +1,1887 @@
+MECHANICAL SERVICES
+
+AT-GLOBAL-TR-000005
+
+Issue:  Rev 6
+Date    28th July 2023
+                                `
+
+TABLE OF CONTENTS
+
+1 DOCUMENT CONTROL ..................................................................................... 6
+2 COMPLIANCE CRITERIA ................................................................................... 7
+3 DESIGN LIFE ...................................................................................................... 7
+4 RETURN BRIEF AND DESIGN SUBMISSIONS ................................................. 7
+5 EQUIPMENT AND SYSTEMS............................................................................. 7
+
+  5.1 CHILLERS..................................................................................................... 7
+     5.1.1 AIR COOLED CHILLERS ....................................................................... 7
+     5.1.2 WATER COOLED CHILLERS ................................................................ 7
+
+  5.2 HEAT-REJECTION UNITS (HRU) ................................................................ 8
+     5.2.1 HRU CONNECTIONS ............................................................................ 8
+     5.2.2 INSTALLATION ...................................................................................... 8
+     5.2.3 CONDENSER WATER TREATMENT SYSTEMS .................................. 8
+     5.2.4 AIRBORNE CONTAMINANTS ............................................................... 8
+
+  5.3 COMPUTER ROOM AIR HANDLING (CRAH) UNITS .................................. 9
+  5.4 COMPUTER ROOM AIR CONDITIONING (CRAC) UNITS .......................... 9
+  5.5 INDIRECT EVAPORATIVE COOLING (IEC) UNITS .................................... 9
+  5.6 ROOFTOP PRESSURISATION AND HUMIDITY CONTROL UNITS ........... 9
+  5.7 VARIABLE REFRIGERANT FLOW (VRF) SYSTEMS .................................. 9
+  5.8 ROOFTOP PACKAGE AND DUCTED SPLIT UNITS ................................... 9
+  5.9 WALL-SPLIT UNITS ..................................................................................... 9
+  5.10 VENTILATION SYSTEMS........................................................................... 10
+
+     5.10.1 FILTRATION FOR OUTSIDE AIR SYSTEM ..................................... 10
+     5.10.2 MONITORING ................................................................................... 10
+  5.11 VARIABLE SPEED DRIVES ....................................................................... 10
+  5.12 PIPEWORK................................................................................................. 10
+     5.12.1 CRITICAL PROCESS COOLING WATER ........................................ 10
+     5.12.2 GEORGE FISCHER HDPE ............................................................... 11
+     5.12.3 REFRIGERANT PIPEWORK ............................................................ 12
+  5.13 FLOW METERS .......................................................................................... 12
+  5.14 WATER PUMPS ......................................................................................... 12
+6 TECHNICAL SPACE SYSTEMS ....................................................................... 12
+  6.1 DESIGN CRITERIA..................................................................................... 12
+     6.1.1 OUTDOOR CONDITIONS .................................................................... 12
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 2
+                                `
+
+     6.1.2 INDOOR CONDITIONS........................................................................ 12
+  6.2 NETWORK OPERATIONS CENTRE (NOC) AND SECURITY
+  OPERATIONS CENTRE (SOC)............................................................................ 13
+  6.3 MEETING ROOMS ..................................................................................... 13
+  6.4 AIRTRUNK OFFICE SPACES .................................................................... 13
+  6.5 AIRTRUNK STORAGE SPACES ................................................................ 13
+  6.6 OUTSIDE AIR VENTILATION PRE-CONDITIONING SYSTEMS............... 13
+  6.7 CUSTOMER OFFICE SPACES .................................................................. 13
+  6.8 SUPPLEMENTARY AIR-CONDITIONING FOR CUSTOMER OFFICE
+  FITOUTS............................................................................................................... 13
+  6.9 CUSTOMER VENTILATION PROVISION .................................................. 14
+  6.10 CUSTOMER STORAGE AREAS ................................................................ 14
+  6.11 LINK CORRIDORS, CIRCULATION SPACES AND LOBBIES................... 14
+  6.12 TOILET AMENITIES ................................................................................... 14
+  6.13 MEET-ME ROOM (MMRS) ......................................................................... 14
+
+     6.13.1 DESIGN CRITERIA ........................................................................... 14
+     6.13.2 SYSTEMS ......................................................................................... 14
+     6.13.3 REDUNDANCY ................................................................................. 15
+  6.14 MAIN COMMUNICATIONS ROOM (MCR) ................................................. 15
+     6.14.1 DESIGN CRITERIA ........................................................................... 15
+     6.14.2 SYSTEMS ......................................................................................... 15
+     6.14.3 REDUNDANCY ................................................................................. 15
+  6.15 SECONDARY COMMUNICATIONS ROOM (SCR) .................................... 15
+     6.15.1 DESIGN CRITERIA ........................................................................... 15
+     6.15.2 SYSTEMS ......................................................................................... 15
+     6.15.3 REDUNDANCY ................................................................................. 15
+7 CRITICAL PLANT SPACES .............................................................................. 15
+  7.1 INDOOR HIGH VOLTAGE SWITCH ROOMS ............................................ 15
+     7.1.1 DESIGN CRITERIA .............................................................................. 15
+     7.1.2 SYSTEMS ............................................................................................ 16
+     7.1.3 REDUNDANCY .................................................................................... 16
+  7.2 LOW VOLTAGE SWITCH ROOMS AND UPS ROOMS ............................. 16
+     7.2.1 DESIGN CRITERIA .............................................................................. 16
+     7.2.2 SYSTEMS ............................................................................................ 16
+     7.2.3 REDUNDANCY .................................................................................... 16
+  7.3 PUMP ROOMS ........................................................................................... 16
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 3
+                                `
+
+     7.3.1 DESIGN CRITERIA .............................................................................. 16
+     7.3.2 SYSTEMS ............................................................................................ 16
+     7.3.3 REDUNDANCY .................................................................................... 17
+  7.4 DATA HALL COOLING SYSTEMS ............................................................. 17
+     7.4.1 RELIABILITY ........................................................................................ 17
+     7.4.2 DESIGN CRITERIA .............................................................................. 17
+     7.4.3 LOAD CALCULATIONS ....................................................................... 17
+     7.4.4 PROCESS COOLING EQUIPMENT SIZING ....................................... 17
+     7.4.5 COOLING AIRFLOW............................................................................ 17
+     7.4.6 EQUIPMENT REDUNDANCY .............................................................. 18
+     7.4.7 INTERNAL CFD MODELLING ............................................................. 18
+     7.4.8 TRANSIENT HEAT RISE ..................................................................... 18
+     7.4.9 COLD SHELL AIR CONDITIONING ..................................................... 18
+  7.5 CHILLED WATER CRAH OR FWU AIR HANDLING SYSTEM .................. 18
+     7.5.1 EQUIPMENT SELECTION ................................................................... 18
+     7.5.2 INSTALLATION .................................................................................... 18
+     7.5.3 DRAINAGE ........................................................................................... 19
+     7.5.4 LEAK DETECTION............................................................................... 19
+  7.6 IEC AIR HANDLING SYSTEM .................................................................... 19
+     7.6.1 INSTALLATION .................................................................................... 19
+     7.6.2 DRAINAGE ........................................................................................... 19
+  7.7 SUPPLY GRILLES ...................................................................................... 19
+  7.8 PRESSURISATION AND HUMIDITY CONTROL SYSTEMS ..................... 20
+     7.8.1 LOW RISE BUILDINGS........................................................................ 20
+     7.8.2 HIGH RISE BUILDINGS ....................................................................... 21
+  7.9 CONTAINERISED OSE PLANT.................................................................. 21
+     7.9.1 AIR COOLED PLANT ........................................................................... 21
+     7.9.2 WATER COOLED PLANT .................................................................... 21
+  7.10 CONTROL AND MONITORING .................................................................. 22
+8 CENTRAL COOLING PLANT ............................................................................ 22
+     8.1.1 EXTERNAL CFD MODELLING ............................................................ 22
+  8.2 DESIGN CRITERIA..................................................................................... 22
+  LOAD CALCULATIONS........................................................................................ 22
+  8.3 EQUIPMENT SIZING .................................................................................. 22
+  8.4 EQUIPMENT REDUNDANCY..................................................................... 23
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 4
+                             `
+
+8.5 BLACK BUILDING SCENARIO................................................................... 23
+8.6 THERMAL STORAGE ................................................................................ 23
+8.7 HEADER PIPEWORK ................................................................................. 23
+8.8 DISTRIBUTION PIPEWORK....................................................................... 23
+8.9 PRIMARY PUMPING SYSTEM .................................................................. 24
+
+  8.9.1 PUMPS SELECTION............................................................................ 24
+  8.9.2 LOW LOAD BYPASS ........................................................................... 24
+  8.9.3 AIR BLEED VALVES ............................................................................ 24
+  8.9.4 PRIMARY PUMPING CONTROL ......................................................... 25
+8.10 AIR COOLED CHILLER SYSTEM .............................................................. 26
+  8.10.1 SYSTEM EQUIPMENT ..................................................................... 26
+  8.10.2 INSTALLATION................................................................................. 26
+  8.10.3 CONTROL TOPOLOGY & FUNCTION ............................................. 26
+  8.10.4 TYPICAL SCHEMATIC ..................................................................... 28
+8.11 WATER COOLED CHILLER SYSTEM ....................................................... 28
+  8.11.1 SYSTEM EQUIPMENT ..................................................................... 29
+  8.11.2 INSTALLATION................................................................................. 29
+  8.11.3 CONTROL TOPOLOGY & FUNCTION ............................................. 29
+  8.11.4 TYPICAL SCHEMATIC ..................................................................... 32
+8.12 ELEVATED TEMPERATURE COOLING (ET) SYSTEM ............................ 32
+  8.12.1 EQUIPMENT SELECTION................................................................ 33
+  8.12.2 INSTALLATION................................................................................. 33
+  8.12.3 CONTROL TOPOLOGY & FUNCTION ............................................. 33
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 5
+          `
+
+1 DOCUMENT CONTROL
+
+VERSION      DATE         MODIFIED BY              APPROVED BY     SUMMARY OF CHANGE
+   Draft                                                           New document
+  Rev 1   01/07/2019  Samantha Van Selm            Jason Corbett   Released
+  Rev 2   07/11/2019  Sam Isaac                    Joshua Martens  CHW schematics added
+  Rev 3   07/04/2020  Joshua Martens               Jason Corbett   Central plant details
+  Rev 4   19/04/2021  Sam Isaac                    Joshua Martens  General Updates
+  Rev 5   20/05/2022  Joshua Martens               Jason Corbett   General updates and
+                                                                   Bradman VE
+ Rev 5.1   3/6/2022   Joshua Marshall              Joshua Martens  Updated CMS power
+                                                                   requirements
+  Rev 6   28/7/2023   Sam Isaac                    Joshua Martens  2023 Update
+
+Important note regarding this document.
+
+This document shall not be read in isolation. It is the readers responsibility to obtain and
+understand all associated TRs, Specifications and contract documents that relate to this
+work. This document outlines the base requirements. The project BOD defines any
+overruling project adjustments. At all times comply with local codes, standards and AHJ
+(Authority Having Jurisdiction) requirements.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                  Page | 6
+                                `
+
+2 COMPLIANCE CRITERIA
+
+Comply with the local relevant Codes and Standards.
+
+3 DESIGN LIFE
+
+General design life for all systems life span is 20 years. Provide maintenance and
+replacement schedule to achieve this operating life.
+
+Components as per CIBSE M.
+
+4 RETURN BRIEF AND DESIGN SUBMISSIONS
+
+The return brief should include all codes used in the design of the systems. It should include
+calculations and the design criteria.
+
+Refer to sections below for specific calculations and reports to be submitted.
+
+5 EQUIPMENT AND SYSTEMS
+
+5.1 CHILLERS
+
+Select chillers on critical design criteria (Section 8.2) and peak thermal load calculation. The
+BOD may nominate higher chilled water depending on project requirements. Align
+equipment selections to AirTrunk standard OSE.
+
+5.1.1 AIR COOLED CHILLERS
+
+Refer to AirTrunk Air cooled chiller OSE specification for technical specifications and
+interfaces.
+
+Install on plinths located on ground or the building roof (refer to Architectural TR for plinths).
+Minimum spacing between equipment to match manufacturer's requirements or greater to
+suit project risks and CFD results. For large numbers of chillers consider the effects of
+prevailing wind, building influences, generators and short circuiting between chillers.
+
+CFD must be undertaken when large numbers of chillers are grouped on a roof at
+manufacturer's minimum spacing. Refer to External CFD section.
+
+Fix the base of the unit to the plinth on rubber vibration isolation mounts. For earthquake
+prone areas, provide mountings in accordance with local codes.
+
+5.1.2 WATER COOLED CHILLERS
+
+Refer to AirTrunk water cooled chiller OSE specification for technical specifications and
+interfaces.
+
+Install chillers and pumps on plinths located in plantrooms. Minimum spacing between
+equipment to match manufacturer's requirements for access and tube maintenance. The
+chiller plantroom is to be passively ventilated to the extent that it can be considered external
+to accommodate A2L HFO refrigerants.
+
+Fix the base of the unit to the plinth on rubber vibration isolation mounts. For earthquake
+prone areas, provide mountings in accordance with local codes.
+
+Provide differential pressure transducers across all pumps and vessels. Provide universal
+test points across all strainers, chiller vessels and pumps. Provide sufficient flow isolation
+systems such that all components can be maintained.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 7
+                                `
+
+5.2 HEAT-REJECTION UNITS (HRU)
+
+Heat rejection units covers the range of options for different heat rejection technologies
+AirTrunk deploy as OSE. This includes, open circuit cooling towers (OCT), closed circuit
+towers (CCT), Hybrid Dry closed circuit Coolers (HDC). Heat rejection systems may be used
+for standard water-cooled chiller systems, Elevated Temperature plant (ET) and liquid
+cooling systems.
+
+Select HRUs on critical design criteria (Section 8.2) and peak heat rejection load calculation
+including all gains. The BOD may nominate higher water temperatures depending on project
+requirements.
+
+Refer to AirTrunk Heat Rejection Unit OSE specification for technical specifications and
+interfaces for open OCT, CCT and HDC type cooling towers.
+
+Provide any required local registration, labelling and certification as required by local
+Authority Having Jurisdiction (AHJ).
+
+5.2.1 HRU CONNECTIONS
+
+Where basins require filling, filling systems operate via float switches and a solenoid.
+Provide manual fast fill connections to each cooling tower. Provide dual water connections
+from separate A & B hydraulic feeds at the common point of connection of the HRU
+
+Each cooling tower is to be provided by bunded drainage system sized to accommodate any
+surge and prevent overflow during a manual drain operation.
+
+Each cooling tower fan module is to be provided with a dedicated VSD.
+
+5.2.2 INSTALLATION
+
+HRUs to be located on raised plinths or galvanised steelwork on rubber vibration isolation
+mounts. For open circuit installations, ensure sufficient head to provide net positive suction
+to the pumps.
+
+HRU groups may consist of multiple tower cells connected with an internal or external
+balance line.
+
+HRUs to be installed in accordance with local AHJ. Provide condenser water treatment
+systems to all basins.
+
+5.2.3 CONDENSER WATER TREATMENT SYSTEMS
+
+For central plant installations provide centralised condenser water treatment systems. The
+systems must have redundant components to minimise downtime.
+
+Condenser water treatment systems consist of:
+
+    1. Side-stream filtration system (2N) with water drawn from the basin of each tower.
+         Distribution system to ensure minimal dead zones within basin.
+
+    2. Conductivity controlled salinity control and bleed system.
+    3. Scale and corrosion inhibitor with measurement and dosing facilities
+
+Where individual treatment systems have been nominated these systems can be N
+configuration.
+
+5.2.4 AIRBORNE CONTAMINANTS
+
+Additional consideration in design of water treatment systems where air quality assessment
+and risk report identify high levels of airborne contaminants such as dust from construction
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 8
+                                `
+
+or industry, products of combustion such as NOx, SOx and carbon particulates. These
+contaminants pose a risk to operational continuity and reduced equipment life.
+
+In these environments, water treatment systems will have increased resiliency such as
+higher flow rates, extensive basin sweeper systems, higher levels filtration, increased
+redundancy, higher grade of material corrosion resistivity.
+
+5.3 COMPUTER ROOM AIR HANDLING (CRAH) UNITS
+
+Refer to AirTrunk CRAH/CRAC unit OSE specification for technical specifications and
+interfaces.
+
+5.4 COMPUTER ROOM AIR CONDITIONING (CRAC) UNITS
+
+Refer to AirTrunk CRAH/CRAC unit OSE specification for technical specifications and
+interfaces.
+
+Where CRAC units are not supplied as OSE, use Tier 1 vendors such as Vertiv, Schneider
+or Stulz. Use low GWP refrigerants as preference if available.
+
+5.5 INDIRECT EVAPORATIVE COOLING (IEC) UNITS
+
+Refer to AirTrunk IEC unit OSE specification for technical specifications and interfaces.
+
+5.6 ROOFTOP PRESSURISATION AND HUMIDITY CONTROL UNITS
+
+Where rooftop pressurisation systems are used, refer to AirTrunk Pressurisation Unit OSE
+Specification for technical specifications and interfaces for data hall pressurisation and
+humidity control systems.
+
+5.7 VARIABLE REFRIGERANT FLOW (VRF) SYSTEMS
+
+Use Tier 1 proprietary VRF system of Mitsubishi, Daikin or approved equal manufacture.
+Low GWP refrigerant systems should be used where possible.
+
+Pipework for VRF systems and pipework reticulation routes must be accessible to facilitate
+replacement at end of life.
+
+Condensate drainage to be via gravity pipework to local tundishes. If condensate pumps are
+required, utilise pumps supplied by the same manufacturer as the unit.
+
+All systems to be monitored/controlled via a manufacturer's proprietary head end/gateway
+and be monitored via a high-level BACnet/IP or Modbus/IP interface from the DCS.
+
+Generally, all systems to be provided with a hard-wired wall controller.
+
+5.8 ROOFTOP PACKAGE AND DUCTED SPLIT UNITS
+
+Provide units of Tier 1 manufacturer. Systems below 15kW capacity must use low GWP
+refrigerant. Installed with sufficient attenuation to minimise occupant discomfort and comply
+with site acoustic criteria. Condensate drainage to be via gravity pipework to local tundishes.
+
+All compressors to be inverter driven for capacity control.
+
+All systems to be monitored via a high-level BACnet/IP or Modbus/IP interface from the
+DCS.
+
+5.9 WALL-SPLIT UNITS
+
+Use Tier 1 proprietary VRF system of Mitsubishi, Daikin or approved equal manufacture.
+
+Systems below 15kW capacity must use low GWP refrigerant.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 9
+               `
+
+Condensate drainage to be via gravity pipework to local tundishes.
+
+All compressors to be inverter driven for capacity control.
+
+All systems to be monitored/controlled via a high-level BACnet/IP or Modbus/IP interface
+from the DCS.
+
+Generally, all system to be provided with a hard-wired wall controller.
+
+5.10 VENTILATION SYSTEMS
+
+Use fans of Tier 1 manufacture. All fans to be powered from house distribution boards or
+dedicated mechanical services switchboards.
+
+All fans with 1.5kW motor or above to be fitted with Variable Speed Drives. All small single-
+phase fans to be fitted with manual speed controllers.
+
+5.10.1    FILTRATION FOR OUTSIDE AIR SYSTEM
+
+1. Non-critical systems (Offices, Store rooms): G4 filtration
+
+2. Critical systems (Data halls and Communications Rooms): F7 filtration
+
+5.10.2    MONITORING
+
+Monitor status of fans and pressure drop across filters on the DCS. VSDs to be monitored
+
+via HLI.
+
+5.11 VARIABLE SPEED DRIVES
+
+All variable speed drives serving mission critical cooling equipment to be Danfoss VLT type
+or approved equal. VSDs located externally must be suitably protected from sunlight.
+
+THDi shall be limited to <5%.
+
+5.12 PIPEWORK
+
+5.12.1    CRITICAL PROCESS COOLING WATER
+
+5.12.1.1 GENERAL
+Applies to data centre cooling water, chilled water or condenser water pipe distribution
+systems. Pipework systems to be robust and reliable design suitable for datacentre
+applications. Where pipework is serving mission critical cooling systems, the design must be
+concurrently maintainable.
+
+Nominally Copper to DIA150, black mild steel above DIA150. The only alternative systems
+approved are George Fischer systems described in Section 5.12.2.
+
+Fully Welded, braised joints generally. Victaulic may be used to assist site assembly time
+and offsite prefabrication.
+
+External vertical or difficult to access pipework to be fully welded and with joints validated..
+
+Insulation and vapour barrier to prevent heat gain and condensation as required for local
+conditions.
+
+5.12.1.2 VALVES
+Isolation valves used must be fully-lugged type.
+
+All valves on critical systems to be lockable.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                         Page | 10
+        `
+
+5.12.2  GEORGE FISCHER HDPE
+
+5.12.2.1 GENERAL
+Process cooling water (chilled water, cooling water) or condenser water used for the critical
+or non-critical systems may utilise George Fischer (GF) High Density Polyethylene (GF-
+HDPE) as an alternative system to steel and copper systems.
+
+Use of GF-HDPE must be engineered, installed and validated strictly in accordance with the
+supplier's process and requirements.
+
+5.12.2.2 PRODUCT
+The nominated product is the GF ecoFIT (PE) system and shall have the following
+characteristics:
+
+1. Product lifespan 25 years at 20C operating temperature.
+2. Pipe and fittings to be FM global approved
+3. UV stabilised for outdoor use without solar protection
+
+The coolFIT product is also approved for use where insulation is required on lower
+temperature chilled water systems.
+
+5.12.2.3 DESIGN
+Sizing of pipework to be adjusted to suit the internal diameter of GF pipe. Reduced pipework
+roughness must be considered in sizing of pumps.
+
+Optimise the type of pipe joins based to minimise cost. Prefabrication to be driver in design
+of GF system, maximising factory undertaken butt or infrared welding and minimising site
+joins.
+
+Provide spacing between fittings to allow for cut in for modification and repair.
+
+Workshop drawings must utilise GF supplied Revit families for coordination. Workshop
+drawings will be signed off by GF Engineering prior to the IFC issue.
+
+Hangers and supports must follow the GF guidelines to minimise any deflection
+
+Expansion loops or bellows must be design in accordance with GF's expansion guidelines.
+
+AHU (FWU or CRAH) connections shall be branch saddle or socket wall fusion type welds
+
+Vibration of plant and equipment shall be considered for final connections
+
+5.12.2.4 CONSTRUCTION
+Maximise offsite prefabrication.
+
+GF to inspect regularly construction of prefabricated modules and installed pipework
+systems on site.
+
+5.12.2.5 TECHNICAL SUBMITTALS
+    1. All technical submittals relevant to the GF-HDPE including but not limited to process
+         pipe materials, pipe fittings, supports and design deliverables must be submitted for
+         approval.
+    2. Workshop drawings must identify prefabricated components, where site joins are and
+         what type of join they will be.
+    3. Schedule of pipework
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                                     Page | 11
+        `
+
+5.12.2.6 QUALITY ASSURANCE
+    1. Contractor's design to be signed off by GF engineering to validate supports,
+         connections, water hammer and expansion.
+    2. Each weld is to have an assigned weld certificate (via GF docket systems)
+    3. Non-Destructive Testing (NDT) to be undertaken on a minimum of 10% of welds.
+    4. Pipework to be hydrostatically tested to 5x maximum system pressure or 1600kPA
+         (whichever is greater)
+    5. GF must inspect site installation at regular intervals during the construction process
+    6. A design and installation compliance certification is to be issued by GF as part of
+         project handover.
+
+5.12.2.7 WARRANTY
+    1. A ten(10) year warranty must be provided by GF on completion.
+
+5.12.3  REFRIGERANT PIPEWORK
+
+Hard drawn copper tube, fully brazed joints. Press fit connectors will be accepted subject to
+
+approval by the Principal.
+
+5.13 FLOW METERS
+
+For critical cooling systems provide Siemens SITRANS FM MAG 5100W Magnetic Flow
+Meters or approved equivalent.
+
+5.14 WATER PUMPS
+
+For critical process cooling water or condenser water:
+
+Preferred pumps are end-suction, centrifugal type and close-coupled to a 2-pole motor IE4
+fitted with an external VSD. VSDs as per Variable Speed Drives section. The pumps shall be
+mounted to a rigid hot dip galvanised base frame. Provide inertia bases and vibration
+isolation as required. The above applies to condenser water pumping systems also. Pumps
+to be selected 15% spare capacity in the motor selection.
+
+All pumps serving mechanical cooling systems to be Grundfos, KSB or approved equal.
+
+6 TECHNICAL SPACE SYSTEMS
+
+Generally, Split-Ducted DX, Variable Refrigerant Flow (VRF) or Rooftop Package Systems
+may be used may be used as appropriate.
+
+Services risers should be accessible with sufficient space to install additional systems
+serving tenant areas in future or replace damaged/faulty items
+
+For VRF and split systems serving corridors and technical spaces use a common
+manufacturer with all units connected to the manufacturers head-end for all monitoring and
+control
+
+6.1 DESIGN CRITERIA
+
+6.1.1 OUTDOOR CONDITIONS
+
+For non-mission critical systems use appropriate regional ambient design criteria defined by
+ASHRAE Fundamentals as part of normal good practice mechanical design. Submit design
+ambient design criteria as part of Return Brief.
+
+6.1.2 INDOOR CONDITIONS
+
+Unless otherwise specified design all comfort air conditioning systems to the following indoor
+design conditions:
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                     Page | 12
+                                `
+
+    1. 23°C ± 2°C dry bulb temperature
+    2. 20-70% relative humidity
+
+6.2 NETWORK OPERATIONS CENTRE (NOC) AND SECURITY
+      OPERATIONS CENTRE (SOC)
+
+Provide thermally zoned air conditioning systems via ducted systems. For the main NOC or
+SOC open spaces a minimum of two units on different systems must be provided and should
+be sized at 50-60% of the load.
+
+The NOC & SOC will be active 24 hours per day.
+
+6.3 MEETING ROOMS
+
+Meeting rooms with more than four seating places should be served with a dedicated ducted
+air conditioning unit. Meeting room air-conditioning should run on a daily time-clock and be
+adjustable from a hard-wired wall controller.
+
+6.4 AIRTRUNK OFFICE SPACES
+
+Provide thermally zoned air conditioning systems with ducted systems. Minimise use of
+adjustable wall-controllers except in dedicated offices. Office air conditioning will run on a
+daily time-clock. Ductwork and equipment selection to be designed to achieve acoustic NC
+values as described. Airconditioning should run on a daily time-clock and be interfaced with
+the access control system for after-hours use.
+
+6.5 AIRTRUNK STORAGE SPACES
+
+Provide ventilation to code requirements using an exhaust system. Use spill air from
+adjacent conditioned corridors for cooling. Operate on a daily time-clock.
+
+6.6 OUTSIDE AIR VENTILATION PRE-CONDITIONING SYSTEMS
+
+Sites with extreme ambient temperatures or high ambient humidity should utilise a heat-
+exchanged packaged pre-conditioning unit to cool or dry outside air via relief or exhaust air.
+This is applicable where there is medium-large total outside air loads.
+
+Small systems may use a direct outside air connection.
+
+6.7 CUSTOMER OFFICE SPACES
+
+Provide thermally zoned to base building air conditioning and ventilation systems to the
+areas being fitted out as a warm shell. Use Split Ducted or Rooftop Package systems as
+appropriate.
+
+Unless project specific factors are known, undertake load calculations with the following
+internal loads:
+
+    1. 1 person per 10 square meters
+    2. 5W/m2 for lighting
+    3. 20W/m2 for power
+
+6.8 SUPPLEMENTARY AIR-CONDITIONING FOR CUSTOMER
+      OFFICE FITOUTS
+
+Customer office fitouts will use wall-split type or split ducted systems. The base building
+design is to provide an accessible reticulation pathway for refrigerant pipework and
+associated electrical systems to an area designated for air-cooled customer heat rejection
+plant.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 13
+        `
+
+For buildings where air-cooled systems cannot be installed, provide valves at each level for
+connection to common water-based customer heat-rejection loop.
+
+6.9 CUSTOMER VENTILATION PROVISION
+
+The base building design is to provide a means for tenant supplementary ventilation either
+by way of a louvre in the façade or a common fresh air ventilation system that can be
+connected to in future.
+
+6.10 CUSTOMER STORAGE AREAS
+
+Provide dedicated ducted or wall-split systems with a wall-controller to the customer storage
+space being fitted out as a warm shell.
+
+Unless project specific factors are known, undertake load calculations with the following
+internal loads:
+
+1. 1 person
+2. 5W/m2 for lighting
+3. 10W/m2 for power
+
+6.11 LINK CORRIDORS, CIRCULATION SPACES AND LOBBIES
+
+Provide dedicated comfort air conditioning systems with ducted split systems to customer
+facing link corridors, circulation spaces and lobbies.
+
+No visible wall controllers to be used.
+
+Unless project specific factors are known, undertake load calculations with the following
+internal loads:
+
+1. 1 person per 10 square meters
+2. 5W/m2 for lighting
+3. 5W/m2 for power
+
+6.12 TOILET AMENITIES
+
+Provide ventilation systems to local code. Operate toilet ventilation systems on a daily
+timeclock from the DCS.
+
+Any 24hr occupied spaces such as SOC and NOC amenities to run 24hrs.
+
+6.13 MEET-ME ROOM (MMRs)
+
+6.13.1  DESIGN CRITERIA
+
+Unless otherwise advised, the following design criteria:
+
+1. 24°C ± 2.5°C dry bulb temperature
+2. 20-80% relative humidity
+3. 1 occupant
+4. Positively pressurised relative to surrounding spaces
+5. 20kW design load for standard 8 rack configuration
+
+6.13.2  SYSTEMS
+
+Provide dedicated wall mounted split systems for cooling. Any DX based systems are to
+
+have an inverter compressor for capacity control.
+
+Provide humidity control systems where humidity design criteria cannot be maintained.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                                         Page | 14
+                   `
+
+6.13.3  REDUNDANCY
+
+Provide units in a 2N or N+1 redundant configuration. Each unit is to be electrically powered
+
+from a different short-break house main switchboard or distribution board.
+
+Provide systems to control humidity within Design Criteria.
+
+6.14 MAIN COMMUNICATIONS ROOM (MCR)
+
+6.14.1  DESIGN CRITERIA
+
+Unless otherwise advised, the following design criteria:
+
+1. 24°C ± 2.5°C dry bulb temperature
+2. 20-80% relative humidity
+3. 1 occupant
+4. Positively pressurised relative to surrounding spaces
+5. 10kW design load for standard 6 rack configuration. Site specific load calculations to
+
+    be undertaken.
+
+6.14.2  SYSTEMS
+
+Provide air conditioning to the room via wall split air conditioning. Include local hard-wired
+
+wall controllers. Units to run continuously.
+
+6.14.3  REDUNDANCY
+
+Provide units in a 2N or N+1 redundant configuration. Each unit is to be electrically powered
+
+from a different short-break house main switchboard or distribution board. Each unit to be
+
+served from a different refrigeration condenser/circuit.
+
+6.15 SECONDARY COMMUNICATIONS ROOM (SCR)
+
+These rooms usually house controls outstation equipment, access control and edge
+switches in high rise installations. Heat load is generally between 2- 5kW.
+
+6.15.1  DESIGN CRITERIA
+
+Unless otherwise advised, the following design criteria:
+
+1. 26°C ± 2.5°C dry bulb temperature
+2. 20 - 80% relative humidity
+3. 1 occupant
+4. Positively pressurised relative to surrounding spaces
+
+6.15.2  SYSTEMS
+
+Provide air conditioning to the room via wall split air conditioning. Include local hard-wired
+
+wall controllers.
+
+6.15.3  REDUNDANCY
+
+Provide units in a 2N or N+1 redundant configuration. Each unit is to be electrically powered
+
+from a different short-break house main switchboard or distribution board. Each unit to be
+
+served from a different refrigeration condenser/circuit.
+
+7 CRITICAL PLANT SPACES
+
+7.1 INDOOR HIGH VOLTAGE SWITCH ROOMS
+
+7.1.1 DESIGN CRITERIA
+
+    1. 25 ­ 35°C dry bulb temperature
+    2. 20 ­ 80% relative humidity
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                                 Page | 15
+                                `
+
+    3. 1 occupant
+    4. Positively pressurised relative to surrounding spaces
+
+7.1.2 SYSTEMS
+
+Where the room only contains switchgear, provide use DX wall mounted split systems to
+control temperature within the room.
+
+Where the room contains transformers, use CRAH units connected to the base building
+chilled water systems. DX split systems are acceptable where there is no chilled water
+available, however, economiser systems should be considered.
+
+Cooling equipment located within high voltage areas must consider safe access for
+maintenance work without having to shut down HV equipment.
+
+Where ventilation is required by local AHJ provide filtration.
+
+7.1.3 REDUNDANCY
+
+For rooms requiring air conditioning, provide units in a 2N or N+1 configuration. Each unit is
+to be electrically powered from a different short-break house main switchboard or distribution
+board.
+
+7.2 LOW VOLTAGE SWITCH ROOMS AND UPS ROOMS
+
+7.2.1 DESIGN CRITERIA
+
+    1. 25 ­ 30°C dry bulb temperature for switch room
+    2. 25°C dry bulb temperature for switch room with UPS and battery storage.
+    3. 20 ­ 80% relative humidity
+    4. 1 occupant
+    5. Positively pressurised relative to surrounding spaces
+
+7.2.2 SYSTEMS
+
+Where the room only contains switchgear use exhaust ventilation systems and filtered relief
+air to control temperature within the room.
+
+Where the room contains UPS units generating significant heat load, provide air conditioning
+systems in a 2N or N+1 configuration. Use CRAH units connected to the base building
+chilled water systems. DX split systems are acceptable where there is no chilled water
+available, however, economiser systems should be considered.
+
+7.2.3 REDUNDANCY
+
+For rooms requiring air conditioning, provide units in a 2N redundant configuration. Each unit
+is to be electrically powered from a different short-break house main switchboard or
+distribution board.
+
+For rooms with minimal ventilation requirements, N conditioning is acceptable.
+
+7.3 PUMP ROOMS
+
+7.3.1 DESIGN CRITERIA
+
+Provide filtered ventilation system to code or to accommodate internal heat load, whichever
+the greatest.
+
+7.3.2 SYSTEMS
+
+Where the room only contains switchgear, use exhaust ventilation systems and filtered relief
+air to control temperature within the room.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 16
+                                `
+
+7.3.3 REDUNDANCY
+
+If the pump room provides for critical systems such as mechanical cooling water, provide
+fans in a 2N configuration where N is 50-60% of design airflow.
+
+Power fans from different electrical systems.
+
+7.4 DATA HALL COOLING SYSTEMS
+
+The below section is written based for air cooling of IT equipment within a data hall and the
+control of humidity.
+
+7.4.1 RELIABILITY
+
+    1. Single points of failure shall be eliminated to improve redundancy and reliability, both
+         within the data centre and support infrastructure as well as in the external services
+         and utility supplies.
+
+    2. The facility shall be capable of being maintained, upgraded, and tested without
+         interruption of operations.
+
+    3. The facility rack area and support infrastructure shall be designed to accommodate
+         future growth with little or no disruption to services.
+
+7.4.2 DESIGN CRITERIA
+
+Ambient design conditions as per ASHRAE N=20 year extreme maximum for the closest
+weather station.
+
+    1. Cold Aisle temperature: Generally, 26°C DB unless otherwise defined in Basis of
+         Design (BOD). Generally, 1°C lower than the Customer's stated cold aisle or rack
+         entering temperature.
+
+    2. Cold Aisle humidity: Generally, 20% to 80% RH unless otherwise defined in the BOD.
+    3. Pressurisation: 0.5 air changes per hour.
+    4. Air Quality: F7 Filtration on outside air systems, G4 on process cooling systems.
+
+7.4.3 LOAD CALCULATIONS
+
+Load calculations for critical systems are to be submitted.
+
+As a minimum, include the following in the data hall air handling peak load calculation.
+
+    1. Design IT load
+    2. Lighting load
+    3. LV Distribution losses
+    4. External Fabric Load
+    5. Battery Recharge (if in-rack design)
+
+7.4.4 PROCESS COOLING EQUIPMENT SIZING
+
+Size equipment to meet provide the minimum number of CRAH / FWU / IEC air handling
+units to satisfy the peak load calculation whilst delivering the supply air temperature setpoint,
+matching the Equipment Redundancy requirements and compliance with cooling airflow
+requirements in electrical stream failure mode.
+
+Refer to BOD for project specific requirements.
+
+7.4.5 COOLING AIRFLOW
+
+Size air handling equipment on an 11°C temperature rise within the data hall unless
+otherwise defined in the BOD.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 17
+                                `
+
+Determine air handling external static pressure requirements through data hall CFD or static
+pressure calculation with all obstructions modelled including allowances for security grilles.
+
+Ensure duty pressure in plenums does not effect operating of doors for egress.
+
+7.4.6 EQUIPMENT REDUNDANCY
+
+Use N+1 where N < 6 units and N+2 for larger systems unless otherwise defined in the
+BOD.
+
+Select units to align with upstream distributed redundant electrical topology (e.g. 5+1 or
+3+1). ATS units may be used where the electrical and mechanical topologies do not match.
+
+7.4.7 INTERNAL CFD MODELLING
+
+Internal CFD modelling is to consider the following scenarios
+
+    1. N+R cooling units running in normal operation
+    2. Single electrical stream failure, N cooling units in operation
+    3. Mechanical failure resulting in isolation of redundant units, N cooling units in
+
+         operation. Consider the worst-case location of FWU failures.
+
+7.4.8 TRANSIENT HEAT RISE
+
+During transient power loss states, i.e. blackout, the design must ensure that the upper limit
+of the customer SLA is not breached. System thermal inertia and system restart times must
+be considered for this event.
+
+7.4.9 COLD SHELL AIR CONDITIONING
+
+Cold shell data halls shall be provided with humidity-controlled ventilation to prevent
+condensation and any deterioration of the building fabric. Utilise the permanent OAP/MAHU
+for this function.
+
+7.5 CHILLED WATER CRAH OR FWU AIR HANDLING SYSTEM
+
+Refer to CRAH/FWU specification for details on performance requirements of units. The
+below section only refers to the site installation requirements.
+
+7.5.1 EQUIPMENT SELECTION
+
+The hall design should work with at least two AirTrunk approved vendors. Provide options
+study to the Design Principal comparing the two vendors and their solution.
+
+7.5.2 INSTALLATION
+
+Two mechanical services corridors will serve each data hall along the two long sides of the
+perimeter. Install AHUs on plinths within mechanical service corridors outside the customer
+space. Fix the base of the unit to the plinth. For earthquake prone areas, provide mountings
+in accordance with local codes and BOD.
+
+All access to equipment for servicing to be outside the customer space.
+
+Configure the units so that the supply air outlet is directly ducted to the data hall. Use the
+ceiling and the mechanical corridor as a return air plenum. Position the units so that they are
+as close to the data hall as possible to minimise duct connections.
+
+Connect the pipe stubs on the air handling unit to the data hall/building central cooling loop.
+
+Strainers on individual terminal AHUs such as CRAHs and FWUs are not permitted. All
+system filtration devices are to be incorporated into central plant.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 18
+                                `
+
+Each unit must have means of isolation for maintenance. Electrical isolation is generally at
+the upstream distribution board. AHU power to be interlaced throughout the room such that
+on a single electrical block failure, adjacent or opposite units do not shut down concurrently.
+
+Provide supply and return isolation valves to each unit in an accessible location. Where
+isolation valves are located at high level, provide a means of remote operation such as
+chains so that valves can be operated at a height accessible from a standing position. Other
+solutions that remove the need for chains should be proposed.
+
+All future system expansions that are not covered by the Day 1 installation are to consider
+staging, future installation and flushing as part of the works.
+
+7.5.3 DRAINAGE
+
+Air handling units connected to central cooling systems with chilled water temperatures 18°C
+or above do not require dedicated drainage tundishes unless condensate is expected to be
+continuously generated.
+
+When commissioning systems, use temporary flexible hoses to plant space floor wastes until
+the space humidity is within design parameters.
+
+A cooling water pipe leak is contained within the bunded plant room and will drain to floor
+wastes.
+
+7.5.4 LEAK DETECTION
+
+Leak detection systems for the entire mechanical services corridor are supplied and installed
+with the OSE FWU/CRAH ­ there are no separate leak detection systems for these
+corridors. Each unit has a length of leak detection cable that internally covers the coil base
+and a second cable that extends outside the unit to ensure overlapping coverage of the
+bund wall. Leak detection is then monitored through the unit's HLI.
+
+7.6 IEC AIR HANDLING SYSTEM
+
+Refer to IEC specification for details on performance requirements of units. The below
+section only refers to the site installation requirements.
+
+7.6.1 INSTALLATION
+
+Provide plinths or dedicated steel structure to support IEC units. Fix the base of the unit to
+the structure. For earthquake prone areas, provide mountings in accordance with local
+codes.
+
+Provide ductwork connections to supply grilles and return air plenum. Consider the moisture
+holding of scavenger air discharge ductwork. Use stainless steel ductwork if there is a high
+chance of short-term corrosion.
+
+Ensure there is safe access to all serviceable components of the IEC and that maintenance
+access can be provided to all components.
+
+7.6.2 DRAINAGE
+
+Ensure drainage systems are adequately sized for peak flows. Ensure units are sufficient
+high to provide adequate gravity drainage slope to completely empty the IEC unit within
+15mins.
+
+7.7 SUPPLY GRILLES
+
+Where units have an unbalanced discharge into the space, provide perforated plate grilles to
+ensure even velocity on the outlet <3.5 m/s. As this forms the interface between the
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 19
+                                `
+
+customer space and the mechanical corridor, the grille must comply with the performance
+requirements of the security specification and customer requirements listed in the project
+BOD.
+
+Where units have a low velocity discharge off the coil (e.g. FWUs), provide a mesh with an
+aperture of 22mm x 22mm or complying with the customer performance of the BOD. For
+large areas, provide adequate supports to minimise deflection.
+
+7.8 PRESSURISATION AND HUMIDITY CONTROL SYSTEMS
+
+The pressurisation and humidity control units perform the following functions to meet the
+Design Criteria.
+
+    1. Positive pressurisation of the space to between 5-10Pa
+    2. Control high humidity through a DX dehumidification process
+    3. Control low humidity through a steam humidifier.
+
+The units continuously supply outside air within the humidity dead band nominated for each
+project to achieve the SLAs.
+
+7.8.1 LOW RISE BUILDINGS
+
+Applicable to buildings with up to 3 stories of data halls.
+
+Provide dedicated rooftop packaged pressurisation and humidity control units incorporate a
+heat exchanger, DX refrigeration system and humidifier. Refer to the AirTrunk Outside Air
+Pressurisation Specification for details on performance requirements of units. The below
+section only refers to the site installation requirements.
+
+A single pressurisation system will serve up to 3 halls vertically and be located at either end
+of the data hall. Spatial provisions to be made for additional units if the data hall tenancy is
+split in half with a solid wall.
+
+If humidification is required for the local climate, utilise ultrasonic in-room humidifiers or
+ducted steam humidifiers. Humidifier selection must be suitable for the local water quality.
+
+7.8.1.1 REDUNDANCY
+Provide 2N configuration where N is 50-60% of design airflow.
+
+Power from different short-break electrical systems
+
+7.8.1.2 EQUIPMENT SELECTION
+Size unit dehumidification capacity and airflow requirements using the data hall Design
+Criteria.
+
+7.8.1.3 INSTALLATION
+Locate packaged pressurisation systems on roofs with plinths or steel gantries. Penetrate
+the building envelope in the horizontal plane to minimise waterproofing risks.
+
+Ensure gravity drainage to local tundish can be achieved.
+
+Provide return air ductwork to one of the systems to each data hall such that humidity control
+will remain during periods of poor air quality.
+
+Provide motorised shut-off dampers in the outside air ductwork. Interlock the shut-off
+dampers to the operation of the pressurisation unit run signal. The fire systems will trip the
+operation of the unit in a poor air quality alarm or fire trip signal. Where a unit is fitted with
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 20
+                                `
+
+return air systems, provide motorised changeover dampers to operate the unit in full return
+air mode during a poor air quality trip.
+
+7.8.2 HIGH RISE BUILDINGS
+
+Applicable to buildings greater than 3 stories of data halls in a high-rise design.
+
+Provide ducted split type units adjacent to data halls at high level within the corridor space or
+within dedicated on floor plant rooms.
+
+Spatial provision to be made for additional units if the data hall tenancy is split in half with a
+solid wall.
+
+If humidification is required for the local climate, utilise ultrasonic in-room humidifiers or
+ducted steam humidifiers. Humidifier selection must be suitable for the local water quality.
+
+7.8.2.1 REDUNDANCY
+Provide 2N configuration where N is 50-60% of design airflow.
+
+Power equipment from different electrical systems
+
+7.8.2.2 EQUIPMENT SELECTION
+The nominated units must be designed as dedicated outside air handling systems designed
+for 24hr operations.
+
+Size unit dehumidification capacity and airflow requirements using the data hall Design
+Criteria.
+
+The design should work with at least two AirTrunk approved vendors. Provide options study
+to the Design Principal comparing the two vendors and their solution.
+
+7.8.2.3 INSTALLATION
+Locate systems local to the floor served at high level in corridors or preferably in dedicated
+OAP plantrooms depending on site constraints. Local on-floor outside air louvres to be
+provided.
+
+Ensure gravity drainage to local tundish can be achieved.
+
+Provide return air ductwork to one of the systems to each data hall such that humidity control
+will remain during periods.
+
+7.9 CONTAINERISED OSE PLANT
+
+Applies to Power Train Units (PTU) cooling systems
+
+7.9.1 AIR COOLED PLANT
+
+The OSE vendor will provide all air-cooling systems as a standalone system not interfacing
+to the building cooling system.
+
+7.9.2 WATER COOLED PLANT
+
+Where PTUs are fitted with a water-cooled heat rejection system such as CRAC or in-row
+cooler, a cooling water supply from the central plant will be provided.
+
+The containerised plant will have a supply and return connection for connection to the
+cooling water system, integrated internal flow meter to detect flow status and pressure
+independent motorised control valve. OSE is limited to a maximum of 75kPa pressure drop
+across the internal piping system (heat exchanger, control valves and fittings) at a 10 degree
+delta .
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 21
+                                `
+
+Cooling water will generally be supplied from the high temperature closed circuit process
+cooling water system (20-33C).
+
+Strainers are not to be used on clean, closed-circuit systems. Where PTUs are connected to
+an open circuit condenser water system, strainers must be used on each connection and be
+fitted with a bypass for maintenance.
+
+7.10 CONTROL AND MONITORING
+
+The units must be fitted with standalone controls such that they operate as a single unit with
+only monitoring to the DCS. Manufacturer supplied dedicated controllers are preferred.
+
+Refer to DCS specification for additional information on monitoring requirements.
+
+8 CENTRAL COOLING PLANT
+
+Generally, this section outlines the framework for the design and control of a central cooling
+plant which consists of heat rejection equipment, primary pumps and distribution pipework.
+
+The AirTrunk design outlined below is a scalable design that can be applied to small single
+data hall systems or multiple data halls stacked vertically.
+
+The type of system to be applied for a given project will be outlined in the Project BOD.
+
+8.1.1 EXTERNAL CFD MODELLING
+
+External CFD modelling is to consider the following scenarios
+
+    1. Still air / minimum local wind conditions on design day, generators running
+    2. Prevailing wind conditions on design day, generators running
+    3. Worst-case wind direction (most likely to cause recirculation of generator discharge
+
+         at the heat rejection plant inlets), at the coincident average wind speed and the
+         maximum coincident ambient conditions, generators running.
+
+8.2 DESIGN CRITERIA
+
+Ambient design conditions as per ASHRAE N=20 year extreme maximum for the closest
+weather station. Equipment must be capable of running +5oC higher than the design
+condition for 6hrs without shutting down.
+
+    1. Supply water temperature: To meet requirements of air handling equipment generally
+         20°C depending on requirements nominated in the BOD.
+
+    2. Return water temperature: To meet requirements of air handling equipment.
+         Generally, 10-12°C temperature rise from supply water temperature.
+
+LOAD CALCULATIONS
+
+As a minimum, include the following in the cooling water peak load calculation:
+
+    1. Airside loads (as per above)
+    2. Data hall air handling fan loads
+    3. Distribution pipe losses
+    4. Pumping losses
+    5. LV Switchrooms / PTUs if applicable
+
+8.3 EQUIPMENT SIZING
+
+Size central plant heat rejection equipment such as chillers and cooling towers to use the
+minimum number of units to satisfy the peak load calculation whilst delivering the supply
+water temperature setpoint, matching the Equipment Redundancy requirements.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 22
+                                `
+
+Systems must be configured in a block redundant configuration to match the upstream
+electrical design.
+
+Where adiabatic systems are nominated as part of the BOD utilise the rating during adiabatic
+operation.
+
+8.4 EQUIPMENT REDUNDANCY
+
+N+1 where N > 6 units and N+2 for larger systems. Select units to align with upstream
+distributed redundant electrical topology. ATS units may be used where the electrical and
+mechanical topologies cannot match for design reasons. Provide justification for use of ATS
+units.
+
+Each heat rejection device, i.e. chiller, cooling tower or dry cooler, is to have its own primary
+pump either integrated or adjacent, MCCB (as required) and controls. This arrangement
+forms a `cooling block' which will have a common electrical supply and form a separate fault
+zone from the other cooling blocks.
+
+8.5 BLACK BUILDING SCENARIO
+
+Total utility power loss is the design scenario. All mechanical equipment, using AirTrunk's
+Reference Design OSE, will lose power for approximately 15s before generators have
+detected loss of power, started and ATSs have transferred power back to the facility. The
+designer must prepare an overlay of the different systems (electrical and mechanical) to
+produce a time series plot showing the events from loss of power to 100% cooling restored.
+
+8.6 THERMAL STORAGE
+
+The AirTrunk standard design does not utilise any dedicated thermal storage systems. The
+design makes use of fast-restart features of OSE chiller equipment. Water volumes of
+pipework systems must be calculated to ensure there is enough volume for stability during
+transient scenarios and stable operation of the system under normal operation.
+
+8.7 HEADER PIPEWORK
+
+For a central cooling plant system use a single concurrently maintainable supply header,
+return header and mixed return header for water being supplied to cooling blocks. Refer to
+schematic below for typical arrangement. Header pipework to be designed such that all
+cooling blocks have an even spread of entering water temperature and system pressure.
+Limit header velocities to 3 m/s in `N' operation. Dual pipe systems are also acceptable
+where appropriate for layout or cost effectiveness.
+
+8.8 DISTRIBUTION PIPEWORK
+
+For a central cooling plant system use a laddered ring main design to serve data halls from
+central plant located either above or below. Dual pipe systems are also acceptable where
+appropriate for layout or cost.
+
+Break the ring into vertical loops with each loop serving one half of the data hall to keep
+pipework as small as possible. This concept can be applied to single or multi-story buildings
+or a single data hall system.
+
+Pipework design must be concurrently maintainable with isolation valves as required to
+maintain equipment redundancy requirements. Schematics listed below show a valving
+arrangement for N+2 systems. For N+1 systems, additional double valve blocks may need to
+be provided for concurrent maintainability.
+
+Main riser pipework to be located within the building envelope unless approved.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 23
+                                `
+
+On roofs, support pipework from roof where possible with stepovers where necessary.
+
+8.9 PRIMARY PUMPING SYSTEM
+
+All chilled/cooling water loops are to be served by primary pumping systems.
+Primary/Secondary distribution systems are not acceptable.
+
+Each heat rejection system is to have its own primary pump either integrated or adjacent,
+arrangement in a `cooling block'. If integrated within the equipment, the primary pump will be
+supplied as part of the OSE.
+
+Examples of different parallel primary pumping schematics are shown below (Figure 8.1 ­
+Typical air-cooled chiller system schematic, Figure 8.2 - Typical primary-pumping water-
+cooled system schematic.) for different heat rejection systems. Common to all systems are:
+
+    1. Supply header
+    2. Makeup water connections via feed and expansion tanks. Makeup water to sealed
+
+         systems to be provided with a pulse type flow meter.
+    3. Water treatment dosing systems
+    4. Distribution pipework
+    5. Low-load by-pass valves to ensure minimum flow through cooling blocks.
+    6. Control and monitoring field devices, i.e temperature and pressure sensors.
+
+All OSE supplied air handling units in data hall will have an internal 2-way electronically
+controlled pressure independent control valve equal to a Belimo e-PIC with integrated flow
+metering. No balancing valves are to be installed.
+
+All pumps are to be fitted with a strainer on the suction side. The strainer shall be capable of
+receiving a construction filter used for commissioning and flushing. No strainers are to be
+fitted to individual terminal equipment.
+
+8.9.1 PUMPS SELECTION
+
+Refer to Water Pumps for requirements.
+
+Size pumps on pipework on the worst-case index run with one concurrent failure in the
+pipework system, i.e. isolation of half of a ring main at full flow. Assess multiple failure
+scenarios to determine the worst-case scenario. Provide a pressure drop calculation both
+worst-case mode and normal operating mode.
+
+Pump operation must be assessed for stable operation low loadand peak efficiency at 60-
+70%load.
+
+Pumps to be selection with a minimum of 15% spare capacity in motor selection.
+
+8.9.2 LOW LOAD BYPASS
+
+Provide a minimum of two low-load bypass valves for each system. Bypass valves to be
+characterised ball valve type equal to Belimo R6...AO series (e.g. R679AO 80mm nominal
+dia.). The bypass valves should be generally located to keep control of pressure at index
+location. This is often at the furthest ring main position.
+
+Bypass valves to be sized for control authority at the index run for full flow of one cooling
+block (chiller) running. Provide calculations on valve sizing methodology.
+
+8.9.3 AIR BLEED VALVES
+
+Automatic air bleed valves must be fitted to all system high points where air can collect.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 24
+                                `
+
+8.9.4 PRIMARY PUMPING CONTROL
+
+This control description applies to all critical data hall cooling water distribution systems.
+
+When cooling blocks are sequenced to match load, the primary pumps operate as a parallel
+pumping system on field pressure control. The AirTrunk nominated generic control logic is as
+follows and must be adjusted to suit the project requirements. The system is controlled by
+the Cooling Management System (CMS). Refer to the Cooing management system TR for
+architecture and requirements.
+
+CMS Flow Control Logic
+
+    1. Acquire central plant load in the following sequence
+         a. IT Load, by summating the relevant main PTU outputs, or if not available,
+              individual IT load power meters and air handling system power meters in the
+              space.
+         b. Thermal Load, by summating physical Thermal Energy Meters connected to the
+              CMS, or if not available, by polling the current cooling load from the operating
+              chillers. The chillers have internal temperature sensors and a block flow meter
+              from which the cooling load can be determined. Alternatively, a direct value from
+              chiller HLI may be available.
+
+    1. Calculate flow rate required for central plant load.
+    2. Calculate the flow rate for each running cooling block and communicate to cooling
+
+         block controller(s).
+    3. Cooling block controller writes flow rate or flow rate offset to chiller HLI. The chiller
+
+         then controls speed to primary pump to achieve the target flow rate as measured by
+         the block magflow meter.
+    4. Field pressure control:
+
+              a. If the field pressure is <5kPa lower than setpoint and the bypass valves are
+                   closed, the system flow setpoint is increased.
+
+              b. If the field pressure is >5kPa above the setpoint and the master bypass valve
+                   is >20% open, the system flow setpoint is decreased.
+
+              c. Change of flow rate should be limited to rate of increase or decrease at no
+                   more than 0.25%/s for the total system over 15s until the field pressure is at
+                   setpoint.
+
+    5. OSE chillers can generally run at a minimum flow rate of 40-50% design flow. A
+         project optimised staging table will be included in schematic design.
+
+    6. The bypass system:
+
+              a. Bypass valves must not be located in the same fault domain but should be
+                   located near each other within the index ring loop in the far field.
+
+              b. shall control to a field differential pressure setpoint of approximately
+                   150kPaas measured by the lowest field differential pressure sensors (low
+                   select). The setpoint will be adjusted during commissioning.
+
+              c. To have an parallel control loop with the variable primary pumping control
+                   system to relieve pressure (Sys DP sp + 15 kPa typ.).
+
+              d. Multiple bypasses should operate sequentially in a master/slave arrangement
+                   to form one bypass control system, not in parallel
+
+              e. In the event that no chillers are running (power failure) the master bypass
+                   valve will open to 100% until a running status has been received on a chiller.
+                   Once a chiller is running for 2 minutes, the bypass valve will return to normal
+                   operation.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 25
+        `
+
+7. Differential pressure sensors:
+
+         a. must be selected for the correct range of operation.
+         b. must configured in two groups of two sensors (4 total) along the length of the
+
+              index ring main loop and connected to different CMS controllers
+         c. All potential index runs must have sensors to support the low select control
+
+              function.
+         d. Out of range values are ignored and control will be low-select.
+
+8.10 AIR COOLED CHILLER SYSTEM
+
+The AirTrunk standard OSE air cooled chiller comprises of a chiller system made up of
+multiple Danfoss Turbocor compressors, a single refrigerant circuit consisting of airside
+condenser and water side evaporator. Depending on the region, the BOD may nominate a
+chiller be fitted with adiabatic pads for peak load lopping or annual energy reduction. Water
+side economiser coils may also be optioned depending on the region. The standard chillers
+are a fully standalone unit with a pump, valve train and controls designed to deliver constant
+temperature water +/-0.2C around setpoint. The chillers are designed with a fast-restart
+feature to deliver full cooling at within 120s from power re-instatement.
+
+8.10.1  SYSTEM EQUIPMENT
+
+8.10.1.1 CHILLERS
+Refer to Section 5.1, Chillers for requirements.
+
+8.10.1.2 PRIMARY PUMPS
+Pumps, their VSD and valvetrain including: isolation valves, a strainer and magnetic flow
+meter, will be integrated within the Air-Cooled chiller chassis. Refer to the OSE specification
+for detailed schematic.
+
+Where OSE chillers are not supplied with integral pumps and valve train, provide skid
+solution adjacent to the chiller with same components. Refer to Section 5 Equipment for
+requirements.
+
+8.10.2  INSTALLATION
+
+Refer to Section 5.1, Chillers for requirements.
+
+Access to control panel must be at approximately 1.5m for operator safety
+
+Connect the chillers supply and return connections to the isolation valves on the central
+cooling loop header.
+
+8.10.3  CONTROL TOPOLOGY & FUNCTION
+
+For CMS architecture, refer to CMS TR.
+
+8.10.3.1 CHILLER INTERFACES
+A description of the air-cooled chiller systems functions are listed below:
+
+1. CMS calculates primary pump flow rate & writes this flow rate or flow-rate offset to
+    the chiller controller.
+
+2. Internal chiller controller responsible for controlling pump VSD to meet the flow
+    setpoint using feedback from the onboard magnetic flow meter.
+
+3. Internal chiller controller responsible for chiller delivering setpoint temperature.
+4. CMS block controller connects to the chiller controller in the following ways:
+
+a. HLI via Modbus/RTU or Modbus/TCP.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                            Page | 26
+`
+
+         b. A low level enable signal
+         c. A low-level fault signal
+         d. A low-level in-auto signal
+
+8.10.3.2 COOLING BLOCK INITIATION
+On sequencing a new cooling block:
+
+    1. The chiller will be given an enable signal
+    2. The chiller will start the primary) pump.
+    3. On internal interlock of flow the chiller will start.
+
+8.10.3.3 SEQUENCING LOGIC
+The sequencing guidelines below should form the high-level sequence of operation for the
+CMS. Each project will have specific values, timers, logic etc for a fully functional critical
+control system. These must be determined for each project.
+
+Sequencing logic:
+
+    1. There must be a minimum of 1 chiller running at all times.
+    2. Acquire central plant load in the following sequence
+
+         a. IT Load, by summating the relevant main PTU outputs, or if not available,
+              individual IT load power meters and air handling system power meters in the
+              space.
+
+         b. Thermal Load, by summating physical Thermal Energy Meters connected to the
+              CMS, or if not available, by polling the current cooling load from the operating
+              chillers. The chillers have internal temperature sensors and a block flow meter
+              from which the cooling load can be determined. Alternatively, a direct value from
+              chiller HLI may be available.
+
+    3. Decide to stage-up additional cooling block when ANY of the following occur:
+         a. The IT Load is greater than the stage-up trigger point. Usually at an approximate
+              chiller load of 80%. If IT Load Data Integrity is in Fault (if offline sources detected
+              or if IT Load readings exceeds Max Cooling Capacity of the plant (adjustable)),
+              then an alarm is raised and Thermal Load will be used in its place, until the IT
+              Load Data Integrity returns to Normal for more than 30 minutes continuously.
+         b. If the average supply water temperature is more than 2.0oC above setpoint for
+              more than 10 minutes.
+         c. If the field pressure setpoint is not being maintained and the primary pumps are
+              at design (maximum) flow rate for 10 minutes.
+
+    4. Decide to stage-down when ALL of the following conditions are met:
+         a. If the average supply water temperature is not more than 1.0oC above setpoint for
+              more than 10 minutes.
+              The High-Select of IT Load & Thermal Load is less than the stage-down trigger
+              point. Usually at an approximate chiller load of 40%, to keep chillers running at
+              the optimal COP (typically 50%).
+         b. The total maximum flow of the next stage down is sufficient for the plant load. For
+              very low loads with just 2 chillers running, some bypass valve operation may be
+              required for stability.
+
+    5. If a chiller is called to run but there is a mismatch between chiller status and enable
+         signal a chiller fault will be activated by the CMS and the chiller will be substituted by
+         another available chiller in staging sequence.
+
+Runtime Optimisation: Rearrange chiller sequencing order based on balancing runtime.
+
+A project specific staging table and description is to be provided.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 27
+        `
+
+8.10.4  TYPICAL SCHEMATIC
+
+A typical parallel primary pumping air-cooled chiller schematic is shown below (Figure 8.1)
+
+identifying general AirTrunk concept.
+
+                                  Figure 8.1 - Typical primary-pumping air-cooled chiller system schematic.
+
+8.11 WATER COOLED CHILLER SYSTEM
+
+The AirTrunk standard OSE water cooled chiller comprises of a chiller system made up of
+oil-free, magnetic bearing centrifugal compressors, a single refrigerant circuit with a water-
+based condenser and evaporator.
+
+The chillers are a fully standalone unit with controls designed to deliver constant temperature
+water +/-0.2C around setpoint. The chillers are designed with a fast-restart feature.
+
+Each chiller is served by a primary cooling water pump circulating water from the process
+cooling loop and a condenser water pump circulating water through the cooling towers.
+Magnetic flow meters are to be provided on both the cooling water and condenser water side
+for water flow control logic.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 28
+        `
+
+Condenser water side economiser heat exchanger system may also be nominated in the
+BOD.
+
+The chillers, pumps and tower form a cooling block that acts as a single redundant block
+complete with power and block controller.
+
+8.11.1  SYSTEM EQUIPMENT
+
+8.11.1.1 CHILLERS
+Refer to Section 5.1, Chillers for requirements.
+
+Water cooled chillers to be located in a naturally weatherproof plantroom on plinths. Chillers
+may share a common plant room.
+
+Connect chillers supply and return connections to the cooling water distribution system.
+
+8.11.1.2 HEAT REJECTION UNITS (HRU)
+Refer to Section 5.2, HRUs for requirements.
+
+Use open-circuit type towers (OCT) as standard. Use Hybrid Dry Coolers (HDC) where
+nominated in the BOD.
+
+Provide any required local registration, labelling and certification as required by local
+Authority Having Jurisdiction (AHJ)
+
+8.11.1.3 PRIMARY PUMPS AND VALVING
+Refer to Section 5.14, Water Pumps for requirements.
+
+Pumps, their VSD and valve train including isolation valves, a strainer and magnetic flow
+meter, will be part of the cooling block.
+
+8.11.1.4 CONDENSER WATER PUMP
+Refer to Section 5.14, Water Pumps for requirements.
+
+Pumps, their VSD and valvetrain including isolation valves, connections to cooling tower,
+strainer, low temperature bypass and magnetic flow meter will be part of the cooling block.
+
+8.11.2  INSTALLATION
+
+Locate WCCs and associate pumps in naturally ventilated plant rooms. Clearance between
+
+chillers is to be shared between a pair. Pumps to be arranged as close as possible to
+
+chillers. Pipework to be at high level within plant rooms.
+
+HRU field pipework to run as close to roof line as possible with stepovers and clear
+maintenance pathways identified on the roof to ensure all plant is maintainable.
+
+8.11.3  CONTROL TOPOLOGY & FUNCTION
+
+For CMS architecture, refer to CMS TR.
+
+8.11.3.1 CHILLER INTERFACES
+A description of the water-cooled chiller systems functions are listed below:
+
+1. CMS controllers interface directly with the following:
+         1. Water cooled chiller controller via:
+
+        a) HLI via Modbus/RTU or Modbus/TCP.
+        b) A low level enable signal
+        c) A low-level fault signal
+        d) A low-level in-auto signal
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                                          Page | 29
+                                `
+
+              2. Primary pump VSD via LLI
+              3. Condenser water pump VSD via LLI
+              4. HRU fan VSD via LLI
+    2. CMS responsible for primary & condenser water flow setpoint calculation and pump
+         speed control using feedback from cooling block magnetic flow meters.
+    3. CMS responsible for HRU fanspeed control to meet variable CWLT setpoint.
+    4. CWLT setpoint calculation based on ambient WBT and HRU WB approach.
+         Generally, the CWLT setpoint is to be minimised at all times (within appropriate
+         bounds) to allow the chiller to take advantage of low ambient temperatures to
+         maximise energy efficiency. Internal chiller controller responsible for delivering chilled
+         water at setpoint temperature.
+
+8.11.3.2 COOLING BLOCK INITIATION
+On sequencing a new cooling block:
+
+1. The chiller will be given an enable signal
+2. The CMS will start the primary pump.
+3. The CMS will verify CW flow and/or start CW pump
+4. The CMS will start HRU fan(s)
+5. On interlock of condenser and evaporator flow, the chiller will start.
+
+8.11.3.3 SEQUENCING LOGIC
+The sequencing guidelines below should form the high-level sequence of operation for the
+CMS. Each project will have specific values, timers, logic etc for a fully functional critical
+control system. These must be determined for each project.
+
+Sequencing logic:
+
+    1. There must be a minimum of 1 chiller running at all times.
+    2. Acquire central plant load in the following sequence
+
+         a. IT Load, by summating the relevant main PTU outputs, or if not available,
+              individual IT load power meters and air handling system power meters in the
+              space.
+
+         b. Thermal Load, by summating physical Thermal Energy Meters connected to the
+              CMS, or if not available, by polling the current cooling load from the operating
+              chillers. The chillers have internal temperature sensors and a block flow meter
+              from which the cooling load can be determined. Alternatively, a direct value from
+              chiller HLI may be available.
+
+    3. Decide to stage-up additional cooling block when ANY of the following occur:
+         a. The IT Load is greater than the stage-up trigger point. Usually at an approximate
+              chiller load of 80%. If IT Load Data Integrity is in Fault (if offline sources detected
+              or if IT Load readings exceeds Max Cooling Capacity of the plant (adjustable)),
+              then an alarm is raised and Thermal Load will be used in its place, until the IT
+              Load Data Integrity returns to Normal for more than 30 minutes continuously.
+         b. If the average supply water temperature is more than 2.0oC above setpoint for
+              more than 10 minutes.
+         c. If the field pressure setpoint is not being maintained and the primary pumps are
+              at design (maximum) flow rate for 10 minutes.
+
+    4. Decide to stage-down when ALL of the following conditions are met:
+         a. If the average supply water temperature is not more than 1.0oC above setpoint for
+              more than 10 minutes.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 30
+                                `
+
+              The High-Select of IT Load & Thermal Load is less than the stage-down trigger
+              point. Usually at an approximate chiller load of 40%, to keep chillers running at
+              the optimal COP (typically 50%).
+         b. The total maximum flow of the next stage down is sufficient for the plant load. For
+              very low loads with just 2 chillers running, some bypass valve operation may be
+              required for stability.
+    5. If a chiller is called to run but there is a mismatch between chiller status and enable
+         signal a chiller fault will be activated by the CMS and the chiller will be substituted by
+         another available chiller in staging sequence.
+
+Runtime Optimisation: Rearrange chiller sequencing order based on balancing runtime.
+
+A project specific staging table and description is to be provided.
+
+8.11.3.4 HRU TEMPERATURE CONTROL
+    1. Calculate the achievable HRU leaving water temperature CWLT setpoint based on
+         the current wet bulb temperature and the design HRU approach temperature. Control
+         the speed of the fan to the achievable HRU leaving water temperature.
+    2. Generally, the CWLT setpoint is to be minimised at all times (within appropriate
+         bounds) to allow the chiller to take advantage of low ambient temperatures to
+         maximise energy efficiency.
+    3. Provide motorised bypass valves for minimum temperature control if required for
+         local climate.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 31
+        `
+
+8.11.4  TYPICAL SCHEMATIC
+
+A typical parallel primary pumping water-cooled chiller schematic is shown below (Figure
+
+                                      Figure 8.2 - Typical primary-pumping water-cooled system schematic.
+
+8.2) identifying general AirTrunk concept.
+
+8.12 ELEVATED TEMPERATURE COOLING (ET) SYSTEM
+
+The AirTrunk standard ET (compressorless) central plant is comprised of cooling blocks
+made up by closed circuit OSE Heat Rejection Units (HRUs) in conjunction with primary
+pumps & flow meters. In operation, the ET plant can generate cold enough leaving water to
+satisfy the data hall indoor SLA temperature conditions.
+
+The OSE HRUs typically have no integrated controls and therefore rely on the CMS block
+controllers for operational function & control. The method of flow control and staging of plant
+is the same as air-cooled & water-cooled chiller systems.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 32
+        `
+
+Each HRU is served by a primary cooling water pump circulating water from the process
+cooling loop.
+
+The pump, valve train and HRU form a redundant block complete with power system and
+CMS block controller. Each block will form part of staging sequence.
+
+8.12.1  EQUIPMENT SELECTION
+
+8.12.1.1 HEAT REJECTION UNITS (HRU)
+Refer to Section 5.2, HRUs for requirements.
+
+Use closed-circuit type towers (CCT) as standard to avoid plate heat exchangers with OCT
+systems. Use HDCs where nominated in the BOD to reduce annual water consumption.
+
+Select chillers on critical design criteria (Section 8.2) and peak thermal load calculation. The
+BOD may nominate higher chilled water depending on project requirements. Align
+equipment selections to AirTrunk standard OSE.
+
+8.12.1.2 PRIMARY PUMPS AND VALVING
+Refer to Section 5.14, Water Pumps for requirements.
+
+Pumps, their VSD and valve train including isolation valves, a strainer and magnetic flow
+meter, will be part of the cooling block.
+
+8.12.2  INSTALLATION
+
+HRUs to be located on raised plinths or galvanised steelwork on rubber vibration isolation
+
+mounts. HRU groups may consist of multiple tower cells connected with an internal or
+
+external balance line. HRUs to be installed in accordance with local AHJ.
+
+HRU field pipework to run as close to roof line as possible with stepovers and clear
+maintenance pathways identified n the roof to ensure all plant is maintainable.
+
+8.12.3  CONTROL TOPOLOGY & FUNCTION
+
+For CMS architecture, refer to CMS TR.
+
+8.12.3.1 EQUIPMENT INTERFACES
+A description of the compressorless systems functions are listed below:
+
+1. CMS controllers interface directly with the following:
+         1. Primary pump VSD via LLI
+         2. Condenser water pump VSD (if applicable) via LLI
+         3. HRU fan VSD via LLI
+
+2. CMS responsible for primary & condenser water flow setpoint calculation and pump
+    speed control using feedback from cooling block magnetic flow meters.
+
+3. CMS responsible for HRU fanspeed control to meet variable LWT setpoint.
+4. Generally, the LWT setpoint is fixed annually, but is allowed to float up to a design
+
+    maximum that corresponds to the ASHRAE N=20 extreme design condition. The
+    LWT setpoint must be adjusted on a per project basis to satisfy customer
+    temperature SLA criteria and abide by the local N=20 design criteria.
+5. CMS responsible for delivering cooling water at setpoint temperature.
+
+8.12.3.2 COOLING BLOCK INITIATION
+On sequencing a new cooling block:
+
+1. The cooling block will be given an enable signal
+2. The CMS will start the primary pump & condenser water pump (if applicable)
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6                                     Page | 33
+                                `
+
+3. The CMS will start HRU fan(s)
+
+Sequencing logic:
+
+    1. There must be a minimum of 1 cooling block running at all times.
+    2. Acquire central plant load in the following sequence
+
+         a. IT Load, by summating the relevant main PTU outputs, or if not available,
+              individual IT load power meters and air handling system power meters in the
+              space.
+
+         b. Thermal Load, by summating physical Thermal Energy Meters connected to the
+              CMS.
+
+    3. Decide to stage-up additional cooling block when ANY of the following occur:
+         a. The IT Load is greater than the stage-up trigger point. Usually at an approximate
+              cooling block load of 60%. If IT Load Data Integrity is in Fault (if offline sources
+              detected or if IT Load readings exceeds Max Cooling Capacity of the plant
+              (adjustable)), then an alarm is raised and Thermal Load will be used in its place,
+              until the IT Load Data Integrity returns to Normal for more than 30 minutes
+              continuously.
+         b. If the average supply water temperature is more than 2.0oC above setpoint for
+              more than 10 minutes.
+         c. If the field pressure setpoint is not being maintained and the primary pumps are
+              at design (maximum) flow rate for 10 minutes.
+
+    4. Decide to stage-down when ALL of the following conditions are met:
+         a. If the average supply water temperature is not more than 1.0oC above setpoint for
+              more than 10 minutes.
+              The High-Select of IT Load & Thermal Load is less than the stage-down trigger
+              point. Usually when flow through HRU is at minimum flow for distribution system
+              to work.
+         b. The total maximum flow of the next stage down is sufficient for the plant load. For
+              very low loads with just 2 cooling blocks running, some bypass valve operation
+              may be required for stability.
+
+    5. If a cooling block is called to run but there is a mismatch between cooling block
+         status and enable signal, a cooling block fault will be activated by the CMS and the
+         cooling block will be substituted by another available cooling block in staging
+         sequence.
+
+Runtime Optimisation: Rearrange chiller sequencing order based on balancing runtime.
+
+A project specific staging table and description is to be provided.
+
+8.12.3.3 HRU TEMPERATURE CONTROL
+Temperature control of the cooling water is achieved by varying the fan speed of the
+operating HRUs.
+
+The HRU leaving water setpoint is generally set lower than the design peak wet-bulb
+temperature would achieve. This is to provide some reduction exposure of high space
+temperature for the IT equipment.
+
+The HR leaving water temperature may temporarily increase up to the design maximum
+temperature during periods of high ambient wet-bulb temperature and if the fan speed of the
+is at or close to maximum. The setpoint temperature will be determined in the BOD and align
+to the project PUE targets.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 34
+                                `
+
+8.12.3.4 HYBRID DRY COOLER (HDC) EVAPORATIVE SYSTEM CONTROL
+Where HDCs are used, they have two operating modes, controlled by the CMS:
+
+    1. Dry Mode: No evaporative spray required to meet the cooling demand. Fanspeed
+         <90%, generally corresponding to low ambient temperatures. The N load crossover
+         temperature will be determined on a project selection and correspond with a WUE
+         target.
+
+    2. Wet Mode: Evaporative spray active. This is required when the ambient conditions
+         and heat rejection load is high enough that the unit can no longer meet the cooling
+         demand without the evaporative cooling component. This mode is generally activated
+         as the unit fanspeed exceeds 90% in Dry Mode.
+
+AT-GLOBAL-TR-000005 | Mechanical Services | Rev 6  Page | 35
+

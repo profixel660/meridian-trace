@@ -1,0 +1,167 @@
+import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
+import { EmptyState } from "@/components/review/EmptyState";
+import { ReviewLayout } from "@/components/review/ReviewLayout";
+import { StatusBadge } from "@/components/review/StatusBadge";
+import {
+  meridianApi,
+  type ProjectCoverage,
+  type SourceItem,
+} from "@/lib/api";
+
+export const dynamic = "force-dynamic";
+
+function bytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export default async function SourcesPage({
+  params,
+}: {
+  params: Promise<{ name: string }>;
+}) {
+  const { name } = await params;
+
+  let items: SourceItem[] = [];
+  let listError: unknown = null;
+  let coverage: ProjectCoverage | null = null;
+
+  try {
+    [items, coverage] = await Promise.all([
+      meridianApi.projectSources(name),
+      meridianApi.projectCoverage(name).catch(() => null),
+    ]);
+  } catch (err) {
+    listError = err;
+  }
+
+  const counts = coverage
+    ? {
+        quarantine: coverage.deliverable_status.quarantined,
+        audit: coverage.audit.pending,
+        questions: coverage.questions.pending,
+        conflicts: coverage.conflicts.pending,
+        taxonomy: coverage.taxonomy.pending_proposals,
+      }
+    : undefined;
+
+  return (
+    <ReviewLayout
+      projectName={name}
+      title="Sources"
+      subtitle="Source documents imported into this project, with extraction status."
+      counts={counts}
+    >
+      {listError ? (
+        <ApiErrorPanel error={listError} />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="No sources imported"
+          body={
+            <>
+              Source documents are PDFs, drawings, and Excel files that the
+              project pulls deliverables from. Import via the FastAPI{" "}
+              <code>POST /projects/{name}/sources</code> endpoint or the
+              upcoming Onboarding flow.
+            </>
+          }
+          learnMoreHref="/glossary#provenance"
+        />
+      ) : (
+        <ul className="space-y-3">
+          {items.map((s) => (
+            <li
+              key={s.id}
+              className="rounded-md border border-border bg-surface-elevated p-4"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="text-base font-semibold text-text-primary">
+                  {s.filename}
+                </h3>
+                <span className="text-[11px] text-text-muted">
+                  imported {new Date(s.imported_at).toLocaleDateString()} •{" "}
+                  {bytes(s.size_bytes)}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                {s.is_template ? (
+                  <StatusBadge
+                    label="template"
+                    variant="warn"
+                    explanation={{
+                      title: "Template detected",
+                      body: "Source appears to be an unfilled template; auto-excluded from extraction.",
+                    }}
+                  />
+                ) : null}
+                {s.is_demarcation_schedule ? (
+                  <StatusBadge
+                    label="demarcation schedule"
+                    variant="neutral"
+                    explanation={{
+                      title: "Demarcation Schedule",
+                      body: "Authoritative source for trade / responsibility allocation. Cross-checked against other sources.",
+                    }}
+                    glossaryAnchor="/glossary#demarcation-schedule"
+                  />
+                ) : null}
+                {s.document_class ? (
+                  <span className="rounded-full border border-border px-2 py-0.5 text-text-muted">
+                    {s.document_class}
+                  </span>
+                ) : null}
+                {s.document_state ? (
+                  <span className="rounded-full border border-border px-2 py-0.5 text-text-muted">
+                    {s.document_state}
+                  </span>
+                ) : null}
+                {s.revision ? (
+                  <span className="rounded-full border border-border px-2 py-0.5 text-text-muted">
+                    Rev {s.revision}
+                  </span>
+                ) : null}
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <Stat label="Deliverables" value={s.deliverables_count} />
+                <Stat label="Audit rows" value={s.audit_count} />
+                <Stat label="MIME" value={s.mime_type} />
+                <Stat label="Extraction path" value={s.extraction_path} mono />
+              </dl>
+              {s.quality_scan_summary ? (
+                <p className="mt-3 rounded border border-border bg-background p-3 text-xs text-text-muted">
+                  Quality scan: {s.quality_scan_summary}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </ReviewLayout>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | number;
+  mono?: boolean;
+}) {
+  return (
+    <div className="border-b border-border/60 pb-1">
+      <dt className="text-[10px] uppercase tracking-wide text-text-muted">
+        {label}
+      </dt>
+      <dd
+        className={`text-text-primary ${
+          mono ? "break-all font-mono text-[11px]" : "text-sm"
+        }`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}

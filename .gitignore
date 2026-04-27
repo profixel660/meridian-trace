@@ -1,0 +1,82 @@
+# =====================================================================
+# Meridian — .gitignore
+# Goal: commit code, prompts, schemas, docs, and tests.
+# Exclude virtual envs, build outputs, machine-local secrets,
+# generated artefacts, and third-party sample documents.
+# =====================================================================
+
+# --- Python / uv ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.python-version-local
+*.egg-info/
+build/
+dist/
+
+# --- Node / Next.js (apps/web) ---
+node_modules/
+.next/
+out/
+.next-build/
+*.tsbuildinfo
+
+# --- Project data (per-project SQLite, logs, generated artefacts) ---
+# We commit data/projects/*.md (e.g. OVERNIGHT_REPORT.md, REPORT_v0.md)
+# but exclude live project DBs, runtime logs, exports, evidence packs,
+# tender packages, xref reports, backups, and the Meridian local state dir.
+data/projects/*.sqlite
+data/projects/*.sqlite-journal
+data/projects/*.sqlite-shm
+data/projects/*.sqlite-wal
+data/projects/*.lock
+data/projects/*.logs/
+data/projects/*.tenders/
+data/projects/*.evidence/
+data/projects/*.reports/
+data/projects/*.backups/
+data/projects/_meridian/
+data/projects/_auth/
+data/projects/*.xlsx
+data/projects/*.json
+
+# --- Sample / source documents (third-party IP) ---
+# AirTrunk SYD2 specs and similar customer/project documents may not be
+# distributable. Exclude the whole tree by default. If you need to commit
+# anonymised samples for tests, put them under a dedicated test-fixtures
+# directory.
+Samples/
+
+# --- Local secrets / config ---
+.env
+.env.local
+.env.*.local
+secrets.toml
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Pytest / mypy / ruff caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# --- Logs (catch-all for any logs outside data/projects) ---
+logs/
+*.log
+
+# --- Local Claude Code agent state ---
+.claude/
+
+# --- Tauri build outputs (when §3.7 lands) ---
+src-tauri/target/
+src-tauri/Cargo.lock

@@ -1,0 +1,102 @@
+A0  A                                               B  C  D                  E  F                     G                H  I  J           K  L  M  N  O             P  Q  R  S  T  U
+
+                                                                                                                                                                                                          General Notes:
+
+                                                                                                                                                                                                          1. This drawing is not For Construction.                       9/09/2024 4:48:27 PM
+
+                                                                                                                                                                                                          2. This drawing has been issued for information as part
+
+                                                                                                                                                                                                          of a 30% Design Development package. It should be
+
+1                                                                                                                                                                                                         read in conjunction with all other drawings and
+
+                                                                                                                                                                                                          associated documents.
+
+                                                                                                                                                                                                          3. This drawing provides information intended to
+
+                                                                                                                                                                                                          identify the scope, design intent and general
+
+                                                                                                                                                                                                          requirements of the works. Further design
+
+                                                                                                                                                                                                          development by the Contractor is expected beyond the
+
+                                                                                                                                                                                                          30% design stage, and may change elements of the
+
+                                                                                                                                                                                                          design including quantity, location, rating, identification,
+
+                                                                                                                                                                                                          size, configuration, make/model, distribution routes
+
+                                                                                                                                                                                                          and characteristics of the equipment and supporting
+
+                                                                                                                                                                                                          installations.
+
+2
+
+3
+
+4
+
+5
+
+ 6                                                                                                                                                                                   Roof
+                                Roof
+                                                             3.4 MW IT Load          8.7 MW IT Load    3.1 MW IT Load                                       D510                  Level 5
+ 7                                                                  B511                    A510              B512                                          C510
+                                                                                                                                                            D410
+ 8                                                           3.4 MW IT Load          5.1 MW IT Load   3.25 MW IT Load                                       C410
+                                Level 5                             B411                    A410              B412                                          D310
+                                                                                                                                                            C310
+ 9                                                                              IT Load TBC (6.5 MW)                                                        D210                  Level 4
+                                                                                            B310                                                            C210
+10                                                                                                                                                      D111/D112                                         02              09/09/24 KL           KW         SP
+                                Level 4                                              8 MW IT Load                                                       C111/C112
+                                                                                            A310                                                                                                          30% Design Issue
+11
+                                                                                IT Load TBC (6.5 MW)                                                                                                      01              30/08/24 KL           KW         SP
+12                                                                                          B210
+                                Level 3                                                                                                                                                                   Draft 30% for Client Review
+                                                                                     7 MW IT Load
+13                                                                                          A210                                                                                                          Rev             Date     By           Chkd       Appd
+
+14                                                                                                                                                                                Level 3
+                                Level 2
+                                                                                                                                                                                                          Barrack Place, Level 5,
+15                                                                                                                                                                                                        151 Clarence Street, Sydney NSW 2000
+                                                                                                                                                                                                          ph : +61 2 9320 9320
+               LEGEND:                                                                                                                                                                                    www.arup.com
+
+16                                                                                                                                                                                                        Client
+
+                                      Out of Scope                                                                                                                                Level 2
+     Do not scale
+                                                                                                                                                                                                          Project Title
+
+                                                                                                                                                                                                          SYD2 TFS Liquid Cooling Fitout
+                                                                                                                                                                                                          1 Sirius Road, Lane Cove West,
+                                                                                                                                                                                                          NSW
+
+                                                                                                                                                                                                          Drawing Title
+
+                                                                                                                                                                                                          Mechanical Services
+                                                                                                                                                                                                          Chilled Water Schematic Overview
+
+                                                                                                                                                                                                          Scale at A0
+
+                                                                                                                                                                                                                       NTS
+
+                                                                                                                                                                                                          Role
+
+                                                                                                                                                                                                                       Mechanical Services
+
+                                                                                                                                                                                                          Status:      30% Design
+
+                                                                                                                                                                                                          Arup Job No                                 Rev
+
+                                                                                                                                                                               ALL DRAWINGS TO BE         304131                                      02
+                                                                                                                                                                                PRINTED IN COLLOeveUl 1R
+                                                                                                                                Level 1                                                                   Name
+
+                                                                                                                                                                                                          SYD2-TFSLC-ARP-DRG-MEC-0020
+
+                                                                                                                                                                                                                                                                 © Arup
+

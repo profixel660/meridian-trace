@@ -1,0 +1,1553 @@
+Owner Supplied Equipment OSE
+Specification
+
+AIR COOLED CHILLER
+AT-GLOBAL-OR-000103_SPC-ACC-01
+
+Prepared by:  Mark Foley
+              Director Product Management
+
+Project No:   Baseline Specification
+Issue:        FY24 / 25 Updates
+Revision      11
+Date          09/04/25
+Table of Contents
+
+DOCUMENT CONTROL ....................................................................................................... 4
+1 SKU CODE .................................................................................................................... 5
+
+   1.1 DESCRIPTION ...................................................................................................... 5
+   1.2 LOCAL REQUIREMENTS ..................................................................................... 5
+2 PERFORMANCE REQUIREMENTS.............................................................................. 6
+   2.1 FUNCTIONAL DESCRIPTION .............................................................................. 6
+   2.2 SCOPE OF WORK ................................................................................................ 6
+   2.3 REFERENCE DOCUMENTATION ........................................................................ 7
+   2.4 GENERAL REQUIREMENTS ................................................................................ 8
+
+      2.4.1 UNIT CASING.................................................................................................. 8
+      2.4.2 EVAPORATOR ................................................................................................ 8
+      2.4.3 CONDENSER.................................................................................................. 9
+      2.4.4 FANS ............................................................................................................... 9
+      2.4.5 COMPRESSORS ............................................................................................ 9
+      2.4.6 REFRIGERANT ............................................................................................. 10
+      2.4.7 ADIABATIC COOLERS (OPTION 2) ............................................................. 10
+      2.4.8 WATERSIDE ECONOMISER (OPTION 3) .................................................... 10
+      2.4.9 GLYCOL / ANTI FREEZE PROTECTION (OPTION 4) .................................. 11
+      2.4.10 WATER PUMP AND PIPEWORK .................................................................. 11
+      2.4.11 POWER INPUT ............................................................................................. 12
+      2.4.12 UNIT CONTROL HARDWARE ...................................................................... 12
+      2.4.13 FUNCTIONAL CONTROL.............................................................................. 13
+      2.4.14 NOISE AND VIBRATION CONTROL............................................................. 15
+      2.4.15 METERING.................................................................................................... 15
+      2.4.16 CONTROL INTEGRATION ........................................................................... 15
+      2.4.17 SEISMIC COEFFICIENT FOR MEP EQUIPMENT (FOR JAPAN) ................. 17
+   2.5 DOCUMENTATION ............................................................................................. 18
+      2.5.1 RFP INFORMATION...................................................................................... 18
+      2.5.2 SHOP DRAWINGS, TECHNICAL DATA & CALCULATIONS ........................ 18
+      2.5.3 OPERATING AND MAINTENANCE MANUAL ............................................... 19
+      2.5.4 FUNCTION DESCRIPTION SPECIFICATION ............................................... 19
+      2.5.5 RELIABILITY ................................................................................................. 19
+   2.6 SPARE PARTS ................................................................................................... 20
+   2.7 TRAINING ........................................................................................................... 20
+   2.8 SAFTEY IN DESIGN ........................................................................................... 20
+   APPENDIX A - TECHNICAL SCHEDULE ....................................................................... 21
+
+                                                                                                                                                              Page | 2
+APPENDIX B - INTERFACE SCHEDULE ....................................................................... 29
+APPENDIX C - CODES AND STANDARDS .................................................................... 31
+APPENDIX D - DCS SCHEDULE .................................................................................... 34
+APPENDIX E - SCHEMATIC ........................................................................................... 37
+APPENDIX F - GENERAL ARRANGEMENT................................................................... 38
+APPENDIX G - MAINTENANCE...................................................................................... 39
+APPENDIX H - SPARE PARTS LIST .............................................................................. 40
+
+                                                                                                                                                          Page | 3
+DOCUMENT CONTROL
+
+VERSION      DATE      MODIFIED   APPROVED BY SUMMARY OF CHANGE
+                             BY
+Version 1   08/07/20              D. Checchin  Format Change
+Version 2   16/07/20  S. Venkata  D. Checchin  Lessons Learnt Capture
+Version 3   02/12/20  S. Venkata  D. Checchin  KOP Alignment
+Version 4   23/04/21  S. Venkata  D. Checchin  Format & Revision
+Version 5   02/09/21  S. Venkata  D. Checchin  GSA Alignment
+Version 6   26/11/21  S. Isaac    D. Checchin  Updates for GSA Contract
+Version 7   05/08/22  J. Tan      J. Tan       SKU code update
+Version 8   05/01/23  J. Tan      J. Tan       BIM and EPD Updates
+Version 9   12/01/23  J. Tan      J. Tan       Code and Standard
+                      J. Tan                   Updates
+Version 10  21/07/23              M. Foley     FY23/24 Updates
+Version 11  09/04/25  J. Tan      M. Foley     FY 24/25 Updates
+                      R. Mistri
+
+                                               Page | 4
+1 SKU CODE
+
+1.1 DESCRIPTION
+
+The following table lists individual segments of the SKU code with a description that it
+represents. The option code segments are also tagged as superscripts to the relevant parts
+within the following specification. Each SKU code combination represents a unique product.
+
+Product
+
+ACC Air Cooled Chiller                           
+
+Model
+
+1500 1500kWr nominal cooling capacity at 45.7 C  
+
+Variant
+
+V01 Based unit (with adiabatic pads)             
+
+Vendor
+
+XXX Vendor code
+
+Options
+
+0 No options to be added to product variant      
+
+1 Extended Condenser Module
+
+2 Adiabatic Coolers
+
+3 Waterside Economiser
+
+4 Glycol / Antifreeze Protection (<-5 C)
+
+The product SKU code is: ACC1500_V01_________
+
+1.2 LOCAL REQUIREMENTS
+
+The following table provides an overview of the option codes that are applicable for each
+country.
+
+Country    Possible Options
+Australia  0, 1, 2, 3
+Singapore  0, 1, 2, 3
+Malaysia   0, 1, 2, 3
+Japan      0, 2, 3, 4
+
+                                                 Page | 5
+2 PERFORMANCE REQUIREMENTS
+
+2.1 FUNCTIONAL DESCRIPTION
+
+The equipment shall be operated within a Mission Critical Data Centre and shall be:
+
+    a. Safe to operate and maintain
+    b. Low maintenance
+    c. High efficiency
+    d. Suitable for continuous operation at full rated load and peak ambient conditions
+    e. High reliability, using standard components, readily available and fully tested and
+
+         certified.
+    f. 20-year design life, when maintained in accordance with manufacturers requirements.
+    g. Standard selection of components for ease of replacement/repair/spares stocking.
+    h. No enhancements above local code and the requirements of this specification.
+    i. Equipment shall not leave factory with standard factory settings and the expectation to
+
+         be set on site. All equipment with variable settings shall be set at factory, tested,
+         validated and recorded.
+    j. For all equipment, It is the vendors responsibility for compliance with all local codes
+         and authorities. Where required by codes vendors shall engage directly with authorities
+         and local certifiers.
+    k. All ancillary systems shall be compatible with the site wide systems and certifiable to
+         local codes.
+
+The Air-cooled chiller shall be a complete, off-site fabricated, externally located unit for the
+distribution of mechanical cooling to the data halls and include:
+
+    a. Unit Casing
+    b. Magnetic bearing Compressor
+    c. Evaporator
+    d. Fans
+    e. Refrigerant system
+    f. Adiabatic coolers
+    g. Waterside economiser
+    h. Water pumps and pipework
+    i. Unit Controls.
+    j. Noise and vibration control
+    k. Water / Electrical Metering.
+    l. Electrical panel including controls, HMI / sensors.
+
+2.2 SCOPE OF WORK
+
+Provide the equipment and include:
+
+    a. Attendance at meetings during design and construction
+    b. Detailed design, technical submissions and equipment certification
+    c. Off-site manufacture and assembly
+    d. Factory testing and certification
+    e. Delivery to site
+    f. Site testing, commissioning and setting to work
+
+                                                                                                                                                              Page | 6
+    g. Documentation including shop drawings, operating and maintenance manuals, as-
+         installed documents, test results, LOD300 BIM model and a Type III Environmental
+         Product Declaration (EPD).
+
+    h. Operator training.
+    i. Maintenance.
+    j. Product Warranty.
+    k. Any re-assembly as a result of shipping.
+    l. Equipment earthquake proofing statement and installation anchor pulling out
+
+         statement according to the building equipment seismic guidelines 2014 edition of
+         Japan (For Japan)
+
+2.3 REFERENCE DOCUMENTATION
+
+Refer to following documents:
+    a. Request for Proposal Document
+    b. Pricing Schedules & Bid Template
+    c. Scope Demarcation Schedule­ Air Cooled Chillers
+    d. O&M Requirements - AT-GLOBAL-REF-000012
+    e. Training Requirements - AT-GLOBAL-REF-000013
+    f. Building & Equipment Naming Requirements - AT-GLOBAL-POL-000017
+    g. Defect Management Guidelines ­ AT-GLOBAL-REF-000014
+    h. Commissioning Framework ­ AT-GLOBAL-REF-000023
+    i. Commissioning Scripts L1-L3 - AT-GLOBAL-REF-000023a, AT-GLOBAL-REF-
+         000023b & AT-GLOBAL-REF-000023c
+    j. Commissioning Scripts L3-L6 - AT-GLOBAL-REF-000023d, AT-GLOBAL-REF-
+         000023e & AT-GLOBAL-REF-000023f
+    k. ICT Overarching Requirements Specification - AT-SP-ICT00001
+    l. Equipment Labelling Requirements ­ AT-GLOBAL-REF-000021
+    m. Asset Capture Register ­ AT-GLOBAL-TMP-000018
+    n. Incident Management ­ AT-GLOBAL-SOP-000008
+    o. Change Management ­ AT-GLOBAL-SOP-000009
+    p. Restricted and Prohibited Items ­ AT-GLOBAL-DR-000003
+    q. Global Minimum Standards ­ GMS
+    r. Preliminaries Specification ­ AT-GLOBAL-DR-000001
+    s. AirTrunk Global Workflow Template ­ AT-GLOBAL-DR-000006
+    t. Equipment Access Requirements - AT-GLOBAL-TR-000019
+    u. AirTrunk Safety in Design Framework v2 - AT-GLOBAL-FWK-000027
+
+                                                                                                                                                              Page | 7
+    v. BIM Execution plan
+    w. DCS AT-GLOBAL-TR000015b CMS Points List
+
+2.4 GENERAL REQUIREMENTS
+2.4.1 UNIT CASING
+
+    a. Unit panels, structural elements and control boxes constructed of galvanised steel,
+         mounted on a structural steel base.
+
+    b. All unit surfaces to be protected against corrosion and UV resistant, suitable for given
+         outdoor environment immediately after fabrications/erection.
+
+    c. Factory mounted lifting rings shall be provided as part of frame construction.
+         Components more than 25kg shall have permanent lifting eyes.
+
+    d. Connections to all heat exchange equipment shall be arranged for cleaning access
+         and tube withdrawal without excessive dismantling. Connections shall not pose any
+         load on equipment.
+
+    e. All hot surfaces must be protected/insulated.
+    f. Units must have certified hook off points along the edge of the chillers for safe
+
+         maintenance / removal of the fans.
+2.4.2 EVAPORATOR
+
+    a. Shells shall be hot rolled low carbon steel with seams precision electric welded and
+         ground smooth in accordance to local standard.
+
+    b. Tube bundles shall be unjointed seamless copper tube expanded into tube plates.
+         Tubes shall finish flush with edge of tube sheet. Tubes shall be supported to prevent
+         sagging. Tube plates shall be hot rolled carbon steel.
+
+    c. Water boxes, air vent, drains and pipework shall be removable to permit tube cleaning
+         and replacement.
+
+    d. Drain connection to be provided at lowest point of water boxes.
+    e. Vent connection provided and to extend clear of insulation.
+    f. Thermometer and pressure drop test pockets to be provided as required for control
+
+         and monitoring.
+    g. Factory applied insulation suitable for outdoors shall be applied over cold surfaces
+
+         below ambient temperature of liquid chiller components including evaporator shell,
+         water boxes, flow meter and discharge / suction line.
+    h. Insulation adhesive as recommended by insulation manufacturer and applied to 100%
+         of contact surface including all seams and joints.
+    i. Insulation materials to be UV stabilised, suitable for outdoor use.
+    j. Fouling factor to be taken into account during selection.
+
+                                                                                                                                                              Page | 8
+2.4.3 CONDENSER
+    a. Coils shall be Copper & plate fin type aluminium.
+    b. Provide coil corrosion coating suitable for environment which is rated to 6000 hours
+         as per ASTM B117 salt spray test requirement.
+    c. Tube and header material to be copper and adequately protected against corrosion.
+    d. Internal baffles to be provided to prevent backflow of air through idle fans.
+    e. All parts of condenser shall be free draining with no pockets in which condensation
+         and or rainwater may be retained.
+
+2.4.3.1 EXTENDED CONDENSER MODULE (OPTION 1)
+    a. Due to site ambient conditions and/or to achieve a higher performance, an extended
+         condenser module maybe required.
+
+2.4.4 FANS
+    a. Provide low noise condenser fan selection to meet scheduled noise levels.
+    b. Fans to be direct driven with EC motors.
+    c. Fans to give isolation efficiency of not less than 95%.
+    d. Provide fan guards.
+    e. Fan guards to withstand under UV & corrosion protection apply adequate treatment
+         per site location.
+
+2.4.5 COMPRESSORS
+    a. Provide semi hermetic two stage direct drive variable speed centrifugal type
+         compressor.
+    b. Provide suction and discharge isolation valves per compressor as standard.
+    c. Compressor shall be able to reduce to 10% chiller design capacity and remain in stable
+         operation.
+    d. Starting amps of each compressor shall be 5-10 amps maximum.
+    e. Bearings shall be oil free frictionless magnetic levitated bearings. They shall be
+         equipped with automatic vibration reduction and balancing system. Bearings shall
+         remain in operation during coast down including during power failure.
+    f. Motor cooling shall be provided by liquid refrigerant injection system.
+    g. Motor shall be a squirrel cage two pole, low slip high efficiency induction motor.
+    h. A device shall be fitted to prevent pressure differential across the compressor causing
+         backward rotations at a normal or emergency stop.
+    i. Each compressor shall be capable of operating in the event a voltage sag of +/-10%
+         in 3ms. Compressor firmware shall be capable of engaging compressor in the event of
+         a voltage sag. i.e. non latching alarms. The vendor must configure their controls to
+
+                                                                                                                                                              Page | 9
+         ensure the unit will engage the compressors in the event of a voltage sag or any non-
+         fast restart event.
+    j. To ensure optimal operation of the chiller at lower ambient temperatures and or low
+         load conditions, an appropriately sized heater or heating arrangement shall be
+         included.
+2.4.6 REFRIGERANT
+    a. Unit to be shipped with operating charge of refrigerant.
+    b. Offer alternate refrigerants which provide improved efficiency, capital cost savings or
+         other benefits where available.
+    c. Unit shall have electronic expansion valve, pressure regulating valve, factory mounted
+         suction and discharge pressure gauges, liquid line sight glass and pressure relief
+         system.
+    d. Refrigerant circuit shall have load balancing/hot gas bypass for low-load operation.
+    e. Unit shall come with refrigerant economiser capability to extend the performance
+         envelope of chiller (subcooling). This is most beneficial in high lift conditions - low
+         design chilled water and high design ambient temperatures - reducing work required
+         by compressor. Vendor to specify whether this is included in base product or available
+         as an additional option.
+
+2.4.7 ADIABATIC COOLERS (OPTION 2)
+    a. Provide adiabatic pads or similar to reduce condenser inlet air temperature, spray-type
+         adiabatic pre-cooling used in Japan.
+    b. Provide low pressure non-misting type nozzles with anti-clogging design.
+    c. Provide controls to initiate spray against air stream onto an adiabatic pad based on
+         ambient conditions and chiller status as per the Controls section.
+    d. Provide piping connections, required valves and fittings for operation and control of the
+         adiabatic pads.
+    e. Provide an integrated pulse type water meter to be connected to CMS Provide anti-
+         corrosive and microbial resistant sump suitable for outdoor use from either plastic or
+         stainless steel.
+    f. Provide sump pumps suitable for distribution of water onto adiabatic coolers.
+    g. Provide equipment and controls to limit microbial growth and water quality in
+         accordance with local standards and equipment requirements. These could include
+         timed sump dump and fill function and/or a continuous blow down based on total
+         dissolved solids (TDS).
+
+2.4.8 WATERSIDE ECONOMISER (OPTION 3)
+    a. Provide proprietary waterside economiser coil package as part of the chiller.
+
+                                                                                                                                                             Page | 10
+    b. Provide piping connections, required balancing valves and fittings for operation and
+         control of the waterside economiser package.
+
+    c. Provide necessary hardware and logic to control the enabling/disabling and proportion
+         of free-cooling provided by the economiser package.
+
+    d. Waterside economiser provides improved efficiency by pre-cooling chilled water in low-
+         ambient conditions.
+
+2.4.9 GLYCOL / ANTI FREEZE PROTECTION (OPTION 4)
+    a. Glycol shall not be used in the unit or cooling water system without approval from
+         AirTrunk.
+    b. Waterside economiser (free cooling) coils shall be protected from freezing with the use
+         of a small heat transfer/ recovery circuit to recover heat from entering water before it
+         enters the evaporator. Glycol is permitted in this secondary circuit with plate heat
+         exchanger to protect free cooling coils.
+
+2.4.10 WATER PUMP AND PIPEWORK
+   a. Pumps shall be selected to operate near the mid-way point on a falling curve.
+   b. Pump drive capacity shall accommodate largest impeller available for pump casing.
+   c. Pump Impellers are not to exceed 95% of the maximum impeller size fitted within
+         casing.
+   d. Pump and piping loads shall be independently supported. Pumps shall be mounted on
+         rigid bases to prevent distortion.
+   e. Pumps shall be vibration isolated including anti vibration mounts and flexible
+         connections.
+   f. Pumps to be close-coupled to drive motor.
+   g. Fitted with separate VSD Danfoss VLT or approved equivalent.
+   h. Provide valves, 500 micron strainers, vent, drain and universal test points as identified
+         in schematic. Above items to be installed internal to chiller footprint.
+   i. Provide a local DP Switch or Flow switch to be adjusted for minimum flow cutout; wired
+         to onboard controller to prove flow.
+   j. Provide a local DP Transducer across the Evaporator, wired to the onboard controller
+         to provide a readout of the Evap DP and calculated flow rate of the vessel on the HMI.
+   k. Provide an integrated electronic Magflow meter connected for determining flow rate
+         through the evaporator outlet, with 4-20mA terminals (to be wired to CMS PLC, by
+         CMS vendor). Magflow to be Siemens SITRANS FM MAG 5100W or approved
+         equivalent type or approved equal.
+   l. Pump VSD shall accept a Start/Stop signal from the CMS (i.e. remote/ext source)
+         during normal automatic control but also (i.e. in parallel) by the onboard Chiller
+         controller (if the Chiller is placed in Local ON mode).
+
+                                                                                                                                                             Page | 11
+   m. Pump VSD speed shall be controlled only by a 4-20mA signal from the CMS and not
+         controlled by the Chiller controller nor via HLI.
+
+2.4.11 POWER INPUT
+    a. Chiller shall accept power supply from a single short-break supply connection Provide
+         lugged connections capable of accepting cables two sizes larger than the anticipated
+         size for the machine full load current
+   b. A dedicated local breaker shall be provided with the chiller to serve the chiller pumps.
+         Power supply to the pumps could be taken from a single UPS-backed feed.
+   c. Provide Harmonic Filters to limit Total Harmonic Distortion imparted on the system to
+         5% or less.
+   d. Provide motor protection by way of phase loss, phase imbalance, phase reversal,
+         under/over voltage and motor overload.
+   e. The chiller power factor must be limited to value in schedule.
+   f. Provide internal UPS or supercapacitor to power all chiller controls for 5 minutes at
+         EOL for monitoring and facilitating the fast restart.
+   g. Allocate 50VA (2 x 24VDC) and additional terminals from the internal UPS /
+         supercapacitor which may used by external control system This power shall not be
+         shared with other components of the chiller.
+
+2.4.12 UNIT CONTROL HARDWARE
+    a. Provide a microprocessor based chiller controller, control panel and required wiring to
+         allow control of chiller. The chiller controller shall aggregate all sensors, meters and
+         hardware required for chiller operation.
+    b. Controller shall be housed in weather tight enclosure with removable plates for
+         connection of power wiring and remote interlocks.
+    c. Provide an durable UV resistance HMI (Human Machine Interface) display viewable in
+         direct sunlight and night time, mounted not above 1.8m AFFL.
+    d. The HMI shall provide at a minimum unit set point, status, electrical data, temperature
+         data, refrigerant pressures, pressure safety lockouts and diagnostics for operator
+         control and monitoring.
+    e. The chiller controller be provided with HLI to the facility CMS via Modbus/RTU.
+    f. Provide an Auto/Off/Manual (AOM) switch to the control facia panel adjacent to the
+         HMI.
+    g. Primary power supply shall be monitored to ensure available supply upon restart or
+         prevent attempted re-start when not available.
+    h. Monitor total chiller power consumption via power meters connected to the chiller
+         controller.
+
+                                                                                                                                                             Page | 12
+  2.4.13 FUNCTIONAL CONTROL
+I. Mission Critical Functionality
+
+       a. The chiller must avoid safety shutdown when operating outside design conditions.
+            Chiller control and cooling load output should optimise to stay online and avoid safety
+            limits being reached.
+
+       b. The chiller must be able to accommodate intermittent loss of mains power without
+            lockout.
+
+       c. On loss of power during operation the chiller controller and its compressors will enter
+            a fast restart mode. The fast restart mode must:
+
+                 a. Capable of providing an alarm activation delay of between 30 to 60 seconds
+                     (adjustable to site conditions). This is to ensure any low flow switches or non-
+                     critical compressor alarms do not stop the chiller from fast restarting.
+
+                 b. Be a robust and reliable system. The functionality will be factory witnessed.
+
+                 c. The fast restart sequence must:
+
+                           i. Restart pumps immediately (<2sec) and ramp at maximum rate back
+                               to last known flow rate.
+
+                           ii. Ramp compressors at maximum rate immediately after pump flow has
+                               been established to achieve the setpoint of the unit. Controller should
+                               know last known status and quantity of compressors operating prior to
+                               power loss. Note: During a fast restart only the quantity of
+                               compressors that were operating before the power loss should fast
+                               restart. Once these are compressors are in normal / steady operation
+                               the unit can engage the remaining compressors to achieve the
+                               setpoint of the unit if necessary.
+
+                          iii. Ramp condenser fans at maximum rate to achieve stability in the
+                               system.
+
+                          iv. Entire fast restart procedure should take <120 seconds.
+
+       d. All external control inputs are to be written to the chiller controller register so that the
+            current state remains within the chiller controller.
+
+       e. In the event of loss of communications to the CMS, the chiller must enter standalone
+            operation which uses last known states from the controls register.
+
+II. Normal Operation
+       a. If the chiller is selected into Automatic operation via the AOM switch the chiller will
+            operate controller will receive the following write inputs from the CMS:
+
+               i. On/Off Signal (LLI)
+
+              ii. Change cooling water leaving temperature set point (HLI)
+
+              iii. Cooling water flow rate setpoint (HLI)
+
+             iv. Enable/disable water saving mode (HLI)
+
+              v. Enable/disable acoustic limiting mode (HLI)
+
+                                                                                                                                                                Page | 13
+              Once enabled, the chiller will modulate all system components to achieve the cooling
+              water leaving setpoint within +/- 0.5oC and the best COP.
+
+         b. The unit must have the capability to limit the absorbed electrical power of the unit to
+              align to the performance requirements outlined in Appendix A. The unit should not
+              draw more power than required to meet its design conditions. Approval to disable this
+              function must be obtained from the client.
+
+         c. In the event of a non-critical fault or voltage sag the unit must have robust controls to
+              ensure that it will attempt to restart its compressor(s) automatically & repeatedly until
+              chiller starts or receives a stop command from CMS.
+
+ III. Manual Operation
+         a. If the chiller is manually enabled via the AOM switch then the chiller enters standalone
+              mode. The chiller will start and modulate all system components to achieve the cooling
+              water leaving setpoint within +/- 0.5oC.
+         b. The chiller controller will use last known values from the chiller controller.
+
+ IV. Water Flow Control
+        a. The CMS will control the Pump VSD speed. Refer to AT-GLOBAL-TR-000015 Cooling
+              Management System for more details.
+
+  V. Adiabatic Systems
+        a. If adiabatic systems are fitted, enable the systems by default at the manufacturer's
+              recommended setpoint to minimise energy usage, however, ensure the adiabatic
+              enable setpoint can be reset via HLI for optimised water usage.
+
+ VI. Power Limiting
+        a. The chiller will have a power limit register which will be set at the time of commissioning
+              to the project chiller maximum power consumption as listed in the schedule.
+
+VII. Water Saving Mode
+        a. The default state for the water saving mode register should be `disabled'. In an event
+              of site-wide water mains failure, the CMS will write an enabled signal to the register
+              and the chiller enters water saving mode.
+        b. In water saving mode the chiller disables the adiabatic systems and preferences
+              energy consumption over water usage.
+        c. The chiller shall continue to operate in this mode until a `disabled' signal is received.
+              Once a disabled signal is received, the chiller returns to normal mode using adiabatic
+              cooling to maximise COP.
+
+VIII. Acoustic Limiting Mode
+        a. The default state for the acoustic limiting mode register should be `disabled'. In an
+              event of acoustic limiting mode is required, it should remain enabled by default, but
+              can be disabled by the chiller itself, the CMS can only issue a command to disable
+              Acoustic mode (In acoustic limiting mode the chiller reduces condenser fan speed to
+              the project maximum fan speed to limit generate noise as agreed.
+        b. If the chiller is unable to achieve the leaving water temperature setpoint during this
+              mode, then the fans may modulate above the acoustic limited fan setpoint.
+        c. Once a disabled signal is received, the chiller returns to normal mode by modulating
+              fans to maximise COP.
+
+                                                                                                                                                                   Page | 14
+VIIII. Water side economiser
+
+    a. If a waterside-economiser is fitted, enable free-cooling via the manufacturer's
+         recommended strategy to minimise energy usage.
+
+2.4.14 NOISE AND VIBRATION CONTROL
+    a. All systems to be installed for quiet and vibration free operation. This is to include
+         suitable seismic spring type vibration isolators on all moving internal equipment,
+         flexible connections and inertia bases where required.
+
+    b. All rotating equipment shall be statically and dynamically balanced.
+
+    c. Provide an Acoustic Limiting function as described in Functional Controls
+
+2.4.15 METERING
+    a. Control panel must be capable of recording overall chiller consumption.
+
+    b. Pump power usage must be metered at the chiller.
+
+2.4.16 CONTROL INTEGRATION
+    a. Any non-conformance to the below requirements must be specifically noted by the
+         vendor during tender to be reviewed and pre-approved by AT.
+    b. All systems software and onboard controllers must be capable of a cold boot to fully
+         resumed operation within 30 seconds, that is, even in the event of a total UPS or
+         Supercapacitor supply loss. Equipment delivered under this package shall provide the
+         necessary Low Level Interface (LLI) points as defined under Appendix D. These points
+         are crucial as the interfacing Cooling Management System (CMS) is designed to
+         connect to these LLI points for all primary controls and monitoring. However, High
+         Level Interface(s) (HLI) are also required for additional monitoring and control of certain
+         equipment setpoints and operating modes; these are also defined under Appendix D.
+         Though not used for critical real-time controls sequencing, any non-conformance to
+         HLI points must be specifically noted by the vendor during tender to be reviewed and
+         pre-approved by AT.
+    c. HLI shall be provided via Modbus RTU over RS485. This includes the main equipment
+         onboard controller, and devices like Variable Speed Drives (VSDs), and other
+         associated ancillary equipment.
+
+2.4.16.1 CMS NETWORK CONNECTION INTERFACE
+
+   a. Each set of equipment delivered under this OSE specification shall provide HLI Modbus
+         via RS485 connection to provide all CMS monitoring and supervisory control points via
+         Modbus RTU. Associated requirements include:
+
+   b. Changes to device or controller firmware or programming, including change of data
+         addresses, data types or scaling shall not be permitted between revisions/evolutions
+         of the equipment without prior AT-approval.
+
+   c. Complete Modbus Register list must be submitted as part of OSE design approval, to
+         be validated during FAT by AirTrunk Controls & Automation Team representative
+
+                                                                                                                                                             Page | 15
+2.4.16.2 Modbus Integration & Performance
+
+All Modbus RTU devices provided are to be configured as Slaves, where the Modbus Master
+is the CMS PLC or equivalent (by others). Each device shall meet the following requirements:
+
+    a. No wireless communication interfaces or protocols
+    b. Where the RS485 0V common ground reference is not provided on the terminal block,
+
+         this should be internally connected to the common ground of the equipment
+    c. RS485 End-Of-Line (EOL) termination available via DIP switch (or included termination
+
+         module)
+    d. Configurable RS485 communications settings as follows:
+
+         · Baud Rate (default 19200)
+         · Data Bits (default 8)
+         · Parity (default None)
+         · Stop Bits (default 1)
+         · Flow Control (default None)
+         · Modbus Address (range 1 to 247)
+    e. Immune to permanent damage when exposed to the following conditions on the RS485
+         bus, including:
+         · Short circuit of the bus
+         · Tolerance of up to 12VDC being applied to the bus
+    f. The average Modbus poll response time shall be under 50ms. For example, if 20
+         holding register (16-bit) addresses are mapped to the CMS, the successive polling of
+         all 20 registers shall be completed within 1000ms (1 second).
+    g. Where more than 20 holding register addresses are required to satisfy the specified
+         required points, Read-Multiple Registers/Inputs/Coils must be supported with suitable
+         consecutive register address layouts to ensure that a full poll cycle of all required points
+         can be completed within 1000ms (1 second).
+    h. All read-only points shall not be able to accept a Modbus write function command.
+    i. All writable Modbus points (temperature setpoints, equipment overrides, etc.) shall be
+         persistent and retain their values in the event of an onboard controller power cycle
+         without requiring the Modbus Master to re-write to the point.
+    j. Any writable points that can potentially be ignored/bypassed by the equipment (for
+         example via local override) should be accompanied with a read-only "feedback" point
+         that shows the actual controlled setpoint/command value.
+    k. Writable Modbus points shall not have the potential to temporarily switch to read-only
+         or reply with Modbus errors or rejections upon write function commands.
+    l. All writable Modbus points shall take actual effect in the equipment within 5 seconds
+         of the Modbus write command from the Modbus Master.
+    m. There shall be a maximum latency of 2000ms (2 seconds) of any change of Boolean
+         condition (On/Off/Trip/Fault, etc.) to being reflected in the associated Modbus point.
+    n. There shall be a maximum latency of 5000ms (5 seconds) of any change of Analog
+         condition (temperature, pressure, load, frequency, voltage, etc.) to being reflected in
+         the associated Modbus point.
+    o. Capable of providing a "Loss of Communications" status with field equipment (where
+         applicable), for example, compressors, temperature regulators, and so forth.
+
+                                                                                                                                                             Page | 16
+2.4.17 SEISMIC COEFFICIENT FOR MEP EQUIPMENT (FOR JAPAN)
+All the MEP Equipment installed in base-isolated buildings in Japan should comply with
+"Guidelines for Seismic Design and Construction of Building Equipment 2014 Edition (BCJ)".
+ 2014 . Seismic intensity for design
+shall follow KV (vertical seismic intensity) =½ KH (horizontal seismic intensity) where KH=1.
+
+                                                                                                                                                             Page | 17
+2.5 DOCUMENTATION
+2.5.1 RFP INFORMATION
+
+Provide all requested information as part of the main RFP document.
+
+2.5.2 SHOP DRAWINGS, TECHNICAL DATA & CALCULATIONS
+    a. Provide shop drawings/documents as part of the tender submission for approval prior
+         to manufacture indicating the following as a minimum:
+             i. The physical size and arrangement of the equipment
+            ii. Elevations & sections
+           iii. Internal Layouts
+           iv. Clearances internally and externally
+            v. Mechanical connection details - Location and size and type of all pipework
+                   connections
+           vi. Electrical connection details
+           vii. Housing details
+          viii. Mounting details
+           ix. Mechanical selections and calculations
+            x. Power rating calculations
+           xi. Site interface drawing ­ in both general arrangement and schematic forms
+           xii. Recommended rigging diagrams and assembly instructions
+          xiii. Parts replacement strategy
+          xiv. Termination of cables/wiring diagrams
+          xv. Vendor shall supply list of all variables and input factory settings (in English)
+                   to AirTrunk for review and approval.
+          xvi. All other information required for interfaces to allow a complete installation.
+    b. Technical datasheets for approval including as a minimum;
+             i. Unit Casing.
+            ii. Magnetic bearing Compressor.
+           iii. Evaporator.
+           iv. Fans.
+            v. Refrigerant system.
+           vi. Adiabatic coolers.
+           vii. Waterside economiser.
+          viii. Water pumps and pipework.
+           ix. Unit Controls.
+            x. Noise and vibration control.
+           xi. Metering.
+
+                                                                                                                                                             Page | 18
+  c. Vendors to submit documentation at LOD300 BIM for general contractor integration into
+       the project BIM models. Refer to AT ­ Global ­ REF- 00000 BIM Execution plan for
+       further detail.
+
+  d. Vendors to submit a Type III Environmental Product Declaration (EPD) for an
+       environmental impact assessment on the project during the product life cycle. Where
+       a Type III EPD is not available, a Type I EPD and embodied carbon content report
+       using CIBSE TM65's calculator tool shall be provided.
+
+In addition to the above documentation vendor shall provide information on localisation
+and availability of local support as part of the RFP.
+
+2.5.3 OPERATING AND MAINTENANCE MANUAL
+Operating and Maintenance (O&M) Manuals are to be provided.
+
+Refer to AT-GLOBAL-REF-000012 O&M Requirements, & AT-GLOBAL-POL-000014
+Operational Handover Policy for further details.
+
+2.5.4 FUNCTION DESCRIPTION SPECIFICATION
+
+Vendor must provide a full systems Functional Description Specification inclusive of all
+interfacing, & operating descriptions to detail the full coordination and integration of the
+equipment to the project.
+
+2.5.5 RELIABILITY
+
+Vendors must provide the below MTTR, MTBF & MTTF data as part of their submission. This
+data shall be provided for all Major Air Cooled Chiller components, including but not limited to:
+
+ITEM #     ITEM DESCRIPTION
+
+       1   EC Fans
+       2   Evaporator
+       3   Condenser
+       4   Expansion Valve
+       5   Magflow meter
+       6   Compressor
+       7   Refrigerant system
+       8   Economiser
+       9   Adiabatic coolers
+      10   Water pumps
+      11   UPS & Controls
+      12.  Active harmonics filter
+
+                                    Page | 19
+2.6 SPARE PARTS
+
+If a failure occurs during commissioning, operation or at any other time and that failure can
+only be remedied by the replacement of the failed component, then the manufacturer needs
+to have stocks of that component readily available. At the time of order, the manufacturer
+should prepare a list of all spares required and indicated stock levels and lead times.
+The price for each recommended part or set of parts delivered into the Contractor's store at
+site. Details of the delivery periods for all recommended spare parts.
+
+2.7 TRAINING
+
+At completion of the works, provide formal training to the operators generally for the operation,
+maintenance and adjustment of the system. Refer to AT-GLOBAL-REF-000013 Training
+Requirements for further details.
+
+2.8 SAFTEY IN DESIGN
+
+The Vendor must coordinate with the General Contractor (GC) to ensure the safety of the end
+user during maintenance, operations, and replacement activities.
+This consists of but is not limited to:
+
+  a. Drilling, shot plugs, bolts or welding fixing to structural element shall not be used /
+       proceed without the written agreement of the Structural Engineer
+
+  b. Secure all electrical connections and contacts with suitable bolts or set-screws of ample
+       size. Fit all connections with locking devices of an agreed type and material.
+
+  c. Provide adequately ventilation to all cubicles, panels and similar enclosed compartments
+       to restrict condensation and excessive temperatures.
+
+                                                                                                                                                             Page | 20
+APPENDIX A - TECHNICAL SCHEDULE
+
+Provide confirmation of all technical items for tender submission:
+
+1. Technical requirement to be completed by local consultant
+
+2. Confirmation to be completed by OSE
+
+Some of the technical parameters are based on Australian Standards, the local consultant is
+to update the requirement listed using the equivalent local codes.
+
+TECHNICAL           REQUIREMENT                    UNIT             CONFIRMATION
+PARAMETER
+
+Performance Data
+
+Design Cooling      Wet/Dry                        -
+
+Mode
+
+Cooling Capacity    Consultant to Input:           kW
+
+                    1500
+
+Minimum Ambient     Consultant to Input:           °C
+Design, DB          Vendor to comment with
+                    respect to local ambient       °C/°C
+Maximum Ambient     temperature amendment
+Design              sheet if any.                  L/s
+DB/Coincident WB    Consultant to Input:           L/s
+                    47.6 / 27.1Vendor to           °C
+Cooling Water Flow  comment with respect to        °C
+Rate                local ambient temperature      °C
+                    amendment sheet if any.        °C
+Minimum Water       Generally 35.8                 °C DB
+Flow Rate           Vendor to provide
+
+Design Water        Vendor to provideAdjustable
+Entering            via software / no flow switch
+Temperature
+Design Water                a. 29
+Leaving                    b. 36
+Temperature
+Maximum Water              a. 19
+Entering                   b. 26
+Temperature
+Minimum Water              a. 38
+Leaving
+Temperature                a. 28
+Adiabatic enable
+temperature         Generally 26
+                    Consultant to Input:
+                    Vendor to Provide
+Adiabatic peak flow Vendor to Provide               L/s
+
+rate
+
+Minimum System       260                            L
+
+Volume
+
+Refrigerant Type     R134a                          -
+
+                     Option:
+                     
+
+                     Follow the Japanese Act on
+                     Rational Use and Proper
+                     Management of Fluorocarbons ­
+                     For JPN
+
+Refrigerant Charge   491.0                          kg
+                     1                              #
+No. Refrigerant                                     COP
+Circuits             5.0 Dry / vendor to input ­
+                     wet                            EER
+Min. Coefficient of  Consultant to Input:           -
+Performance (Net     Vendor to Provide:             kW
+Cooling
+Capacity/Total       Accordance with AHRI
+Absorbed Power @     550/590 or local standards
+Design Condition)    Continuous
+
+EER                  Generally, 200
+                     Consultant to Input:
+Number of Chiller
+Control Stages
+
+Chiller Maximum
+Turndown
+
+Chiller Maximum      Generally 500                  kW
+Turndown for         Consultant to Input:           Seconds
+Continuous                                          -
+Operation
+                                                    #
+Time from Power On 120                              kPa
+to 100% compressor
+speed
+
+Seismic Design       AS1170.4
+Criteria             Option:
+
+                     Class S /roof ­ For JPN
+
+Evaporator
+
+Number of            1
+
+Evaporators
+
+Evaporator Pressure Vendor to provide
+Drop
+
+                                                             Page | 22
+Max Evaporator        Vendor to provide           bar
+Operating Pressure                                m²K/kW
+Fouling Factor        0.018                       -
+CHW Connection        Victaulic                   Ø (mm)
+Type                                              Ø (mm)/-
+CHW Connection        Vendor to provide           Ø (mm)/-
+Size                                              bar (g)
+Drain Connection      20 (minimum)/Screwed        Type
+Size/Type
+Vent Connection       10 (minimum)/Screwed        %
+Size
+Relief Valve Setting  Vendor to provide           -
+CHW Antifreeze5       Option:                     m²K/W
+Solution              Required for JPN
+                      Option:                     -
+CHW Antifreeze        Required for JPN
+Solution              Closed-cell, flexible, UV   -
+                      protected elastomeric.      kW
+Insulation Material   1.8                         #
+                                                  %
+Insulation Minimum    Draw                        m³/s
+R-Value               through/propeller/aerofoil  -
+Condenser             bladed axial fans           Pa
+Fan Type              Direct drive, EC            °C
+                      Vendor to Provide           bar (g)
+Drive Type            Vendor to Provide
+Fan Power             Vendor to Provide           -
+Number of Fans
+Fan Minimum           Vendor to Provide
+Efficiency            Vertical
+Fan Air Flow Rate     40
+Fan Discharge
+Fan External Static   Vendor to Provide
+Pressure
+Sub Cooling           Vendor to Provide
+Temperature
+HP Relief Valve       Magnetic bearing,
+Setting               centrifugal.
+Compressors
+Compressor Type
+
+                                                            Page | 23
+Capacity Control     VSD capacity control with   -
+                     inlet guide vanes.          #
+                                                 -
+Number of            Vendor to Provide           rpm
+Compressors                                      kW
+                                                 #/hr
+Drive Type           Two stage direct driven.
+                                                 bar (g)
+Compressor Motor Vendor to Provide
+Speed                                            L/s
+                                                 kPa
+Compressor Motor Vendor to Provide
+Size
+
+Max Number of        Vendor to Provide
+Compressor
+Starts/Hour
+
+Max Allowable        Vendor to Provide
+Pressure
+
+Cooling Water Pump
+
+Water Flow Rate      As evaporator flow rate.
+
+External System      Generally 250
+Pressure Drop (at    Consultant to Input:
+design condition)
+
+Pump Type            Direct Coupled End Suction  -
+                     / In line
+Drive Type           VSD                         -
+Motor Size           Vendor to Provide           kW
+Maximum Speed        Vendor to Provide           rpm
+Power Supply         Vendor to Provide           V/Ø/Hz
+Running Current      Vendor to Provide           A
+Impeller Material    Vendor to Provide           -
+Housing Material     Vendor to Provide           -
+Shaft Material       Vendor to Provide           -
+Physical Data
+Unit Operating       Vendor to Provide           kg
+Weight
+Unit Shipping        Vendor to Provide           kg
+Weight
+Overall Unit Length  Vendor to Provide           mm
+Overall Unit Width
+Overall Unit Height  Vendor to Provide           mm
+Minimum Side
+Clearance            Vendor to Provide           mm
+
+                     Vendor to Provide           mm
+
+                                                          Page | 24
+Minimum Tube          Vendor to Provide          mm
+Clearance                                        mm
+                                                 mm
+Minimum End           Vendor to Provide
+Clearance                                        V/Ø/Hz
+
+Minimum Top           Vendor to Provide
+Clearance
+
+Electrical Data
+
+Mains Power Supply 380-430/3/50
+
+                      Consultant to Input:
+
+Unit Max Absorbed Vendor to Provide              kW
+
+Power at Design       (including pump, heaters,
+
+Condition             fans etc)
+
+Unit Max Running Vendor to Provide               A
+
+Current
+
+Unit Max Starting     Vendor to Provide          A
+
+Current
+
+Unit Short Circuit    Vendor to Provide          A
+
+Withstand Rating of
+
+Electrical Enclosure
+
+Compressor Start VFD                             -
+
+Method
+
+Compressor            Vendor to Provide          kW
+
+Absorbed Power
+
+Compressor Motor Vendor to Provide               kW
+
+Rating
+
+Compressor            Vendor to Provide          A
+
+Running Current
+
+Compressor            Vendor to Provide          A
+
+Starting Current
+
+Condenser Fan         Vendor to Provide          kW
+
+Input Power
+
+Condenser Fan         Vendor to Provide          kW
+
+Motor Rating
+
+Unit IP Rating        Vendor to Provide          -
+
+Local Power Factor 0.95                          -
+
+Correction
+
+Local Power Factor Required                      -
+
+Correction Inhibit
+
+VSD Manufacturer Vendor to Provide
+
+VSD Class             Vendor to Provide
+
+VSD IP Rating         Vendor to Provide
+
+                                                         Page | 25
+Total Harmonic     <5 system total               % of
+Distortion (THDi)                                fundamental
+                   *where vendors are unable
+                   to achieve <5% THDi at the    VA
+                   component level, vendors
+                   shall provide pricing and     kW
+                   specification for active
+                   harmonic filtration to        -
+                   achieve the required <5%.
+                   Where the active harmonic     dB
+                   filter, AHF, has a different  dB
+                   communication protocol        dB
+                   from AirTrunk's DCS,          dB
+                   vendor shall include a        dB
+                   converter card for            dB
+                   interfacing between the       dB
+                   AHF and DCS.                  dB
+                                                 dBA
+Controls UPS       UPS/ Ultracapacitor with 5    dB
+                   minutes autonomy              dB
+                                                 dB
+                   Vendor to Provide             dB
+                                                 dB
+Project chiller max Consultant to Input:         dB
+power demand limit                               dB
+
+Controls and
+Monitoring
+
+Keypad and Display English, SI Units
+Language
+
+Noise and Vibration Data
+
+          63 Hz    Vendor to Provide
+
+          125 Hz Vendor to Provide
+
+Design    250 Hz   Vendor to Provide
+Sound     500 Hz   TBC
+Power     1000 Hz  TBC
+Level     2000 Hz  TBC
+(Lw)
+
+          4000 Hz TBC
+
+          8000 Hz TBC
+
+Noise Level @ 1m Vendor to Provide
+
+Max.      63 Hz    TBC
+Radiated  125 Hz   TBC
+Sound     250 Hz   TBC
+Power              TBC
+Level      500 Hz  TBC
+(Lw) at   1000 Hz  TBC
+acoustic  2000 Hz  TBC
+setback   4000 Hz
+
+                                                              Page | 26
+                 8000 Hz  TBC                            dB
+                          TBC                            dBA
+Noise Level @ 1m          Vendor to provide              %/rpm
+
+Fan speed at in           Required
+setback mode
+                          Type III third party verified
+Other Requirements        EPD in compliance with ISO
+                          14025, 14040, 14044
+Environmental             standards
+Product Declaration
+
+                                                                Page | 27
+Vendor to complete the following COP table or provide equivalent curve.
+
+Part Load        10%  25%  50%  75%                                      100%
+Performance
+
+Ambient      0
+
+Temperature  5
+
+(°C)
+
+             10
+
+             15
+
+             20
+
+             25
+
+             30
+
+             35
+
+             40
+
+             45
+
+             50
+
+DESCRIPTION                                                       CONFIRMATION
+
+Please confirm testing facility complies with section 2.12 First
+of Kind Testing.
+
+                                                                               Page | 28
+APPENDIX B - INTERFACE SCHEDULE
+
+ITEM INTERFACE             OSE TO PROVIDE              OTHERS TO
+                                                       PROVIDE
+
+1  DCS Interface           Single HLI for connection   R485 cables to single
+                           to CMCS system to           HLI.
+                           provide alarm monitoring
+                           and required system
+                           operation and integration.
+
+2  Chilled Water Pipework  Provide connection type     Final connection of
+   Connection              as specified in equipment   chilled water system
+                           schedule.                   to chiller/chilled water
+                                                       pump.
+
+3  Power Supply            Single point of power       Power supply as
+                           connection per chiller.     nominated in this
+                                                       specification from
+                                                       main switchboard to
+                                                       each local chiller
+                                                       isolator.
+
+4  Domestic Cold Water     Piping from connection      Extension of cold
+                           points to within            water supply to each
+                           equipment.                  chiller from
+                                                       termination valve.
+
+5  Drains                  Drain outlet for            Connection of
+                           connection.                 pipework from nearest
+                                                       drain point to chiller
+                                                       outlet.
+
+6  Support/Mountings       Mounts and fixings in line  Mounting/plinths to
+                           with project                meet
+                           structural/seismic          structural/seismic
+                           requirements.               requirements.
+
+                                                                  Page | 29
+Page | 30
+APPENDIX C - CODES AND STANDARDS
+
+The equipment shall comply with the latest version of the local code and standards. Below
+standards are references from Australian / IEC standards, the local equivalent standards
+shall be filled out by the local consultant (if applicable):
+
+Global/ Australian
+
+Standard    Standard Name
+
+AS1210      Pressure Vessels
+
+AS1571      Copper ­ seamless tubes for air conditioning and refrigeration
+
+AS/NZS 1677 Refrigerating system
+
+AS3000      Electrical Installations (Wiring Rules)
+
+AS/NZS 4776 Chiller testing and performance rating
+
+AS 2129     Flanges for pipes, valves and fittings
+
+ASTM C 534  Standard Specification for Preformed Flexible Elastomeric Cellular Thermal Insulation in
+            Sheet and Tubular Form
+AS 1668.2
+            The use of ventilation and air-conditioning in buildings ­ Mechanical ventilation in
+AS 4041     buildings
+AS1627.9
+AS1318      Pressure Piping
+AS1319
+AS1345      Metal finishing - Preparation and pre-treatment of surfaces - Pictorial
+AS3666      surface preparation standards for painting steel surfaces
+            Use of colour for the marking of physical hazards and the identification of certain
+            equipment in industry (known as the SAA Industrial Safety Colour Code)
+            Safety signs for the occupational environment
+
+            Identification of the contents of pipes, conduits and ducts
+
+            Microbial control as required by the BCA and the recommendations of SAA/SNZ HB 32
+
+AS4776      Liquid-chilling packages using the vapour compression cycle
+AS1202      AC motor starters (up to and including 1000v)
+AS2053      Conduits and fittings for electrical installations
+
+AHRI        Performance Rating of Water Chilled and Heat Pump Water Heating
+550/590
+AHRI 480    Performance Rating of. Remote Type Refrigerant- Cooled Liquid Coolers
+ASTM A240   Standard Specification for Chromium and Chromium-Nickel Stainless Steel Plate, Sheet, and
+            Strip for Pressure Vessels and for General Applications
+ASTM A460   Standard Specification for Copper-Clad Steel Wire Strand
+ASTM B117
+            Standard Practice for Operating Salt Spray (Fog) Apparatus
+
+MEPS        Decision Regulation Impact Statement: National Legislation for Appliance and Equipment
+            Minimum Energy Performance Standards
+
+            Minimum Energy Performance Standards (MEPS) for Industrial Equipment and Systems,
+            National Environmental Agency Singapore.
+
+                                                                            Page | 31
+          Reducing Greenhouse Gas (GHG) emissions from the use of refrigerants in RAC sector,
+          National Environmental Agency Singapore.
+          Singapore Standard SS 532 Code of practice for the storage of flammable liquids.
+
+          Singapore Standard SS 553 Code of practice for air-conditioning and mechanical ventilation
+          in buildings.
+          MS 761 Code of practice for the storage and handling of flammable and combustible
+          liquids.
+          MS 1525 Energy efficiency and use of renewable energy for non-residential buildings,
+          Malaysia.
+          National Construction Code/Building Code of Australia
+
+          WorkSafe Requirements
+
+          OHS Regulations
+
+          Environment Protection Act and Authority requirements
+
+          The Electrical Supply and Distribution Authority requirements
+
+          Water Authority
+
+          Fire Brigade Requirements
+
+          All Local Council Regulations
+
+          Any other Authority having jurisdiction over this equipment
+
+Japan
+
+Standard  Standard Name
+
+          
+
+JIS       Japanese Industrial Standard
+
+          
+
+JRA       Japanese Refrigeration and Air Conditioning Industry Standard
+
+          -
+
+          Japanese Refrigeration and Air Conditioning Industry Association Guideline
+
+          
+
+JEM       Japanese Electrical Manufacturers' Association Standard
+
+          
+
+JEC       
+
+          Japanese Electro technical Committee
+
+          
+
+JPN Laws Japanese High Pressure Gas safety Law
+
+          
+
+JPN Laws Japanese Act on Rational Use and Proper Management of Fluorocarbons
+
+          
+
+JPN General Japanese MLIT(Mechanical Equipment Construction) The latest edition
+specification
+
+                                                                                      Page | 32
+ JPN Laws    
+ JPN Laws    JPN Building Standards Law
+ JPN Laws    
+             Occupational health and safety regulations
+ JPN Laws    
+ JPN Laws    Basic environmental law
+ JPN Laws    
+             Noise control law
+ JPN Local   
+   Laws      Telecommunications Business Law
+             
+ Relevant    Water supply law
+authorities  
+             Fire Service Act
+             
+             Fire prevention ordinance
+
+             
+             Local prefectural/city regulations
+
+             
+
+             The fire departmentMLITMETILabor Standards Inspection Office
+
+                                                                           Page | 33
+APPENDIX D - DCS SCHEDULE
+
+This is the minimum points list. Refer to DCS specification (AT-GLOBAL-TR-000015b CMS
+Points List) for the full points list additional details on DCS architecture and operation.
+
+Point Description                Interface Read/Write Comment
+                                 Type
+
+Chiller Enable/Disable/Fault/Run DI/DO  Write
+
+Chiller Healthy Status           HLI    Read
+
+Chiller Unable to Restart        HLI    Read
+                                        Read
+Chiller Operation Remote/Local   HLI
+
+Run Hours                        HLI    Read
+
+Freeze Protection Alarm          HLI    Read
+
+Chiller No. of Starts            HLI    Read
+
+Demand Limit                     HLI    Read
+
+Chiller Load (%)                 HLI    Read
+
+Chiller Load Limit (%)           HLI    Read
+
+Chilled Water Leaving            HLI    Read
+Temperature
+
+Chilled Water Return Temperature HLI    Read
+
+Outside Ambient Air Temperature HLI     Read
+
+Chilled Water Field Flow/Return  HLI    Read
+
+Temperature
+
+Chilled Water Leaving Set Point  HLI    Write
+
+Chilled Water Leaving Set Point  HLI    Write
+
+Reset
+
+Field Differential Pressure      HLI    Read
+
+Chilled Water Flow               HLI    Read
+
+Evaporator
+
+Evaporator Differential Pressure HLI    Read
+
+Refrigerant Temperature/Pressure HLI    Read
+Alarms
+
+Compressor
+
+Compressor Start/Stop            HLI    Read
+
+Compressor Speed                 HLI    Read
+
+Compressor Number of Starts      HLI    Read
+
+                                                               Page | 34
+Compressor Amps (each          HLI      Read
+                                        Read
+compressor)                             Read
+                                        Read
+Compressor Suction/Discharge   HLI      Read
+                                        Read
+Pressures                               Read
+                                        Read
+Compressor Suction/Discharge   HLI      Write
+
+Temperatures                            Write
+                                        Read
+Refrigerant Temperature/Pressure HLI    Write
+Alarms
+                                        Read
+Compressor # in Generator Mode HLI      Write
+Condenser                               Write
+
+Fan Status                     HLI      Read
+                                        Read
+Condenser Fan Speed            HLI      Read
+
+Condenser Sub Cooling          HLI      Read
+                                        Read
+Temperature                             Read
+
+Acoustic Limiting Mode         HLI
+
+Adiabatic Cooling
+
+Adiabatic Cooling Enable Set Point HLI
+
+Adiabatic Relief Status        HLI
+
+Water saving mode              HLI
+
+Chilled Water Pump
+
+Pump Speed                     AO
+
+Pump Enable/Disable/Fault/Run  DI/DO
+status                         HLI
+Pump Flow rate
+
+Magflow
+
+Status                         HLI
+
+Fault                          HLI
+
+Flow Rate                      HLI
+
+Power Input
+
+Chiller Total Electrical       HLI
+
+Consumption (kW)
+
+Circuit Breaker Status         HLI
+
+Additional
+
+Read Free-Cooling capacity % in HLI
+total cooling using (TIA-TIE)/(TIA-
+TUA) formula
+
+                                               Page | 35
+Pump status  HLI  Read
+Alarms
+             HLI  Read
+
+                        Page | 36
+APPENDIX E - SCHEMATIC
+
+The consultant shall label the typical schematics below and update with any modifications.
+
+                                                                                                                                                             Page | 37
+APPENDIX F - GENERAL ARRANGEMENT
+
+Refer to Project specific drawings
+
+                                                                                                                                                             Page | 38
+APPENDIX G - MAINTENANCE
+
+During the maintenance period, the supplier shall carry out periodic inspections and
+maintenance work as required by statutory regulations and recommended by the
+manufacturers of supplied equipment, and promptly rectify faults. Answer emergency calls
+within 15 minutes and attend within 2 hours. Spare parts of equipment provided shall be
+available within 12 hours.
+Supplier shall submit details of maintenance procedures and programme, relating to installed
+plant and equipment 6 weeks before the date of practical completion. Indicate dates of
+services visits. State contact telephones numbers of services operators and describe
+arrangements for emergency calls. Refer to the minimum maintenance requirement schedule
+below.
+Supplier shall report to the designated AirTrunk representative on arriving and before leaving
+the site. Comply with all security procedures established on the site of the works. All the
+maintenance shall be carried out at times and in a manner that will have the least impact on
+operational activities. Submit in binders which match the Operation and Maintenance
+Manuals, loose leaf log book pages designed for recording completion activities including
+operational and maintenance procedures. Such information shall include materials used, test
+results, comments for future maintenance actions and notes covering the condition of the
+installation. Include completed log book pages recording the operational and maintenance
+activities performed up to the time of practical completion and again at the end of defects
+liability period.
+Include test and approval certificates.
+At each service visit record comments on the functioning of the systems, work carried out,
+items requiring corrective action, adjustments made and name of service operator. Obtain the
+signature of the designated representative.
+The Supplier shall carry out but not limited to the maintenance contract requirements in the
+maintenance schedules.
+
+                                                                                                                                                             Page | 39
+APPENDIX H - SPARE PARTS LIST
+
+Vendor shall provide comprehensive spare parts list inclusive of pricing in a `shopping list'
+format.
+
+                                                                                                                                                             Page | 40
+

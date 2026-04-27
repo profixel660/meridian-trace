@@ -1,0 +1,448 @@
+Owners Supplied Equipment OSE
+Demarcation Schedules
+
+Air Cooled Chiller
+AT-GLOBAL-OR-000303_SCH-ACC-01
+
+Prepared by:  Mark Foley
+              Director, Product Management
+
+Project No:   Baseline Demarcation Schedule
+Issue:        FY24/25 Updates
+Revision      04
+Date          07/05/2025
+Table of Contents
+
+DOCUMENT CONTROL ....................................................................................................... 3
+1. PERFORMANCE REQUIREMENTS................................................................................. 4
+
+   1.1 FUNCTIONAL DESCRIPTION .............................................................................. 4
+   1.2 CONTRACTED RESPONSIBILITY........................................................................ 4
+   1.3 SCOPE OF WORK DEMARCATION ..................................................................... 4
+   1.4 REFERENCE DOCUMENTS............................................................................... 12
+
+                                                                                                                                                              Page | 2
+DOCUMENT CONTROL
+
+VERSION   DATE       MODIFIED   APPROVED BY SUMMARY OF CHANGE
+  Rev 1  10/08/20         BY
+                                             Template Change ­ For
+                   D. Checchin               Review
+                                             KOP Alignment
+Rev 2    23/04/2021 S. Venkata  D. Checchin  FY23/24 Updates
+Rev 3    15/09/2023 M. Foley    M. Foley     FY- 24/25 Update
+Rev 4    07/05/2025 R. Mistri
+
+                                             Page | 3
+1. PERFORMANCE REQUIREMENTS
+
+1.1 FUNCTIONAL DESCRIPTION
+
+This Scope demarcation schedule is a point of reference for responsibilities, methods of delivery and works that are defined across the relevant
+stakeholder and shall accompany all Technical Specifications. The intent of this document is to maintain consistency across the delivery of the
+project and align all Trade Contractors and Supply Contracts.
+
+1.2 CONTRACTED RESPONSIBILITY
+
+The intent is for the Contractor to provide the works as documented on the Contract Documents. The documents are provided to industry
+standard and the Contractor shall complete the design as would be reasonably expected on a project of this type. The responsibility matrix
+below shall form part of the agreed. Provide due allowance in terms of design capability and programme to complete the works where required.
+
+Provide due allowance in programme for this review process.
+
+1.3 SCOPE OF WORK DEMARCATION
+
+Demarcation Schedule ("" means involved and " R" means responsible)
+
+    #  Role                                                                       Supplier  Contractor  Client / Consultant  Cxa Agent
+                                                                                    R                           R                   
+1. Scoping of the Chiller System performance requirements.                                                                          
+                                                                                    R                                               
+2.     Design, supply, delivery and commissioning of the complete Chiller
+       System.
+
+       Incorporation of the system into the overall data centre design,
+
+3.     including all form of co-ordination e.g. spatial, technical, loading, T+C            R           
+       etc.
+
+       Main contractor shall manage these requirements.
+
+4. Engagement of Licensed Electrical worker (LEW) to review and                                         
+    #                               Role                                          Supplier  Contractor Client / Consultant  Cxa Agent
+
+       validate electrical design of Chiller System in accordance with               R
+
+       Singapore standards and in agreement with appointed Building LEW.             
+                                                                                     
+       Vendor LEW will provide all necessary documentation to energize the          R
+                                                                                    R
+       equipment (COC etc). SGP requirement.                                        R
+
+       Provide equipment submittals including but not limited to:
+
+       1) Technical Data
+
+       2) Schematics and general arrangements including clearance
+
+       requirements for functionality / maintenance and all connection details
+
+       required for interfaces
+
+       3) Wiring diagrams (electrical and controls)                                         
+
+5. 4) Weights / loads                                                                                                       
+
+       5) Noise/vibration information if applicable
+
+       6) Detailed narrative of all required interfaces to achieve functionality
+
+       including power supplies, controls, communication, HVAC, plumbing
+
+       requirements etc
+
+       7) Functional description
+
+       8) All other information as requested in OSE specifications and as
+
+       required for coordination and interfaces.
+
+6.     Confirmation space provided is suitable for operation, maintenance,                  R  
+       and removal of Chiller System.
+
+7. Provision of a suitable replacement strategy.                                            R  
+
+8.     Chiller System energy efficiency to comply with Greenmark Platinum                                                   
+       Requirements. SGP Requirement
+
+       Provision for acoustic treatment in accordance with acoustic
+
+       consultant.
+
+       Provide attenuators/acoustic enclosure as required by acoustic
+
+9.     consultant.                                                                                                          
+       Confirmation equipment meets final acoustic criteria set out in the
+
+       specification.
+
+       Consultant and general contractor shall be held accountable to ensure
+
+       suffice design is complete.
+
+       Supply of anti-vibration mount as required by local standard & codes                                                 
+
+10. as applicable.to have suitable "outrigger" mounting plate to suit anti-                    
+
+       vibration mounts.
+
+                                                                                                                                       Page | 5
+#                                     Role                                       Supplier  Contractor  Client / Consultant  Cxa Agent
+                                                                                               R
+11. Provide site measure and set out dimensions.                                   R                                              
+                                                                                   R                                              
+12.  Confirmation of Chiller System pipe connections (LHS / RHS) for mirrored      R                                              
+     units                                                                         R
+                                                                                   R
+13.  Confirmation of motor starter, type and location. Any specific                R
+     requirements for cable terminations need to be understood                     R
+                                                                                   R
+     Provision of corrosion protection to Chiller System particularly              R       
+
+14. considering the impacts of the adiabatic process and moisture                  R                   
+
+     laden air.                                                                    R
+
+15.  Confirmation of adequate airflow around Chiller System                                            
+     assembly
+                                                                                    
+16.  Factory insulation & metal sheathing of evaporator vessels including                              
+     associated water boxes and on all cold surfaces.
+
+17. Supply of strainers.                                                                               
+
+18.  Confirmation of power factor correction capacitors for Chiller                                    
+     System.
+
+19.  Confirmation of motor starter, type and location. Any specific                                    
+     requirements for cable terminations need to be understood
+
+     Factory unit mounted & wired variable frequency drives                                
+
+20. including RFI filters & harmonic suppression devices complying                                     
+
+     with IEEE Std 519 and or local standard & codes as applicable.
+
+     Co-ordination of DCS interface provisions. High level interface include
+
+     ModBus RTU protocol as specified in specifications.                                                                    
+
+21.                                                                                                    
+
+     Confirmation of the control strategy to be adopted to the units during the
+
+     design and manufacturing phase.
+
+22.  Provide single point of connection as described in OSE specification for                                               
+     connection to DCS system.
+
+     All controls wiring from CT and field devices to chiller control panel and
+
+23.  DCS to allow for a fully functional installation.                                     R (DCS)                          
+     Provisions for field devices to be provided by mechanical installation
+
+     contractor.
+
+24.  Supply, install and commissioning of Chiller Management System in                      R (DCS)                         
+     accordance with TR.
+
+25. Supply & install of Chilled Water flow DP switches.                                    R                                
+
+                                                                                                                                       Page | 6
+#                             Role                                              Supplier  Contractor Client / Consultant  Cxa Agent
+                                                                                  R                                              
+     Prepare manufacturing drawings & issue to the Client Representative                                                         
+                                                                                  R                                              
+     for review and comment.                                                        
+                                                                                                                                 
+26.                                                                                          
+                                                                                   R
+     Drawings will include all relevant info regarding structural loadings,         
+
+     sound attenuation and vibration - isolation information.                     R
+                                                                                  R
+27.  Issue manufacturing drawings based on Local Code with LEW approval                      
+     to Main Contractor for review and comment.                                   R
+                                                                                  R
+28.  Review of manufacturing drawings for general accord with the intent of               R  
+     the Specification.                                                            
+
+29.  Approval of manufacturing drawings such that they meet the project           R          R
+     specifications
+
+     Prepare safety in design risk register and issue to client for review and
+
+30. comment.                                                                              R
+
+     Refer to OSE specifications for details.
+
+31.  Provision of CHW circulating pump, pipework, in accordance with                      
+     project specifications.
+
+32.  Provision of Power supply & control to chiller onboard pump in                       R
+     accordance with project specifications.
+
+33.  Setup program of delivery dates to meet Contractor's construction                       
+     program.
+
+34. Manufacture, Testing, Freight and Insurance to site                                      
+
+35.  Insure the Chiller System equipment & componentry from taking                        R  
+     delivery/positioning to practical completion.
+
+36.  Deliver the Chiller System equipment to site. The construction                          
+     management plan will indicate the delivery location on site.
+
+37. Storage of Chiller System offsite (if required).                                         
+
+38. Storage of Chiller System onsite (if required).                                       R  
+
+39.  Inspection of Chiller System equipment prior to unloading & document                 R  
+     condition of equipment.
+
+40.  Removal of protective covers for inspection and reinstate the protective             R  
+     cover and repack ancillaries' items as required.
+
+                                                                                                                                     Page | 7
+#    Role                                                                               Supplier  Contractor Client / Consultant  Cxa Agent
+                                                                                                     R
+     Responsibility for protection including weatherproof protection and                             R
+                                                                                           R          R
+41. damage to equipment once delivered to site. Insurance for the equipment                           R
+
+     at site including during lifting and final positioning                                 
+
+42.  Provision for offloading, ie certified lifting hooks, forklift provision, etc and      
+     carry out unloading from delivery truck                                                
+                                                                                            
+43.  Provide drawings showing required support to Chiller System and to allow               
+     the structural engineer to document on adequate lifting points.                        
+                                                                                            
+44. Hoisting of Chiller System with adequate craneage into position.
+                                                                                            
+       Locate Chiller System in final position. If final location of Chiller System               R
+       is not ready through no fault of Client, general contractor is to provide          R
+45. adequate storage space and hoisting/cranage on site and co-ordinate the                       R
+       movement of the units until such time as the final location is ready, upon
+       which contractors will locate the units in final position.                                                             
+                                                                                                  R
+       If Chiller System components arrive in a split delivery (eg. MCC panel
+46. etc), main contractor will provide adequate labour and hoisting provisions                     R
+                                                                                                   R
+       to co-ordinate the components to their required location                                    R
+
+47.  Supply and install of modular weatherproof enclosure around Chiller
+     System and is to be integrated with structural design.
+
+48. Install and adjusting height of anti-vibration mounts as required.
+
+49. Securing Chiller System to building base.
+
+50. Plinths including RAF support, cut outs.
+
+51.  Installation/fitting of adiabatic pads and associated piping to Data Hall                    R
+     Chiller System.
+
+52. Installation & wiring only of Chiller System flow DP switches.                                R                               
+
+53. Set out recommended mono rail location as per supplier (if required)                          R
+
+54.  Supply, installation and termination of pump/flow interlocks in Chiller                      R                               
+     System control cubicles.
+
+55. Supply, installation and termination of electrical submain wiring.                            R                               
+
+                                                                                                                                             Page | 8
+#    Role                                                                         Supplier  Contractor  Client / Consultant  Cxa Agent
+                                                                                                R                                   
+56. Termination of electrical submain wiring.                                         
+                                                                                                                                    
+       Provide and terminate all electrical, control and alarms wiring.            R        R
+57. Check phase rotation, torque tests for cables.                                 R
+                                                                                   R
+     Any internal controls wiring is by OSE Vendor.                                R
+
+58. Final adjustment to seals and connections at the interface of the units                 R
+                                                                                    R
+                                                                                   R                    
+                                                                                   R
+59. Provide supervisory and technical support for Chiller System installation      R
+                                                                                   R
+60. Factory complete assembled control wiring between starters and motors.                                                   
+                                                                                     
+     Supply of filters (Line Reactor and RFI) and filter enclosure compliant                
+     with IEEE Std. 519-1992 or local equivalent
+61.
+
+                                                                                                                             
+
+62. Electrical Panel Unit mounted and factory fitted, wired and tested.
+
+63. Inspect and test the Chiller System in situ, prior to site IST testing.                 R                                
+
+     Documentation works using online Automated Commissioning                                                                
+     Management System (as applicable)
+64.
+
+65. Motor starters and motor protection.                                                                                     
+
+     Statically and dynamically balance all equipment containing rotating                                                    
+     components to manufacturer's instructions
+66.
+
+67.  Construction / Commissioning Filters to be provided and replaced with                  
+     new filters at handover.                                                               
+
+68.  Chiller evaporator needs to be cleaned, flushed, Dried & capped at the
+     time of delivery (includes in QC document)
+
+     Drain, flush, clean and refill Chiller circuit and provide water treatment.
+
+69.  Flushing loops to be provided to loop out pipework before Chiller                      R                                
+     System, flushing thought the equipment is not permitted.
+
+                                                                                                                                        Page | 9
+#                                       Role                                   Supplier  Contractor  Client / Consultant  Cxa Agent
+                                                                                           R                                    
+70.  Complete Chilled water system flushing and passivation to clients                     R                                    
+     acceptable standards.                                                                 R                                    
+                                                                                 R                                              
+71. Complete Chilled water system water balancing                                          R                                    
+                                                                                R                                               
+72. Verify Chilled water system by-pass is installed and calibrated.                                                            
+                                                                                                                                 
+73.  Verify flow meters are installed and tested as required. Flushing and       R
+     passivation shall not be through equipment                                  R                                               
+                                                                                 R
+74.  Removal of any commissioning spades in the Chilled water system that
+     may be left over from Cx activities                                         R
+                                                                               (L1-L3)
+75. Supply of certified pressure vessel certificates
+                                                                                 R
+       Assist owner/client to complete Work Cover Application for Item                   
+76. Registration of Pressure Vessel.                                               
+
+     Specific documentation to be provided by OSE vendor.
+
+77.  Rectification of defects to Chiller System identified during testing and            R
+     commissioning.
+
+78. Warranty for Chiller System equipment & componentry.                                             
+
+79. Programmed maintenance during defects liability period.                                          
+
+80. Provide as-built drawings for final site installation.                               R           
+
+       Preparation and submission of completed commissioning                             
+81. documentation to Independent Commissioning Agent and main
+
+       contractor for approval for inclusion in final Commissioning
+
+     Prepare and submit the technical data, associated as-built drawings
+
+     within O & M manuals for the Contractor's review.                                                                    
+                                                                                                                          
+82.
+                                                                                                                              Page | 10
+     OSE Vendors shall provide all required supporting documentation for
+
+     integration into the overall O&Ms
+
+83.  Review as-built drawings including BIM LOD 300 file, operation                      R           
+     manuals.
+
+84. Approve as-built drawings and O&M manuals.                                                       R
+#                                    Role                                         Supplier  Contractor  Client / Consultant  Cxa Agent
+                                                                                    R                                               
+                                                                                    R
+85. Provide training to the operations personnel                                    R
+
+86.  Provision of critical spare parts during commissioning, to be advised by       R       
+     supplier                                                                                                       
+
+87. Provision of consumable for DLP
+
+       The supplier shall review and comply with the contractor's in-house rules                        
+       including but not limited to (cleaning up any rubbish generated from OSE
+88. packing and disposing of it at the designated area on site. OSE supplier
+       shall coordinate with GC on any charges associated with waste disposal
+       cost and etc.
+
+                                                                                                                             Page | 11
+1.4 REFERENCE DOCUMENTS
+
+    a. Request for Proposal Document
+    b. Pricing Schedules & Bid Template
+    c. O&M Requirements - AT-GLOBAL-REF-000012
+    d. Training Requirements - AT-GLOBAL-REF-000013
+    e. Building & Equipment Naming Requirements - AT-GLOBAL-POL-000017
+    f. Defect Management Guidelines ­ AT-GLOBAL-REF-000014
+    g. Commissioning Framework ­ AT-GLOBAL-REF-000023
+    h. Commissioning Scripts L1-L3 - AT-GLOBAL-REF-000023a, AT-GLOBAL-REF-000023b & AT-GLOBAL-REF-000023c
+    i. Commissioning Scripts L3-L6 - AT-GLOBAL-REF-000023d, AT-GLOBAL-REF-000023e & AT-GLOBAL-REF-000023f
+    j. Programme ­ as stated in RFP document
+    k. Technical Requirements
+    l. AirTrunk Global Workflow Template ­ AT-GLOBAL-DR-000006
+    m. ICT Overarching Requirements Specification - AT-SP-ICT00001
+    n. Equipment Labelling Requirements ­ AT-GLOBAL-REF-000021
+    o. Asset Capture Register ­ AT-GLOBAL-TMP-000018
+    p. Incident Management ­ AT-GLOBAL-SOP-000008
+    q. Change Management ­ AT-GLOBAL-SOP-000009
+    r. Restricted and Prohibited Items ­ AT-GLOBAL-DR-000003
+    s. Global Minimum Standards ­ GMS
+    t. Preliminaries Specification ­ AT-GLOBAL-DR-000001
+    u. Equipment Access Requirements - AT-GLOBAL-TR-000019
+    v. AirTrunk Safety in Design Framework v2 - AT-GLOBAL-FWK-000027
+    w. BIM Execution plan
+    x. DCS AT-GLOBAL-TR000015b CMS Points List.
+

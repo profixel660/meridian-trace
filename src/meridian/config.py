@@ -1,0 +1,267 @@
+"""Process-level configuration."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _project_root() -> Path:
+    """Repo root — the directory that contains pyproject.toml.
+
+    Walks up from this file until pyproject.toml is found. Falls back to CWD.
+    """
+    here = Path(__file__).resolve()
+    for parent in [here, *here.parents]:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return Path.cwd()
+
+
+def _bootstrap_env_from_dotenv() -> None:
+    """Load `<repo>/.env` (KEY=value lines) into os.environ for SDKs to pick up.
+
+    `.env` WINS over any pre-existing os.environ value. This is the dev-friendly
+    convention (matches python-dotenv default) and avoids confusion when stale
+    Windows-level env vars mask a freshly-edited project `.env`.
+
+    Runs at module import so every code path that imports config sees the keys.
+    """
+    env_path = _project_root() / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            # Skip placeholder values so they never override real env-supplied keys.
+            if not key or not value or value.startswith("PASTE-"):
+                continue
+            os.environ[key] = value
+    except OSError:
+        pass
+
+
+_bootstrap_env_from_dotenv()
+
+
+# --------------------------------------------------------------------------
+# Per-purpose provider routing (design/PROVIDER_ROUTING_V1.md)
+# --------------------------------------------------------------------------
+
+PurposeRoute = tuple[str, str]  # (provider, model)
+
+# The seven routable LLM purposes per llm_call.purpose enum.
+DEFAULT_PURPOSE_ROUTING: dict[str, PurposeRoute] = {
+    "quality_scan":        ("anthropic", "claude-sonnet-4-6"),
+    "triage":              ("anthropic", "claude-haiku-4-5-20251001"),
+    "extract_text_spec":   ("anthropic", "claude-sonnet-4-6"),
+    "extract_demarcation": ("anthropic", "claude-sonnet-4-6"),
+    "extract_bod":         ("anthropic", "claude-sonnet-4-6"),
+    "conflict_pass":       ("anthropic", "claude-sonnet-4-6"),
+    "error_explain":       ("anthropic", "claude-sonnet-4-6"),
+}
+
+
+# Local-route presets (named recipes shipped for onboarding / settings UI).
+LOCAL_PRESETS: dict[str, dict[str, PurposeRoute]] = {
+    # All-cloud: every purpose on Anthropic Sonnet 4.6 (Haiku 4.5 for triage).
+    # Mirrors DEFAULT_PURPOSE_ROUTING; defined explicitly so it is selectable
+    # via `routing apply` like any other preset (and resolvable from the
+    # `cloud-default` operator-facing alias). CONTEXT.md §12.
+    "cloud-sonnet-default": {
+        "quality_scan":        ("anthropic", "claude-sonnet-4-6"),
+        "triage":              ("anthropic", "claude-haiku-4-5-20251001"),
+        "extract_text_spec":   ("anthropic", "claude-sonnet-4-6"),
+        "extract_demarcation": ("anthropic", "claude-sonnet-4-6"),
+        "extract_bod":         ("anthropic", "claude-sonnet-4-6"),
+        "conflict_pass":       ("anthropic", "claude-sonnet-4-6"),
+        "error_explain":       ("anthropic", "claude-sonnet-4-6"),
+    },
+    # 5090-class single-GPU workstation, Ollama running locally.
+    "ollama-5090-balanced": {
+        "triage":            ("ollama", "qwen2.5:14b-instruct"),
+        "quality_scan":      ("ollama", "llama3.3:70b-instruct-q4_K_M"),
+        "extract_text_spec": ("anthropic", "claude-sonnet-4-6"),  # keep cloud
+        "extract_bod":       ("ollama", "llama3.3:70b-instruct-q4_K_M"),
+        "conflict_pass":     ("anthropic", "claude-sonnet-4-6"),  # keep cloud
+        "error_explain":     ("ollama", "qwen2.5:14b-instruct"),
+    },
+    # Air-gapped: NO cloud calls at all. Quality risks the user accepts.
+    "ollama-air-gapped": {
+        "triage":            ("ollama", "qwen2.5:14b-instruct"),
+        "quality_scan":      ("ollama", "llama3.3:70b-instruct-q4_K_M"),
+        "extract_text_spec": ("ollama", "llama3.3:70b-instruct-q4_K_M"),
+        "extract_bod":       ("ollama", "llama3.3:70b-instruct-q4_K_M"),
+        "conflict_pass":     ("ollama", "llama3.3:70b-instruct-q4_K_M"),
+        "error_explain":     ("ollama", "qwen2.5:14b-instruct"),
+    },
+    # Cost-only: triage local, everything else cloud.
+    "triage-local-only": {
+        "triage": ("ollama", "qwen2.5:14b-instruct"),
+        # other purposes inherit defaults (cloud)
+    },
+}
+
+
+# Operator-facing preset names (CONTEXT.md §12 vocabulary) → technical preset
+# name in LOCAL_PRESETS. The technical names describe WHAT the preset does
+# (specific provider + model). The operator-facing names describe DEPLOYMENT
+# INTENT and remain stable even if the underlying recipe is retuned (e.g. a
+# new local model replaces qwen2.5 in `hybrid` without renaming the alias).
+#
+# `routing apply` accepts EITHER form. Lookup is alias-first, then technical.
+# Existing project DBs that persist a technical name are unaffected — the
+# stored value is used as-is and never rewritten by the alias layer.
+PRESET_ALIASES: dict[str, str] = {
+    "cloud-default": "cloud-sonnet-default",   # CONTEXT §12: every purpose on Sonnet (Haiku for triage)
+    "hybrid":        "ollama-5090-balanced",   # CONTEXT §12: triage + lower-stakes local; load-bearing on cloud Sonnet
+    "air-gapped":    "ollama-air-gapped",      # CONTEXT §12: every purpose on local; cloud blocked at preflight
+}
+
+
+# One-line human-readable description per technical preset, used by
+# `routing list-presets` and any future settings UI. Keeping this beside
+# LOCAL_PRESETS rather than inline in the CLI keeps the data layer in one
+# place.
+PRESET_DESCRIPTIONS: dict[str, str] = {
+    "cloud-sonnet-default": "All purposes on Anthropic Sonnet 4.6 (Haiku 4.5 for triage). No local dependency.",
+    "ollama-5090-balanced": "Triage + lower-stakes purposes on local Ollama (5090-class GPU); load-bearing extract_text_spec and conflict_pass stay on cloud Sonnet.",
+    "ollama-air-gapped":    "Every purpose on local Ollama. No cloud calls; cloud routes blocked at preflight.",
+    "triage-local-only":    "Only triage routed to local Ollama; everything else inherits the cloud defaults. Cost-control recipe.",
+}
+
+
+def resolve_preset_name(name: str) -> str | None:
+    """Resolve `name` (operator alias OR technical name) to a LOCAL_PRESETS key.
+
+    Returns the technical preset name if `name` is recognised; None otherwise.
+    Three-outcome discipline: callers distinguish None (preset-not-found) from
+    a returned name (preset-found; they then run their own validation).
+    """
+    if name in LOCAL_PRESETS:
+        return name
+    if name in PRESET_ALIASES:
+        return PRESET_ALIASES[name]
+    return None
+
+
+# Providers considered "local" / on-prem for air-gap mode.
+LOCAL_PROVIDERS: frozenset[str] = frozenset(
+    {"ollama", "vllm", "openai-compatible", "localai", "local"}
+)
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="MERIDIAN_", env_file=".env", extra="ignore")
+
+    # Paths
+    project_root: Path = Field(default_factory=_project_root)
+    data_dir: Path | None = None  # defaults to <project_root>/data/projects
+    prompts_dir: Path | None = None  # defaults to <project_root>/prompts
+
+    # LLM defaults (CONTEXT.md §12)
+    fallback_max_tokens: int = 16000
+    extraction_max_tokens: int = 64000  # Sonnet 4.x natively supports up to 64k output
+    temperature: float = 0.0
+
+    # Per-purpose routing. None = inherit from DEFAULT_PURPOSE_ROUTING.
+    # Shape: {purpose_name: (provider, model)}
+    purpose_routing: dict[str, tuple[str, str]] | None = None
+
+    # Air-gap mode: when True, any non-local resolved route raises before
+    # the network call (see meridian.llm.client.call_llm preflight).
+    air_gapped: bool = False
+
+    # Prompt versions (must match files in prompts/)
+    prompt_text_spec_version: str = "v1.1"
+    prompt_bod_version: str = "v1.1"
+    prompt_quality_scan_version: str = "v1.0"
+
+    # Tool versioning
+    app_version: str = "0.1.0"
+    tool_disclaimer_version: str = "v1-dev"
+
+    @property
+    def projects_dir(self) -> Path:
+        return self.data_dir or (self.project_root / "data" / "projects")
+
+    @property
+    def prompts_path(self) -> Path:
+        return self.prompts_dir or (self.project_root / "prompts")
+
+    @property
+    def anthropic_api_key(self) -> str | None:
+        return os.environ.get("ANTHROPIC_API_KEY")
+
+    @property
+    def openai_api_key(self) -> str | None:
+        return os.environ.get("OPENAI_API_KEY")
+
+    def resolve_route(
+        self,
+        purpose: str,
+        *,
+        project_routing: dict[str, tuple[str, str]] | None = None,
+    ) -> tuple[str, str]:
+        """Resolve (provider, model) for a purpose using the override hierarchy.
+
+        Order (highest wins):
+          1. Env var MERIDIAN_ROUTE_<PURPOSE>=provider/model
+          2. project_routing[purpose] (read at job/call time from app_setting)
+          3. self.purpose_routing[purpose]
+          4. DEFAULT_PURPOSE_ROUTING[purpose]
+
+        Per-call provider/model arguments to call_llm sit ABOVE this entire
+        chain — they are applied by call_llm before resolve_route runs.
+        """
+        # 1. Env var
+        env_key = f"MERIDIAN_ROUTE_{purpose.upper()}"
+        raw = os.environ.get(env_key)
+        if raw and "/" in raw:
+            provider, _, model = raw.partition("/")
+            provider = provider.strip()
+            model = model.strip()
+            if provider and model:
+                return provider, model
+
+        # 2. Project-level routing
+        if project_routing and purpose in project_routing:
+            entry = project_routing[purpose]
+            return entry[0], entry[1]
+
+        # 3. Process-level Settings.purpose_routing
+        if self.purpose_routing and purpose in self.purpose_routing:
+            entry = self.purpose_routing[purpose]
+            return entry[0], entry[1]
+
+        # 4. Defaults
+        if purpose not in DEFAULT_PURPOSE_ROUTING:
+            raise KeyError(
+                f"Unknown LLM purpose '{purpose}' — no default route. "
+                f"Known purposes: {sorted(DEFAULT_PURPOSE_ROUTING)}"
+            )
+        return DEFAULT_PURPOSE_ROUTING[purpose]
+
+
+settings = Settings()
+
+
+__all__ = [
+    "DEFAULT_PURPOSE_ROUTING",
+    "LOCAL_PRESETS",
+    "LOCAL_PROVIDERS",
+    "PRESET_ALIASES",
+    "PRESET_DESCRIPTIONS",
+    "PurposeRoute",
+    "Settings",
+    "resolve_preset_name",
+    "settings",
+]

@@ -1,0 +1,610 @@
+Safety in Design Framework
+
+Prepared by:  Will Nicholson
+              Head of Critical Environments
+Project No:   AirTrunk
+Issue:        will.nicholson@airtrunk.com
+Date          AT-GLOBAL-REF-000027
+
+              Rev 1
+
+              2nd July 2021
+TABLE OF CONTENTS
+
+1 Document Control................................................................................................ 3
+2. Introduction .......................................................................................................... 4
+3 Understanding Safety in Design .......................................................................... 4
+
+  3.2 3.1 What is Safety in Design ......................................................................... 4
+  3.3 Who Influences Safety in Design................................................................... 5
+  3.4 How to get the most out of Safety in Design.................................................. 7
+  3.5 Benefits of Safe Design................................................................................. 7
+4 Principles of Safety in Design .............................................................................. 7
+5 The 3 Stages in Safety in Design ........................................................................ 8
+6 Safety in Design Approach .................................................................................. 9
+  6.1 Establish the Context for the Design ............................................................. 9
+  6.2 Identify Foreseeable uses of the design ........................................................ 9
+  6.3 Complete the Safety in Design Risk Assessment ......................................... 9
+  6.4 Communicate and Consult .......................................................................... 13
+7 What is the Impact for Designers....................................................................... 13
+8 Conclusions ....................................................................................................... 14
+
+AirTrunk framework | Safety in Design  Page | 2
+1 DOCUMENT CONTROL
+
+VERSION DATE                           MODIFIED BY  APPROVED BY  SUMMARY OF
+                                                                    CHANGE
+
+1.0  5/7/2021 Will Nicholson                        Zak Markovic New document
+
+AirTrunk framework | Safety in Design                            Page | 3
+2 INTRODUCTION
+
+ The safety of a Data Centre and ancillary structures applies to all stages in the life cycle
+ commencing with the inception stage; through the planning and design stages; followed by the
+ construction and commissioning and ongoing operation and maintenance stages; and in certain
+ cases, such as OSE replacement, decommissioning.
+
+ The purpose of this framework is to:
+       · Present the requirements and obligations for Safety in Design;
+       · Outline the roles and responsibilities for Safety in Design for the various parties involved in a
+            project;
+       · Present the process and tools currently being used within the industry for Safety in Design.
+
+The outcome from this should be:
+       · Compliance with legislation requirements
+       · Management of risk to be "As Low as Reasonably Practicable" or ALARP.
+       · Lower EHS Risk, leading to a safer working environment.
+       · Improved construction, operation and maintenance of the facility
+
+3 UNDERSTANDING SAFETY IN DESIGN
+
+3.1 WHAT IS SAFETY IN DESIGN
+
+ Safe design is a process defined as:
+     "The integration of hazard identification and risk assessment methods early in the design
+     process to eliminate or minimise the risks of injury throughout the life of the product being
+     designed. It encompasses all design including facilities, hardware, systems, equipment,
+     products, tooling, materials, energy controls, layout, and configuration" (AS&CC 2006)
+
+ SiD is aimed at preventing injuries and disease by considering hazards as early as possible in the
+ planning and design process. A safe design approach considers the safety of those who construct,
+ operate, clean repair and demolish an asset (the building, structure, plant or equipment) as well as
+ those who work in or with it.
+ Designers are in a unique position to reduce the risks that arise during the life cycle of the asset
+ during the design phase.
+
+ A typical lifecycle for a design is shown below, for which a safety in design approach begins in the
+ conceptual and planning phases through to the possible final disposal with an emphasis on making
+ choices about design, materials and methods of manufacture or construction required to enhance
+ safety.
+
+ Safe design will always be part of a wider set of design objectives, including practicability,
+ aesthetics, cost and the functionality of the product. Safe design is the process of successfully
+ achieving a balance of these sometimes-competing objectives, without compromising the health
+ and safety of those potentially affected by the product over its life.
+
+AirTrunk framework | Safety in Design  Page | 4
+                                        Design
+                                       Concept
+
+          Recycle                                  Design
+
+Demolish                               Life Cycle          Construct/
+                                       of Design
+                                       Products            Manufactur
+                                                                 e
+
+Maintain/re                                        Supply/Inst
+    pair                                                all
+
+                                       Commission
+                                           /use
+
+3.2 WHO INFLUENCES SAFETY IN DESIGN
+
+ A range of parties influence the design function at varying phases of the design process including
+ but not limited to the following:
+
+       · Design professionals such as architects, engineers, industrial designers.
+       · Suppliers (including manufacturers, importers, plant-hire), constructors, installers, and
+
+            trades/maintenance personnel.
+       · Other groups who make design decisions, such as clients, developers, builders, owners,
+
+            job managers, health and safety professionals and ergonomics practitioners.
+       · Contractors who have a bearing on the safe working practices, particularly where
+
+            innovative techniques are to be used.
+       · Personnel who should work or be affected by the plant, building or structure.
+       · Government regulators and inspectorates.
+
+AirTrunk framework | Safety in Design                                  Page | 5
+Stage   OSE     Tech Consultant Dev GC CET DC Roles
+OSE     Vendor                                                            Ops
+Design  A
+BOD     I       R  R  I  C  I  OSE Product development manager to interface with OSE vendors to ensure that
+
+10%     I                      proposed solutions are safe to integrate, commission, operate and maintain. Consultants
+30%     I
+                               and Operations specialists to be consulted.
+60%     I
+                A  R  C  C  I  The BoD is a document that records the general business expectations, performance
+90%     I
+                               criteria and special requirements as they relate to space, site, and technical design
+
+                               elements. Design Managers to ensure any lessons learned from previous designs are
+
+                               captured in the BOD where applicable. This is done in consultation with DEV and Ops
+
+                               parties.
+
+                A  R  I  C  I  The 10% design defines the basic layout and quantities for the design. As per the BOD
+
+                               DM's to ensure any lessons learned from previous designs are captured in the 10%
+
+                               design where applicable. This is done in consultation with DEV and Ops parties
+
+                A  R  I  C  C The 30% design defines the major design elements of the project in some basic detail.
+
+                               DM's at this point are to conduct a detailed SiD effort, preferably through an independent
+
+                               specialist and in consultation with DEV and Ops representatives. This SiD study will form
+
+                               part of the document handoff to the GC who are responsible for the detailed design
+
+                               elements.
+
+                C  C  A RC  C The 60% detailed design is used to confirm that the project can be constructed and that
+
+                               the submitted plans and specifications will meet the objectives of the project without
+
+                               significant design changes. All previous SiD issues are to be eliminated or mitigated
+
+                               ALARP. GC's are responsible to conduct detailed design workshops including a BIM walk
+
+                               through is to be conducted with all applicable stakeholders to identify safety issues for
+
+                               further action
+
+                C  C  A RC  C The 90% detailed design package is effectively the completed design, ready for
+
+                               construction without further design changes. GC to ensure there is a final confirmation
+
+                               SiD review to ensure that all issues have been resolved, and no further issues introduced
+
+                               as a result of the final design adjustments.
+3.3 HOW TO GET THE MOST OUT OF SAFETY IN DESIGN
+
+ Designer's earliest decisions fundamentally affect the health and safety of people who come into
+ contact with their design over the life cycle of the asset. These decisions may influence later design
+ choices, and considerable rework may be required if it is necessary to unravel earlier decisions. As
+ shown on Figure 2, it is important to address health and safety from the very start of a project in
+ order to provide the greatest influence in safety. Changing the design philosophy is a lot more than
+ design field changes or costs associated with accident management and clean up. The below
+ figure demonstrates that while the greatest ability to influence safety on a project occurs at the early
+ stages of a project, safety improvements continue through to start up followed by operation and
+ maintenance. The designer needs to consider how safety can best be achieved in each of the
+ lifecycle phases.
+
+                                   Ability to influence safety on a project
+
+3.4 BENEFITS OF SAFE DESIGN
+
+ Some of the potential benefits of safe design include the following.
+       · Better understanding of the design requirements and limitations.
+       · Prevention of injury and disease.
+       · Improved usability of structures.
+       · Improved productivity.
+       · Reduced costs.
+       · Better prediction and management of production and operational costs
+            over the lifecycle of a structure.
+       · Compliance with legislation.
+       · Innovation, in that safe design demands new thinking.
+
+4 PRINCIPLES OF SAFETY IN DESIGN
+
+ The key elements that impact on implementing SiD are shown on Figure 3 and discussed below.
+
+ Principle 1: Persons with Control ­ personPsRwINhCoIPmLEak1e decisions affecting the design of
+                   products, facilities or processes are able to promote health and safety at the source.
+
+                                                                                      Persons in Control
+
+ Principle 2: Product Lifecycle ­ safe design applies to every stage in the lifecycle from
+                   conception through to demolition. It involves eliminating hazards or minimising risks as
+                   early in the lifecycle as possible.
+Principle 3: Systematic Risk Management ­ the application of hazard identification, risk
+                 assessment and risk control processes to achieve safe design.
+
+Principle 4: Safe Design Knowledge and Capability ­ should be either demonstrated or acquired
+                 by persons with control over design and should reflect the knowledge that a competent
+                 designer would be expected to have.
+
+Principle 5: Information Transfer ­ effective communication and documentation
+                 of design and risk control information between all persons involved in
+                 the phases of the lifecycle is essential for the safe design approach.
+
+5 THREE STAGES OF SAFETY IN DESIGN
+
+There are essentially 3 key stages in the design process that may be affected by the principles of
+
+SiD as follows:
+
+· BoD-10%        This may include feasibility or option studies.
+
+· 30% Pre-design This may include preliminary design.
+
+· 60-90% Design This includes full documentation to allow construction to commence and
+
+                 should include consideration of the procurement, construction, start up
+
+                 and ongoing operation and maintenance of the project.
+
+At each stage of the design process risk identification should take place to eliminate risk or where
+this is not possible reduce risk as low as reasonably practicable through the implementation of
+control measures.
+
+Typical SiD requirements and examples of safe design considerations for these stages are shown
+in the table below.
+
+Safety in Design Requirements
+
+Design           SiD Requirements                Example's of Safe Design Considerations
+Stage
+Basis of  Identification of critical health and  - Site geology e.g. soft soils
+Design    safety related risks that may affect   - Contaminated land
+(BOD) -   the viability of the project.          - Emissions from development
+10%                                              - Proposed use zoning
+30%       Identification of reasonably
+Design    foreseeable safety risks with a        - Specification of materials with high durability
+          design project associated with the       and low maintenance requirements
+60-90%    construction/manufacture,
+Design    installation, commission/use,          - Hazardous area classification
+          maintenance/repair, demolition and     - Redundancy - Introduction of duplicates to
+          disposal.
+                                                   allow safe continued operation in the event of
+          Focusing on ways in which a design       failure
+          can be modified to eliminate or        - Providing permanent safe access to roofs, plant
+          reduce issues that may affect the        rooms and windows for maintenance and repair
+          ongoing safety of persons involved       purposes such as stairs or walkways with
+          in constructing, using, maintaining      guardrails
+          (including major asset replacement)    - Taking into consideration ergonomic principles
+          or demolishing the design product.       e.g. avoid designing construction activities that
+                                                   require work in restricted spaces or designs that
+                                                   require repetitive or prolonged movements to
+                                                   complete
+                                                   Task
+                                                 - Eliminating the need for installing temporary
+                                                   barriers, by integrated guardrail system along
+                                                   roof edges
+                                                 - Inclusion of construction access into building
+                                                   fabric e.g. removable panels
+                                                 - Lifting lugs installed to facilitate the movement
+                                                   of heavy items
+
+AirTrunk framework | Safety in Design                                   Page | 8
+6 SAFETY IN DESIGN APPROACH
+
+ An approach that can be used for safety in design is as follows:
+
+6.1 ESTABLISH THE CONTEXT FOR THE DESIGN
+
+ Confirming how all of the stakeholders should work together is an integral part in establishing the
+ risk management process. The client has similar responsibilities to the designer in the design
+ process in relation to transfer of information and making safety decisions since the client has a
+ responsibility to provide a safe workplace for the people who should be using the completed
+ design.
+
+6.2 IDENTIFY FORESEEABLE USES OF THE DESIGN
+
+ The designer should identify the client's main objectives and outcomes of the design. This information
+ is important to establish the intended and foreseeable uses of the design. For example a competent
+ designer should expect that a building that has windows would require that the windows to be
+ cleaned.
+
+6.3 COMPLETE THE SAFETY IN DESIGN RISK ASSESSMENT
+
+ The Safety in Design risk assessment is normally undertaken in a workshop environment and
+ includes, where possible, the Client, designers, GC, CET and DC Ops. The following steps are
+ typical for a Safety in Design Risk Assessment, which should be developed and updated regularly
+ during the design stages.
+
+  · Hazard Identification
+       Identify design-related hazards associated with the range of intended uses, including any
+       foreseeable misuse of the product.
+       Hazard identification should not be limited to one or two people's experiences of situations and
+       can include the following:
+       - Research to help in the identification of hazards and assessment of risks and controls,
+       - Consultation with all parties involved in the project including where possible contractors
+            familiar with the construction works and fabricators/suppliers of the equipment being
+            proposed.
+       - Guidance material including codes of practice, technical standards or industry protocols
+       - Hazard identification and risk assessment tools. These should be selected based on the
+            context of the safety in design analysis and include the following:
+                  - Hazard and Operability studies (Hazop)
+                  - Event Tree analysis (ETA)
+                  - Fault Tree Analysis (FTA)
+                  - Fault Mode Effects analysis (FMEA)
+                  - Preliminary hazard Analysis (PHA)
+                  - Human Reliability Analysis (HRA)
+                  - Construction Hazard Assessment Implication Review (CHAIR)
+                  -
+
+  · Assess the Risk of harm
+       - Define the risks arising from design related hazards
+       - Identify and evaluate any existing controls
+       - Develop the initial risk rating for which typical rating tables are shown below.
+
+       It must be noted that Safety in Design is different from most other safety assessments because
+       we are dealing with the Client's safety rather than our own individual safety. As such is it is
+       important for designers to consider wherever possible the Client's and other stakeholders' risk
+       tolerance, eg through utilising their risk matrix for evaluating risks.
+
+AirTrunk framework | Safety in Design  Page | 9
+Consequence Rating Table
+
+Risk Impact         Design Impact Parameters**
+5 - Extreme
+                    Permanent or significantly life altering injuries/illness
+4 - High            Injury resulting in >6 months impairment, permanent disablement or
+                    fatality
+3 - Moderate        Serious impairment injury/illness
+2 - Minor           Injury resulting in >2 weeks but <6 months temporary
+                    impairment
+                    Temporary impairment injury/illness
+                    Injury resulting in <2 weeks temporary impairment
+
+                    Minor injuries
+                    Injury with no impairment
+
+1 - Low             No injuries
+
+** To employees or third-parties, including suppliers, contractors, vendors, customers etc
+
+Likelihood Rating Table
+
+Likelihood          Design Likelihood Parameters
+Parameters
+
+5 - Almost Certain The design failure will likely occur in most circumstances.
+
+4 - Likely          The design failure will probably occur at least once.
+
+3 - Possible        The design failure could be expected to occur at some time.
+
+2 - Unlikely        The design failure could occur at some time but is not expected.
+
+1 - Rare            The design failure may occur only in exceptional circumstances.
+
+Safety in Design Heatmap/Risk Matrix
+
+RISK MATRIX                                         CONSEQUENCE
+LIKELIHOOD
+                           Low               Minor  Moderate        High             Extreme
+           Rare        1 - Low            2 - Low   4 - Low      7 - Low           11 - Low
+         Unlikely      3 - Low            5 - Low                                16 - Medium
+        Possible       6 - Low         9 -Medium    8 - Medium 12 - Medium         20 - High
+          Likely    10 - Medium        14 -Medium                                23 - Extreme
+    Almost Certain  15 - Medium         19 - High   13 -Medium 17 - High         25 - Extreme
+
+                                                    18 - High 21 - High
+
+                                                    22 - High 24 -Extreme
+
+AirTrunk framework | Safety in Design                                                       Page | 10
+Safety in Design Risk Rating ResponseTable
+
+       Rating      Response                                                       Accept criteria
+   Low         Risk is considered to be `Low'. No further                  N/A
+               action is necessary other than to ensure
+               that the controls are maintained.                           Head of affected area EG:
+                                                                           Construction risk = PM
+   Moderate    Management to continuously monitor                          DC Ops Risk = DCOM
+               existing controls to ensure they remain
+               adequate and effective.                                     Executive Level of
+               The risk may be acceptable but redesign or                  affecting risk
+               other changes should be considered if                       EG
+               reasonably practical (time, money and                       Construction risk=CDO
+               effort).                                                    DC Ops Risk = COO
+
+               Further analysis should be performed to                     CEO/Deputy CEO sign off
+               give better estimate of the risk.                           against risk
+
+               Where this risk cannot be further mitigated
+               then the Head of effected area is required
+               to sign off against the risk
+
+   High        High risk, not normally acceptable. Further
+   Extreme     analysis to be performed to give better
+               estimate of the risk. If this analysis shows
+               unacceptable or medium risk then redesign
+               or other changes should be introduced to
+               reduce the criticality. Considerable
+               resources may have to be allocated to
+               identify additional control measures.
+               Where this risk cannot be further mitigated
+               then executive level sign off required
+               Unacceptable risk Level. Risk to be
+               immediately assessed and further
+               mitigated. Extreme risks may only be
+               accepted by CEO/Deputy CEO
+
+Safety in Design Typical Initial Risk Rating Table with worked example
+
+   Design Hazards Design                              Risk     Existing         Initial Risk Rating
+
+Referenc                               Life Cycle  Descriptio  Control
+
+e                                      Stage       n           Measures         C  L RR
+
+SYD2B-001 Cleaning 30%                             Working from Training, PPE,
+
+             exterior                              heights to Scaffolding       5 x 2 = 10
+
+             windows                               clean
+
+                                                   windows
+
+6.4 ELIMINATE HAZARDS AND CONTROL RISKS
+
+       Using the hierarchy of controls detailed in the table below, eliminate or reduce risks by using
+       recognised appropriate standards relating to the design and record justifications in a Safety in
+       Design Risk Assessment for the latent risks, similar to that shown above. Many health and safety
+       issues identified may be related to work practice and are not covered or fully understood by
+       designers. Controls for these hazards should be developed in consultation with appropriate
+       stakeholders, usually Data Centre operations specialists.
+
+       The initial focus should be to eliminate the identified risks by amending the design. Where this is
+       not practicable, designers are required to reduce the risk to so far as reasonably practicable. This
+       requires the designer to consider what they know, or ought reasonably to know, about the risk
+       and any ways of reducing the risk.
+
+AirTrunk framework | Safety in Design                                              Page | 11
+Identify and assess Potential Control Measures where further risk management is required to
+treat risks so far as reasonably practicable. Record the decision and justification as to whether
+the potential control measures are to be implemented or rejected. Potential Control Measures
+should be identified where existing controls (eg codes or standards) do not eliminate or reduce
+the risk so far as reasonably practicable. Recognised codes and standards, which regulate the
+design of buildings and structures, may be used initially to eliminate or reduce risk.
+
+The person responsible for the control measures should be recorded with a decision or status of
+the risk.
+
+Hierarchy of Risk Control Measures
+  Eliminate the Hazard ELIMINATE - Get rid of the hazard out of the workplace.
+
+Change the Way                         SUBSTITUTE - Try to replace or change plant, substances or
+the Work is Done                       materials to lower the risk from the hazard.
+
+Personal Protective                    Try to ISOLATE the hazard
+Equipment
+                                       ENGINEERING CONTROL - Design and install equipment to counteract
+                                       the hazard
+
+                                       ADMINISTRATIVE CONTROL Arrange work so people spend less time
+                                       around the hazard and monitor their understanding of the hazard
+                                       and the controls. Process such as SOPs
+                                       PPE Have people wear protective equipment and clothing while near the
+                                       hazard
+
+Safety in Design Control Measures and Residual Risk Rating Table with worked example
+
+Potential Control                      Responsibilit By  Decision Residual              Comment
+                                                         / Status Risk                  s
+Measures (Elimination, y               Whe
+                                                                       Rating
+Substitution, Isolation,               n
+                                                                       C L RR
+Engineering Controls,
+
+Administrative Controls,
+
+          PPE)
+
+Install windows the can open GC        RFS               agreed 1 x 1 = 1               Risk
+                                                                                        eliminated
+inwards so exteriors surfaces
+
+can be cleaned from within the
+
+building
+
+7 DEALING WITH RESIDUAL RISKS
+
+       The residual risk is the level of risk that should be remaining and transferred
+       at the completion of design after all Control Measures have been
+       successfully implemented.
+
+Control Measures should be applied according to feasibility and to the point where the cost is
+not disproportionate to the risk reduction achieved. In order to decide which risks are feasible
+for effective risk reduction, the designer will need to take into account:
+- The controls already in place to minimise the consequences of the risks;
+- The consequences and the costs of managing the risks versus leaving them untreated;
+- Benefits and opportunities presented by the risks; including availability,
+
+     suitability and cost of options which may also include innovative design
+     solutions;
+- The risks borne by other stakeholders.
+
+The decision on when a risk has been reduced so far as is reasonably
+practicable is normally straightforward for the majority of risks but in some
+borderline cases can be a complex assessment.
+
+AirTrunk framework | Safety in Design                                                   Page | 12
+8 MONITOR AND REVIEW
+
+       The Safety in Design Risk Assessment should be maintained throughout the job, keeping the
+       status of control measures and the residual risks at a current level. Review critical risks as part
+       of the regular job management process and undertake a detailed review at critical design points
+       (eg prior to commencing drawings, end of concept design, approved for tender/construction
+       drawings).
+
+       The designer should review control measures to monitor whether risks have eliminated or the
+       risk in the design reduced to "so far as reasonably practicable", otherwise further control
+       measures need to be implemented.
+
+       Documentation is a means to an end and not the end in itself and the reporting of the SiD
+       should include the following key information:
+       - The stage of project affected (i.e. construction, commissioning, operations and
+
+            maintenance);
+       - Details of each hazard and the identified risk being managed;
+       - The existing control measures for each identified risk;
+       - The estimated severity of the consequence and the likelihood of each hazard.
+       - The decision and justification as to whether the potential control measures are
+
+            implemented or rejected
+       - The residual risk remaining once the potential control measures are implemented
+       - All safety related decisions, including justifications for why Potential Control Measures are
+
+            not selected, should also be included within the Safety in Design Risk assessment
+
+8.1 COMMUNICATE AND CONSULT
+
+ The Safety in Design Risk Assessment is a means by which the residual risks that have been
+ treated so far as reasonably practicable can be communicated to all parties at the end of the
+ design. AirTrunk should be consulted at all stages of the design for effective management of risks
+ and decisions on the implementation of control measures.
+ The following statement should be used as guidance when considering communications:
+
+          "The effort devoted to planning and managing health and safety should be in proportion to
+          the risks and complexity associated with the project. When deciding what you need to do to
+          comply with requirements, your focus should always be on action necessary to reduce and
+          manage risks. Any paperwork produced should help with communication and risk
+          management. Paperwork which adds little to the management of risk is a waste of effort, and
+          can be a dangerous distraction from the real business of risk reduction and management."
+
+ It is, therefore, expedient to ensure that the spreadsheets or reports developed for Safety in Design
+ are easily managed and understood in order to enhance the communication for the management of
+ risks in the design of projects.
+
+9 WHAT IS THE IMPACT FOR DESIGNERS AND GENERAL
+    CONTRACTORS?
+
+ In complying with the requirements of safety in design legislation (where applicable), designers and
+ general contractors are to consider:
+ - Which risks are within their scope and control;
+ - AirTrunk Interaction ­ the risks being addressed generally relate to the AirTrunk site and
+
+        staff, and therefore AirTrunk stakeholders need to be involved in the process, i.e. direct input
+        into risk identification (including workshops) and risk reduction/management;
+ - A systematic and formalised approach should be adopted to managing risks dependent on the
+        type of risks;
+ - Where it is not reasonably practicable to eliminate a risk associated with a design's lifecycle,
+        then the risk should be reduced so far as reasonably practicable.
+
+AirTrunk framework | Safety in Design  Page | 13
+10 CONCLUSIONS
+
+ Safety in design covers all stages in the life cycle for which there are a number of people involved
+ including the owner, designer, fabricator, constructor and operator. Each of these personnel are
+ responsible for safety in design in various stages. We are living in a litigious world for which safety
+ requires more than just following codes or standards.
+
+ These issues emphasise the importance of Safety in Design at all stages of a project's life and the
+ need for effective communication and consultation between all parties involved with the design,
+ operation and maintenance of the Data Centre project.
+
+AirTrunk framework | Safety in Design  Page | 14
+

@@ -1,0 +1,39 @@
+﻿== PARAGRAPH COUNT: 34 ==
+== TABLE COUNT: 2 ==
+1: Amendment #1
+2: OSE Specification – AT-GLO-ACC-01
+4: DATE:
+5: Day date month, year
+6: 
+7: PROJECT & PHASE:
+8: AT-SYD1p5 
+9: 
+10: OWNER:
+11: Name
+12: 
+13: 
+14: APPROVED BY: 
+15: Name
+16: 
+17: 
+19: The following information highlights the important changes that affect AirTrunk’s Global Owners Supplied Equipment Specification in order to localise for local project requirements.
+20: The full amendments included here are to be read in conjunction with the OSE specification and supersede the latest published global specification.
+21: The information given here is only a condensed version of the most effected clauses and shall not be read as the complete specification. To ensure compliance with the AirTrunk specifications the full 
+23: EXAMPLE - Clause fsg
+24: Example – Enhanced Requirement
+26: 25-year design life with replacement of consumables to AirTrunk and manufacturers requirements, which ever is more onerous. 
+27: 
+28: EXAMPLE - Clause 1.1.1.i 
+29: Example – New Requirement
+31: Product solutions to be integrated into overall infrastructure and designed for worst case conditions. 
+32: 
+
+== TABLES ==
+-- Table 1 (4 rows x 3 cols) --
+[DATE:] [Day date month, year] 
+[PROJECT & PHASE:] [AT-SYD1p5] 
+[OWNER:] [Name] [] 
+[APPROVED BY:] [Name] [] 
+-- Table 2 (2 rows x 2 cols) --
+[EXAMPLE - Clause fsg] [Example – Enhanced Requirement 25-year design life...] 
+[EXAMPLE - Clause 1.1.1.i] [Example – New RequirementProduct solutions to be i...] 
