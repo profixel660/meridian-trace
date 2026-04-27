@@ -22,6 +22,10 @@ out/
 .next-build/
 *.tsbuildinfo
 
+# --- Cloudflare Workers (infra/cloudflare/**) ---
+.wrangler/
+.dev.vars
+
 # --- Project data (per-project SQLite, logs, generated artefacts) ---
 # We commit data/projects/*.md (e.g. OVERNIGHT_REPORT.md, REPORT_v0.md)
 # but exclude live project DBs, runtime logs, exports, evidence packs,

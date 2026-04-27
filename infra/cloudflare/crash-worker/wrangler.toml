@@ -1,0 +1,19 @@
+name = "meridian-crash-intake"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# KV binding for crash storage. Create once via:
+#   wrangler kv:namespace create MERIDIAN_CRASHES
+# Then paste the returned `id` below (replacing TODO_PASTE_KV_ID).
+[[kv_namespaces]]
+binding = "MERIDIAN_CRASHES"
+id = "TODO_PASTE_KV_ID"
+
+# Optional secrets — set with `wrangler secret put <NAME>`:
+#   MERIDIAN_INTAKE_TOKEN  → enforces X-Meridian-Auth header on POSTs
+#   CRASH_NOTIFY_WEBHOOK   → Discord/Slack webhook URL for instant notify
+#
+# Both secrets are optional. Without MERIDIAN_INTAKE_TOKEN the endpoint is
+# unauthenticated (acceptable for a low-traffic crash sink; tighten before
+# any external advertising of the URL). Without CRASH_NOTIFY_WEBHOOK no
+# notification is sent — you find crashes via the KV browser instead.
