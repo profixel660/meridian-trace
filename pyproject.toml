@@ -57,6 +57,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/meridian"]
 
+# Bundle the prompts/ directory inside the wheel as meridian/_prompts/. When a
+# user installs the wheel into a venv, there is no repository "prompts/" tree
+# alongside; meridian.config.prompts_path falls back to this in-package copy.
+[tool.hatch.build.targets.wheel.force-include]
+"prompts" = "src/meridian/_prompts"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

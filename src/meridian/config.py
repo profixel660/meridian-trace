@@ -195,7 +195,21 @@ class Settings(BaseSettings):
 
     @property
     def prompts_path(self) -> Path:
-        return self.prompts_dir or (self.project_root / "prompts")
+        """Where to look for prompt files.
+
+        Resolution order:
+        1. Explicit ``MERIDIAN_PROMPTS_DIR`` (from settings).
+        2. ``<project_root>/prompts`` if it exists — the dev-tree layout.
+        3. ``<package>/_prompts`` — the in-wheel bundled copy (see
+           ``[tool.hatch.build.targets.wheel.force-include]`` in
+           ``pyproject.toml``). This is what ``pip install``-ed users hit.
+        """
+        if self.prompts_dir is not None:
+            return self.prompts_dir
+        repo_prompts = self.project_root / "prompts"
+        if repo_prompts.exists():
+            return repo_prompts
+        return Path(__file__).resolve().parent / "_prompts"
 
     @property
     def anthropic_api_key(self) -> str | None:
