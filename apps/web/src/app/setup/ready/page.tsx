@@ -107,12 +107,12 @@ function ReadyPageInner() {
       <AuthGate />
       <SetupShell
         step="ready"
-        backHref="/setup/first-documents"
+        backHref="/setup/first-project"
         completed={[
           "welcome",
           "api-key",
-          "first-project",
           "first-documents",
+          "first-project",
         ]}
       >
         <div className="space-y-8">

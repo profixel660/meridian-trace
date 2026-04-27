@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _resolve_app_version() -> str:
+    """Resolve the running app version from package metadata.
+
+    Single source of truth is pyproject.toml's [project].version field;
+    this avoids the per-release hand-edit of two places that drifted in
+    alpha-1 (the wheel said 0.2.0a1 but the running app logged 0.1.0).
+    """
+    try:
+        return _pkg_version("meridian")
+    except PackageNotFoundError:
+        return "0.0.0+source"
 
 
 def _project_root() -> Path:
@@ -185,13 +200,40 @@ class Settings(BaseSettings):
     prompt_bod_version: str = "v1.1"
     prompt_quality_scan_version: str = "v1.0"
 
-    # Tool versioning
-    app_version: str = "0.1.0"
+    # Tool versioning — sourced from package metadata (pyproject is canonical).
+    # The default below is only used when imported from a non-installed source
+    # tree where importlib.metadata cannot resolve the package.
+    app_version: str = Field(default_factory=_resolve_app_version)
     tool_disclaimer_version: str = "v1-dev"
 
     @property
     def projects_dir(self) -> Path:
         return self.data_dir or (self.project_root / "data" / "projects")
+
+    @property
+    def web_dir(self) -> Path | None:
+        """Where to look for the bundled GUI wizard's static export.
+
+        Resolution order mirrors :pyattr:`prompts_path`:
+        1. ``MERIDIAN_WEB_DIR`` env var (operator override) — must exist on disk.
+        2. ``<project_root>/apps/web/out`` if it exists — the dev-tree
+           layout produced by ``npm run build``.
+        3. ``<package>/_web`` — the in-wheel bundled copy (added by the
+           hatch force-include rule in ``pyproject.toml``). This is what
+           ``pip install``-ed users hit.
+        4. None — caller logs a warning and serves API-only.
+        """
+        override_raw = os.environ.get("MERIDIAN_WEB_DIR")
+        if override_raw:
+            candidate = Path(override_raw).expanduser()
+            return candidate if candidate.exists() else None
+        repo_web = self.project_root / "apps" / "web" / "out"
+        if repo_web.exists():
+            return repo_web
+        wheel_web = Path(__file__).resolve().parent / "_web"
+        if wheel_web.exists():
+            return wheel_web
+        return None
 
     @property
     def prompts_path(self) -> Path:

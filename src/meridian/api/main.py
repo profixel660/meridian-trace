@@ -1327,3 +1327,54 @@ from meridian.wizard import wizard_router  # noqa: E402
 
 app.include_router(wizard_router)
 
+
+# ── Round 18: StaticFiles mount serving the Next.js GUI export ────────────
+#
+# Mounted LAST so every API router above takes precedence — Starlette's
+# routing is order-sensitive (first-match-wins) and a top-level
+# StaticFiles(html=True) at "/" would otherwise swallow API paths if it
+# were registered before include_router calls.
+#
+# When the bundled web directory cannot be found (no env override, no dev
+# tree, no in-wheel `_web/`), we log a warning and skip the mount. The
+# headless / API-only deployment is still fully functional — only the
+# in-browser wizard goes dark, which is the correct behaviour for an
+# operator running ``uvicorn meridian.api.main:app`` without ever building
+# the GUI.
+from starlette.staticfiles import StaticFiles  # noqa: E402
+
+_web_dir = settings.web_dir
+if _web_dir is not None:
+    app.mount(
+        "/",
+        StaticFiles(directory=str(_web_dir), html=True),
+        name="web",
+    )
+    _log.info(
+        "api.staticfiles_mounted",
+        path="/",
+        directory=str(_web_dir),
+    )
+else:
+    _log.warning(
+        "api.staticfiles_skipped",
+        message=(
+            "No GUI bundle found (no MERIDIAN_WEB_DIR override, no "
+            "apps/web/out/ in dev tree, no _web/ in wheel). API-only mode."
+        ),
+    )
+
+
+# Allow ``python -m meridian.api.main`` and the alpha-2 PowerShell installer's
+# Start-Process launch to bring the backend up without depending on the
+# meridian.exe shim being on PATH for the elevated installer process. The
+# CLI's ``meridian start`` command takes the same in-process uvicorn path.
+if __name__ == "__main__":
+    import os as _os
+
+    import uvicorn as _uvicorn
+
+    _port = int(_os.environ.get("MERIDIAN_PORT", "8000"))
+    _host = _os.environ.get("MERIDIAN_HOST", "127.0.0.1")
+    _uvicorn.run(app, host=_host, port=_port, log_level="info")
+

@@ -168,15 +168,22 @@ class WizardState:
 
     @property
     def next_step(self) -> str:
-        """One of api_key / first_project / first_documents / ready / complete."""
+        """One of api_key / first_documents / first_project / ready / complete.
+
+        Order swapped in alpha-2: the user picks their project folder BEFORE
+        confirming a project name (the name auto-derives from the folder).
+        ``/setup/import-folder`` creates the project on first call, so by the
+        time the user reaches first_project it is a confirm/rename step rather
+        than a create step.
+        """
         if self.is_complete:
             return "complete"
         if not self.cli.api_key_configured:
             return "api_key"
-        if not self.cli.first_project_slug:
-            return "first_project"
         if not (self.gui_documents_imported > 0 or self.gui_documents_skipped):
             return "first_documents"
+        if not self.cli.first_project_slug:
+            return "first_project"
         return "ready"
 
     def _has_required_gates(self) -> bool:

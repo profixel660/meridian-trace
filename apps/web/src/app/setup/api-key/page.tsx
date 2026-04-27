@@ -75,7 +75,9 @@ export default function SetupApiKeyPage() {
   }, [key]);
 
   const canContinue = outcome.kind === "valid" || outcome.kind === "unable";
-  const handleContinue = () => router.push("/setup/first-project");
+  // Alpha-2 reframe: documents come BEFORE project so the folder name can
+  // pre-fill the project-name input on the next page.
+  const handleContinue = () => router.push("/setup/first-documents");
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -127,6 +129,15 @@ export default function SetupApiKeyPage() {
           >
             {API_KEY_COPY.inputLabel}{" "}
             <Tooltip
+              content={API_KEY_COPY.glossaryTooltip}
+              widthClass="w-80"
+            >
+              <span className="cursor-help text-xs text-text-muted underline decoration-dotted">
+                what&apos;s Claude?
+              </span>
+            </Tooltip>
+            {"  "}
+            <Tooltip
               content={API_KEY_COPY.prefixTooltip}
               widthClass="w-72"
             >
@@ -134,6 +145,9 @@ export default function SetupApiKeyPage() {
                 why &quot;sk-ant-&quot;?
               </span>
             </Tooltip>
+            <span className="ml-2 text-[11px] font-normal text-text-muted">
+              (technically: {API_KEY_COPY.inputLabelTechnical})
+            </span>
           </label>
           <input
             id="anthropic-key"

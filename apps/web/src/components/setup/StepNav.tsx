@@ -21,21 +21,27 @@ interface StepDef {
  * Five named segments in wizard order. Welcome is step 0 (the entry tile)
  * and the four numbered steps are 1..4 — matching the four-step preview
  * on the welcome page.
+ *
+ * Alpha-2 reframe (folder-pick): documents come BEFORE project so the
+ * folder name can pre-fill the project-name input on the next page.
+ * The natural PM mental model is "pick folder → name appears → review
+ * → done", and `/setup/projects/suggest-name` (Stream A) pre-fills the
+ * name from the folder path captured on the documents step.
  */
 const STEPS: StepDef[] = [
   { key: "welcome", label: "Start", n: 0, href: "/setup" },
-  { key: "api-key", label: "AI service", n: 1, href: "/setup/api-key" },
-  {
-    key: "first-project",
-    label: "Project",
-    n: 2,
-    href: "/setup/first-project",
-  },
+  { key: "api-key", label: "Claude key", n: 1, href: "/setup/api-key" },
   {
     key: "first-documents",
-    label: "Documents",
-    n: 3,
+    label: "Project folder",
+    n: 2,
     href: "/setup/first-documents",
+  },
+  {
+    key: "first-project",
+    label: "Project name",
+    n: 3,
+    href: "/setup/first-project",
   },
   { key: "ready", label: "Ready", n: 4, href: "/setup/ready" },
 ];

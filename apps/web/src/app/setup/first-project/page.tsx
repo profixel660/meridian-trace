@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { Tooltip } from "@/components/review/Tooltip";
 import { SetupShell } from "@/components/setup/SetupShell";
@@ -23,28 +23,116 @@ type Outcome =
   | { kind: "invalid"; message: string; osError?: string | null }
   | { kind: "error"; message: string };
 
+interface AutoName {
+  /** The suggested name as the backend returned it (already de-duplicated). */
+  suggested: string;
+  /** True if the bumped suffix made it different from the raw folder name. */
+  wasBumped: boolean;
+  /** The original (un-bumped) folder name, surfaced in the bumped headline. */
+  originalFolderName: string;
+}
+
 /** Reasonable Windows default until the API tells us otherwise. */
 const DEFAULT_DIR_HINT = "C:\\Users\\<you>\\Meridian\\projects";
 
 /**
- * Step 2 — Name your first project.
+ * Step 3 (alpha-2 reframe) — Confirm your project name.
  *
- * Auto-derives a slug from the project name (editable). Path picker uses
- * the Tauri native folder dialog when available; in browser fallback the
- * picker can't return absolute paths, so we surface a non-blocking hint
- * and let the user accept the default.
+ * If the user came through `/setup/first-documents` and a folder path is
+ * stashed in sessionStorage, we ping `/setup/projects/suggest-name` and
+ * pre-fill the name input with the response. If the suggested name was
+ * bumped (`shell-c-d` → `shell-c-d-2` because a project already uses
+ * `shell-c-d`), we surface that to the user in plain English.
+ *
+ * If the user navigated here directly (no folder context), we keep the
+ * original alpha-1 behaviour — empty inputs, manual slug derivation, and
+ * the projects-folder picker. The auto-name flow is purely additive.
  */
 export default function SetupFirstProjectPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-10 text-sm text-text-muted">Loading…</div>
+      }
+    >
+      <SetupFirstProjectPageInner />
+    </Suspense>
+  );
+}
+
+function SetupFirstProjectPageInner() {
   const router = useRouter();
+  const search = useSearchParams();
+  const skippedDocs = search?.get("skipped") === "1";
+
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
+  const [nameTouched, setNameTouched] = useState(false);
   const [projectsDir, setProjectsDir] = useState("");
   const [tauri, setTauri] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
+  const [autoName, setAutoName] = useState<AutoName | null>(null);
+  const [autoNameLoading, setAutoNameLoading] = useState(false);
 
   useEffect(() => {
     setTauri(isInTauri());
+  }, []);
+
+  /* ------------------------ auto-name from folder ------------------------- */
+
+  useEffect(() => {
+    let cancelled = false;
+    let folderPath: string | null = null;
+    let folderName: string | null = null;
+    try {
+      folderPath = window.sessionStorage.getItem("meridian.setup.folder_path");
+      folderName = window.sessionStorage.getItem("meridian.setup.folder_name");
+    } catch {
+      folderPath = null;
+    }
+    if (!folderPath) return;
+    setAutoNameLoading(true);
+    (async () => {
+      try {
+        const res = await setupApi.suggestProjectName(folderPath);
+        if (cancelled) return;
+        setAutoName({
+          suggested: res.suggested_name,
+          wasBumped: !res.is_available,
+          originalFolderName: folderName ?? res.suggested_name,
+        });
+        // Pre-fill the name + slug unless the user has already typed.
+        setName((prev) => (prev || nameTouched ? prev : res.suggested_name));
+        setSlug((prev) =>
+          prev || slugTouched ? prev : suggestSlug(res.suggested_name),
+        );
+      } catch {
+        // Suggest endpoint is best-effort — silently fall back to the
+        // empty manual flow. The folder-name we have in sessionStorage
+        // is still a reasonable seed, so use it.
+        if (cancelled) return;
+        if (folderName) {
+          setAutoName({
+            suggested: folderName,
+            wasBumped: false,
+            originalFolderName: folderName,
+          });
+          setName((prev) => (prev || nameTouched ? prev : folderName!));
+          setSlug((prev) =>
+            prev || slugTouched ? prev : suggestSlug(folderName!),
+          );
+        }
+      } finally {
+        if (!cancelled) setAutoNameLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // We intentionally don't depend on nameTouched/slugTouched — the auto
+    // run is one-shot on mount; subsequent edits are user-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-suggest the slug from the name unless the user has touched it.
@@ -82,8 +170,14 @@ export default function SetupFirstProjectPage() {
           setOutcome({ kind: "created", slug: res.slug ?? slug });
           // Persist the chosen slug so the next step can reference it.
           try {
-            window.sessionStorage.setItem("meridian.setup.project_slug", res.slug ?? slug);
-            window.sessionStorage.setItem("meridian.setup.project_name", name.trim());
+            window.sessionStorage.setItem(
+              "meridian.setup.project_slug",
+              res.slug ?? slug,
+            );
+            window.sessionStorage.setItem(
+              "meridian.setup.project_name",
+              name.trim(),
+            );
           } catch {
             // ignore — sessionStorage may be blocked
           }
@@ -110,17 +204,17 @@ export default function SetupFirstProjectPage() {
         message:
           err instanceof Error
             ? err.message
-            : "Could not reach the Meridian API.",
+            : "Could not reach the Meridian backend.",
       });
     }
   }, [canSubmit, name, slug, projectsDir]);
 
-  const handleContinue = () => router.push("/setup/first-documents");
+  const handleContinue = () => router.push("/setup/ready");
 
   return (
     <SetupShell
       step="first-project"
-      backHref="/setup/api-key"
+      backHref="/setup/first-documents"
       onContinue={handleContinue}
       continueDisabled={outcome.kind !== "created"}
       busy={outcome.kind === "creating"}
@@ -139,6 +233,25 @@ export default function SetupFirstProjectPage() {
           {FIRST_PROJECT_COPY.why()}
         </section>
 
+        {/* Bumped-name advisory — only shown when /suggest-name returned a
+            different name than the raw folder name. Helps PMs understand
+            why the input doesn't quite match the folder they picked. */}
+        {autoName?.wasBumped ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-200">
+            {FIRST_PROJECT_COPY.autoNameBumpedHeadline(
+              autoName.originalFolderName,
+              autoName.suggested,
+            )}
+          </div>
+        ) : null}
+
+        {skippedDocs ? (
+          <div className="rounded-lg border border-border bg-surface-elevated p-3 text-sm text-text-muted">
+            You skipped the document scan — no problem. You can add documents
+            later from the Sources screen on your project dashboard.
+          </div>
+        ) : null}
+
         {/* Name */}
         <div className="space-y-2">
           <label
@@ -152,6 +265,7 @@ export default function SetupFirstProjectPage() {
             type="text"
             value={name}
             onChange={(e) => {
+              setNameTouched(true);
               setName(e.target.value);
               if (outcome.kind !== "idle" && outcome.kind !== "creating")
                 setOutcome({ kind: "idle" });
@@ -159,9 +273,20 @@ export default function SetupFirstProjectPage() {
             placeholder={FIRST_PROJECT_COPY.fields.name.placeholder}
             className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
           />
-          <p className="text-xs text-text-muted">
-            {FIRST_PROJECT_COPY.fields.name.helper}
-          </p>
+          {autoName ? (
+            <p className="text-xs text-text-muted">
+              {FIRST_PROJECT_COPY.autoNameHelper}
+            </p>
+          ) : (
+            <p className="text-xs text-text-muted">
+              {FIRST_PROJECT_COPY.fields.name.helper}
+            </p>
+          )}
+          {autoNameLoading ? (
+            <p className="text-[11px] text-text-muted">
+              Loading suggested name from folder…
+            </p>
+          ) : null}
         </div>
 
         {/* Slug */}
@@ -263,7 +388,7 @@ export default function SetupFirstProjectPage() {
             </p>
             <p className="mt-1 text-sm text-text-muted">
               Slug: <code className="font-mono">{outcome.slug}</code>. Press
-              Continue to import documents.
+              Continue to finish setup.
             </p>
           </div>
         ) : null}

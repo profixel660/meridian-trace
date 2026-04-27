@@ -386,17 +386,27 @@ def _step_first_project(state: OnboardingState) -> OnboardingState:
 
 
 def _step_first_doc(state: OnboardingState) -> OnboardingState:
-    """Step 4 — Import first document."""
+    """Step 4 — Import first document.
+
+    Handles both single-file and folder paths. The original implementation
+    blew up with an ``Errno 13`` permission error when the user typed a
+    folder (Windows refuses ``open()`` on a directory) — see the SME's
+    alpha-1 screenshot. We now ``is_dir()``-check up front and offer to
+    walk the folder via :func:`meridian.ingest.dispatcher.walk_directory`.
+    """
     from meridian.db.connection import connect
     from meridian.ingest import ingest_file
     from meridian.projects import project_db_path
 
-    _step_header(4, 6, "Import your first document")
+    _step_header(4, 6, "Add your project documents")
     _what_is_this(
         "What is this?",
-        "Meridian hashes the file (so re-imports are idempotent), extracts text, "
-        "splits it into chunks, and stores everything in the project database. "
-        "PDFs, .docx, .xlsx, .eml/.msg, and .dwg are all supported.",
+        "Point Meridian at your [bold]project folder[/bold] (the one with your "
+        "PDFs, drawings, specs, BOD spreadsheets, emails, etc.) and we'll import "
+        "everything inside it. You can also pick a single file if you'd rather. "
+        "Supported types: PDF, Word (.docx), Excel (.xlsx), AutoCAD (.dwg), "
+        "email (.eml/.msg). Meridian deduplicates by content hash, so importing "
+        "the same folder twice is safe.",
     )
 
     if not state.first_project_slug:
@@ -407,44 +417,147 @@ def _step_first_doc(state: OnboardingState) -> OnboardingState:
         save_state(state)
         return state
 
-    _console.print("[dim]OPTIONAL — press Enter at the prompt to skip.[/dim]")
-    raw = Prompt.ask("Path to a source document (Enter to skip)", default="").strip()
-    if not raw:
-        _console.print("[dim]Skipped — you can run [bold]meridian import-doc[/bold] later.[/dim]")
+    db_path = project_db_path(state.first_project_slug)
+
+    # Re-prompt loop: if the user picks "no, give me a single file" after a
+    # folder prompt, we come back to the prompt without aborting the wizard.
+    while True:
+        _console.print(
+            "[dim]Tip: paste the path to your [bold]project folder[/bold] "
+            "(everything inside will be imported), or to a single file. "
+            "Press Enter to skip and add documents later.[/dim]"
+        )
+        raw = Prompt.ask(
+            "Project folder or file path (Enter to skip)", default=""
+        ).strip()
+        if not raw:
+            _console.print(
+                "[dim]Skipped — you can run [bold]meridian import-doc[/bold] later.[/dim]"
+            )
+            state.mark("first_doc")
+            save_state(state)
+            return state
+
+        path = Path(raw.strip('"').strip("'")).expanduser()
+        if not path.exists():
+            _console.print(f"[red]Path not found: {path}[/red]")
+            raise _AbortWizard(f"missing path: {path}")
+
+        if path.is_dir():
+            # Stream-A guard: if walk_directory isn't importable yet, bail
+            # gracefully rather than crashing the wizard with an ImportError.
+            try:
+                from meridian.ingest.dispatcher import walk_directory
+            except ImportError as exc:
+                _console.print(
+                    f"[yellow]Folder import isn't available in this build "
+                    f"({exc.__class__.__name__}: {exc}) — please give a single "
+                    f"file path, or upgrade Meridian.[/yellow]"
+                )
+                continue  # re-prompt for a file path
+
+            if not Confirm.ask(
+                f"That looks like a folder. Want to import everything in it? "
+                f"({path})",
+                default=True,
+            ):
+                _console.print("[dim]OK — give me a file path instead.[/dim]")
+                continue  # re-prompt for a file path
+
+            count = _ingest_folder(path, db_path, walk_directory)
+            if count > 0:
+                state.first_doc_imported = True
+            state.mark("first_doc")
+            save_state(state)
+            return state
+
+        # Single-file path.
+        conn = connect(db_path)
+        try:
+            try:
+                result = ingest_file(
+                    conn, file_path=path, project_root=settings.project_root
+                )
+            except Exception as exc:
+                _console.print(f"[red]Import failed: {exc}[/red]")
+                raise _AbortWizard(f"ingest_file failed: {exc}") from exc
+            if result.deduped:
+                _console.print(
+                    f"[yellow]Already imported (same content hash): "
+                    f"{result.filename} — treated as success.[/yellow]"
+                )
+            else:
+                _console.print(
+                    f"[green]Imported.[/green] {result.filename} "
+                    f"({result.text_length} chars, {result.chunk_count} chunks)"
+                )
+        finally:
+            conn.close()
+
+        state.first_doc_imported = True
         state.mark("first_doc")
         save_state(state)
         return state
 
-    path = Path(raw.strip('"').strip("'")).expanduser()
-    if not path.exists():
-        _console.print(f"[red]File not found: {path}[/red]")
-        raise _AbortWizard(f"missing file: {path}")
 
-    db_path = project_db_path(state.first_project_slug)
+def _ingest_folder(folder: Path, db_path: Path, walk_directory) -> int:  # type: ignore[no-untyped-def]
+    """Walk ``folder`` and ingest every file the dispatcher accepts.
+
+    Returns the number of files successfully ingested (deduped counts as
+    successful). Renders a "Importing X of Y: <filename>" progress line per
+    file. Failed files are reported but don't abort the run — better to land
+    most of the user's corpus than nothing.
+    """
+    from meridian.db.connection import connect
+    from meridian.ingest import ingest_file
+
+    walk_result = walk_directory(folder)
+    # walk_result.files_by_kind is dict[kind, list[str_paths]]; flatten.
+    file_paths: list[Path] = []
+    for paths in walk_result.files_by_kind.values():
+        file_paths.extend(Path(p) for p in paths)
+    file_paths.sort()
+
+    if not file_paths:
+        skipped = len(getattr(walk_result, "skipped", []))
+        _console.print(
+            f"[yellow]Found 0 ingestable files in {folder} "
+            f"({skipped} skipped — usually unsupported extensions or hidden "
+            f"system files).[/yellow]"
+        )
+        return 0
+
+    total = len(file_paths)
+    _console.print(f"[cyan]Importing {total} files from {folder}...[/cyan]")
+
     conn = connect(db_path)
+    success = 0
     try:
-        try:
-            result = ingest_file(conn, file_path=path, project_root=settings.project_root)
-        except Exception as exc:
-            _console.print(f"[red]Import failed: {exc}[/red]")
-            raise _AbortWizard(f"ingest_file failed: {exc}") from exc
-        if result.deduped:
-            _console.print(
-                f"[yellow]Already imported (same content hash): "
-                f"{result.filename} — treated as success.[/yellow]"
-            )
-        else:
-            _console.print(
-                f"[green]Imported.[/green] {result.filename} "
-                f"({result.text_length} chars, {result.chunk_count} chunks)"
-            )
+        for i, p in enumerate(file_paths, start=1):
+            _console.print(f"  [{i}/{total}] {p.name}")
+            try:
+                result = ingest_file(
+                    conn, file_path=p, project_root=settings.project_root
+                )
+                if result.deduped:
+                    _console.print(
+                        "      [yellow]deduped[/yellow] (same content hash already imported)"
+                    )
+                else:
+                    _console.print(
+                        f"      [green]ok[/green] "
+                        f"({result.text_length} chars, {result.chunk_count} chunks)"
+                    )
+                success += 1
+            except Exception as exc:  # noqa: BLE001 — keep ingesting siblings
+                _console.print(f"      [red]failed[/red]: {exc}")
     finally:
         conn.close()
 
-    state.first_doc_imported = True
-    state.mark("first_doc")
-    save_state(state)
-    return state
+    _console.print(
+        f"[green]Folder import complete.[/green] {success}/{total} files imported."
+    )
+    return success
 
 
 def _step_bootstrap(state: OnboardingState) -> OnboardingState:

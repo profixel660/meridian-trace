@@ -229,6 +229,154 @@ class ImportSkipResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------
+# /setup/import-folder/scan + /setup/import-folder
+# --------------------------------------------------------------------------
+#
+# Round-18: PMs don't think in files; they think in project folders. The
+# scan endpoint produces a manifest the GUI renders as "we found X PDFs,
+# Y DOCXs, Z DWGs in this folder; ingest all of them?"; the import
+# endpoint kicks off the actual ingest job. Both are reusable beyond the
+# wizard (e.g. CLI ``meridian projects scan-folder``).
+
+
+class FolderScanRequest(BaseModel):
+    folder_path: str = Field(
+        description=(
+            "Absolute path of the folder to scan. The server walks it "
+            "recursively, classifies files by extension, and returns a "
+            "manifest. No DB writes."
+        ),
+        min_length=1,
+    )
+
+
+class FolderSkipEntry(BaseModel):
+    path: str = Field(description="Absolute path of the skipped file.")
+    reason: Literal[
+        "unsupported_extension",
+        "access_denied",
+        "hidden_or_system",
+    ] = Field(
+        description=(
+            "Why the file was skipped. Stable enum so the GUI can render "
+            "filter chips ('show 12 unsupported files', etc.) and group "
+            "the audit list."
+        )
+    )
+
+
+class FolderScanResponse(BaseModel):
+    folder_path: str = Field(description="Resolved (absolute) folder path the scan ran against.")
+    folder_name: str = Field(
+        description=(
+            "The folder's basename (e.g. ``Shell-C-D``). Used by the GUI as "
+            "the default project-name suggestion before slugification."
+        )
+    )
+    files_by_kind: dict[str, list[str]] = Field(
+        description=(
+            "Bucketed file paths by kind (``pdf``, ``docx``, ``xlsx``, "
+            "``dwg``, ``eml``, ``msg``). Every supported kind is always "
+            "present as a key — empty list when no files of that kind."
+        )
+    )
+    skipped: list[FolderSkipEntry] = Field(
+        default_factory=list,
+        description=(
+            "Files the walker found but did not classify as ingestable. "
+            "Used by the GUI to surface 'we ignored these and why' before "
+            "the user presses Import."
+        ),
+    )
+    total_ingestable: int = Field(
+        description="Sum of the lengths of files_by_kind — convenience for the GUI.",
+    )
+
+
+class FolderImportRequest(BaseModel):
+    folder_path: str = Field(
+        description=(
+            "Absolute folder path to ingest. Server re-walks the folder "
+            "(idempotent — content_hash dedup is handled in ingest_file)."
+        ),
+        min_length=1,
+    )
+    project_name: str = Field(
+        description=(
+            "Human-readable project name. The server slugifies it via "
+            "``meridian.projects._slugify`` to determine the SQLite "
+            "filename. The project must already exist (use "
+            "``POST /setup/projects`` first)."
+        ),
+        min_length=1,
+    )
+
+
+class FolderImportJobStatusResponse(BaseModel):
+    """Per-file progress for a folder-import job.
+
+    Same shape as :class:`ImportJobStatusResponse` plus the in-flight
+    ``current_file`` field so the GUI can render
+    ``"Importing 03_HVAC_Spec.pdf… (8 of 47)"``.
+    """
+
+    job_id: str = Field(description="The job ID echoed back.")
+    status: Literal["pending", "running", "succeeded", "failed"] = Field(
+        description="Three-plus-one-outcome state machine.",
+    )
+    total: int = Field(description="Number of files queued.")
+    completed: int = Field(description="Number of files finished (success + dedup + error).")
+    imported: int = Field(description="Number of files genuinely imported (excludes dedup).")
+    deduped: int = Field(description="Number of files skipped because content_hash already present.")
+    failed: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Per-file error strings; surfaced as a list so the GUI can render "
+            "each one inline with its source filename."
+        ),
+    )
+    current_file: str | None = Field(
+        default=None,
+        description=(
+            "Absolute path of the file the worker is mid-ingest on, or null "
+            "when the job is between files / finished."
+        ),
+    )
+
+
+# --------------------------------------------------------------------------
+# /setup/projects/suggest-name
+# --------------------------------------------------------------------------
+
+
+class SuggestNameRequest(BaseModel):
+    folder_path: str = Field(
+        description=(
+            "Absolute folder path. The server uses the folder basename as "
+            "the seed for slugification and checks for an existing project "
+            "with that slug."
+        ),
+        min_length=1,
+    )
+
+
+class SuggestNameResponse(BaseModel):
+    suggested_name: str = Field(
+        description=(
+            "Slugified candidate project name. If no project exists at the "
+            "naive slug, this matches it; otherwise a numeric suffix (-2, "
+            "-3, …) is appended until uniqueness."
+        )
+    )
+    is_available: bool = Field(
+        description=(
+            "True when the naive (un-suffixed) slug is free; False when the "
+            "server had to bump the suffix."
+        )
+    )
+
+
+# --------------------------------------------------------------------------
 # /setup/complete
 # --------------------------------------------------------------------------
 
@@ -243,6 +391,11 @@ __all__ = [
     "ApiKeyOutcome",
     "ApiKeyRequest",
     "ApiKeyResponse",
+    "FolderImportJobStatusResponse",
+    "FolderImportRequest",
+    "FolderScanRequest",
+    "FolderScanResponse",
+    "FolderSkipEntry",
     "ImportJobResponse",
     "ImportJobStatusResponse",
     "ImportRequest",
@@ -255,4 +408,6 @@ __all__ = [
     "ProjectsDirNotWriteableResponse",
     "SetupCompleteResponse",
     "SetupStateResponse",
+    "SuggestNameRequest",
+    "SuggestNameResponse",
 ]

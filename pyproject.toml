@@ -1,6 +1,6 @@
 [project]
 name = "meridian"
-version = "0.2.0a1"
+version = "0.2.0a2"
 description = "Meridian — per-trade deliverables register from heterogeneous construction project documents."
 readme = "CONTEXT.md"
 requires-python = ">=3.12"
@@ -57,11 +57,25 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/meridian"]
 
-# Bundle the prompts/ directory inside the wheel as meridian/_prompts/. When a
-# user installs the wheel into a venv, there is no repository "prompts/" tree
-# alongside; meridian.config.prompts_path falls back to this in-package copy.
+# Bundle data directories inside the wheel so installed copies don't depend
+# on the repo layout being available at runtime.
+#
+#   prompts/        -> src/meridian/_prompts   (extraction prompts; CONTEXT.md §0)
+#   apps/web/out/   -> src/meridian/_web       (Next.js static export served by
+#                                               the FastAPI /setup wizard route)
+#
+# Build-order requirement (round 17): the Next.js static export must exist
+# BEFORE the wheel is built, otherwise hatch errors that apps/web/out is
+# missing. The build flow is:
+#
+#     cd apps/web && npm run build      # produces apps/web/out/
+#     cd ../..  && uv build              # bakes apps/web/out/ into the wheel
+#
+# See installer/README.md and docs/INSTALL.md ("Building from source") for
+# the full sequence including prerequisites.
 [tool.hatch.build.targets.wheel.force-include]
 "prompts" = "src/meridian/_prompts"
+"apps/web/out" = "src/meridian/_web"
 
 [tool.ruff]
 line-length = 100

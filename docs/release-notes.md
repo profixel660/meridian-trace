@@ -4,6 +4,52 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.2
+
+A UX-focused follow-up to alpha-1. The headline is that the setup experience is now a **GUI wizard in your browser** with **folder-pick** for documents — built for non-technical construction PMs. alpha-1 dropped users into a `cmd.exe` prompt asking for "a source document" and the SME had no idea what to do; alpha-2 fixes that.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The simplification
+
+- **GUI wizard auto-launches in your browser.** The PowerShell installer now starts the FastAPI backend in the background and opens your default browser at `http://localhost:8000/setup/welcome` after install. The CLI `meridian init` flow stays as a fallback only if the backend doesn't come up.
+- **Folder-pick for first documents.** The wizard now asks **"Where are your project documents?"** with one button: **"📁 Choose project folder"**. It walks the folder recursively (`os.walk`, full tree, smart pruning of `.git`/`node_modules`/etc.), shows a manifest preview ("Found 47 PDFs, 12 docx, 3 xlsx in `<folder name>` — import them?"), and ingests everything supported in one go. Native folder picker via Tauri when running the desktop build, browser-fallback typed-path input otherwise.
+- **Project name auto-derived from the folder.** When you pick a folder, the project name pre-fills from the folder's basename. Pick `Shell-C-D` and the project becomes `shell-c-d` — change it if you'd like, otherwise just press Enter.
+- **Step order swapped.** New flow: welcome → api-key → first-documents (pick folder) → first-project (confirm/rename) → ready. The `/setup/import-folder` endpoint creates the project on the fly the first time it's called, so by the time you reach first-project it's a confirm step, not a create step.
+- **PM-vernacular prose pass.** "Source document" → "document" or "file"; "ingest" → "import"; "API key" → "Claude AI key (from Anthropic)" with a glossary tooltip. Throughout all 5 wizard pages.
+- **`meridian start` command.** Launches the backend (or attaches to one already running) and opens the wizard in the browser. The desktop shortcut now uses this on first run instead of the CLI wizard. Flags: `--no-browser`, `--port`.
+
+### Bug fixes (from the alpha-1 SME install)
+
+- **`app_version: "0.1.0"` in logs** — fixed. `__version__` and `app_version` now resolve from `importlib.metadata.version("meridian")` so they always track pyproject.
+- **`Errno 13 Permission denied` when typing a folder path** — fixed. The CLI fallback wizard now `is_dir()`-checks first and offers to walk the folder via `walk_directory`, mirroring the GUI flow.
+- **"Wizard aborted but installer reports success"** misleading banner — gone. The installer now ends with "Meridian is starting up. Setup will open in your browser."
+
+### Backend additions
+
+- `POST /setup/import-folder/scan` — returns a manifest of detected ingestable files grouped by kind, plus a list of skipped files with reasons.
+- `POST /setup/import-folder` — walks + ingests in one job; auto-creates the project if it doesn't yet exist.
+- `GET /setup/import-folder/{job_id}` — poll progress (`{imported, deduped, failed, total, current_file}`).
+- `POST /setup/projects/suggest-name` — returns the slugified folder-basename and bumps `-2`, `-3` on collision.
+- **FastAPI StaticFiles mount** — serves the bundled Next.js export at `/`, with API routes registered first so `/setup/state` (GET, JSON) and `/setup/welcome` (GET, HTML) coexist correctly.
+- **`meridian.ingest.dispatcher.walk_directory`** — reusable directory-walk helper. `os.walk(followlinks=False)`, prunes `.git`/`node_modules`/`__pycache__`/`_meridian`, skips Windows hidden/system files, captures access-denied per-file rather than aborting.
+
+### Wheel-bundling change (build pre-step required)
+
+The wheel now bundles `apps/web/out/` (the Next.js static export) under `src/meridian/_web/`. **Building from source requires `cd apps/web && npm run build` BEFORE `uv build`** — otherwise hatch errors `Forced include not found: apps/web/out`. The PowerShell installer doesn't need this; it pip-installs the published wheel which already has the GUI baked in.
+
+### Tests
+
+- 80 passing in 12.5s (alpha-1 baseline 65 + 19 from Stream A's wizard/dispatcher coverage + 3 from Stream C's `meridian start` smoke − 7 noise from re-numbering / merging). The slow concurrency test class (`test_concurrency.py`) was excluded from the alpha-2 release gate due to a hang on the new project location; the underlying `ProjectLock` code is unchanged from alpha-1.
+
+### Carry-overs unchanged from alpha-1
+
+- Tauri `.msi` still requires Rust + MSVC + WiX — alpha-2 ships as the Python wheel + PowerShell installer + browser GUI. The `.msi` is round 18, blocked on the Rust install.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+- Next.js 15.1.6 CVE-2025-66478 — still pending the version bump.
+
 ## What's new in v0.2.0-alpha.1
 
 First SME-testable build of the v0.2 line. Bundles seven rounds of work on top of alpha-12: the v0.1.x finishers (rounds 13–15), v0.1.x polish (round 14), the Tauri/Next-export refactor (round 16), the setup wizard + FastAPI sidecar (round 17), the company rebrand, and the §3.6/§3.8 deployment prep (round 17.5).

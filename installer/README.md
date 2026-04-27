@@ -31,28 +31,76 @@ PowerShell.
      <https://console.anthropic.com> -- it is the password Meridian uses to
      read your documents with Claude. Keep it private; do not share it.)
    - Put a **Meridian** icon on your Desktop.
-   - Walk you through your first project.
+   - Start the Meridian backend in the background and **open your default
+     browser at the GUI setup wizard** (`http://localhost:8000/setup/welcome`).
 
    Total time: 5 to 15 minutes. Most of that is waiting for files to
    download. If the screen looks frozen for a minute, that is normal --
    downloads do not always show progress.
 
+   The backend's process ID is recorded at `C:\Meridian\runtime\backend.pid`
+   so the uninstaller (and a future `meridian stop` command) can shut it
+   down cleanly.
+
 ## First time you launch Meridian
 
-The installer ends by running `meridian init`, which is a guided wizard.
-It walks you through:
+The installer ends by opening the **GUI setup wizard** in your browser.
+The wizard walks you through:
 
 - **Two-factor sign-in (optional).** You can skip this and turn it on
   later. If you do enrol, scan the QR code with an authenticator app on
   your phone (Microsoft Authenticator, Google Authenticator, Authy --
   any of them).
 - **Your first project.** Just give it a name (e.g. "Glasshouse Tower").
-- **Your first document.** Type or paste the path to one of your project
-  files (a PDF, Word doc, Excel workbook, .msg email, etc.) and Meridian
-  imports it.
+- **Your first documents.** Pick a folder of project files (PDFs, Word
+  docs, Excel workbooks, .msg emails, .dwg drawings) and the wizard
+  imports the lot. You can also pick individual files.
 - **Bootstrap pass.** Meridian asks Claude to scan a sample of your
-  document and figure out which trades are involved and what they need
+  documents and figure out which trades are involved and what they need
   to deliver. This is the "wow" moment.
+
+If a browser doesn't pop up within 10 seconds, copy this URL into one
+yourself: <http://localhost:8000/setup/welcome>.
+
+If the backend fails to start (rare -- usually a port-8000 conflict), the
+installer prints "couldn't start the backend, falling back to terminal
+setup" and drops you into the legacy terminal wizard so you're not
+stranded. The terminal wizard has the same steps; just less polished.
+
+To launch Meridian again later, double-click the **Meridian** icon on
+your Desktop, or open PowerShell and run `meridian start`. That command
+opens the browser at the right page (the setup wizard if onboarding
+isn't complete, the main app otherwise).
+
+## Building the installer / wheel from source
+
+If you're a developer producing a release rather than installing one:
+
+1. **Build the Next.js static export FIRST** -- the wheel bundles
+   `apps/web/out/` as the package's `_web` data directory, and hatch will
+   error at wheel-build time if it's missing.
+
+   ```bash
+   cd apps/web
+   npm install        # first time only
+   npm run build      # produces apps/web/out/
+   cd ../..
+   ```
+
+2. **Then build the Python wheel:**
+
+   ```bash
+   uv build           # writes dist/meridian-*.whl with the GUI baked in
+   ```
+
+3. Attach the wheel to a GitHub release; the `Install-Meridian.ps1`
+   installer fetches `releases/latest`'s `.whl` asset.
+
+If you skip step 1 and run `uv build` against a fresh checkout, you will
+see `Forced include not found: apps/web/out`. Run the npm build first.
+
+See `docs/INSTALL.md` ("Building from source") for the same instructions
+in more detail.
 
 ## Where things live
 
@@ -60,10 +108,11 @@ Everything Meridian creates lives under `C:\Meridian\`:
 
 | Folder or file               | What it is                               |
 |------------------------------|------------------------------------------|
-| `C:\Meridian\projects\`      | One SQLite file per project. Your data.  |
-| `C:\Meridian\.env`           | Your Anthropic API key.                  |
-| `C:\Meridian\venv\`          | The Python environment Meridian runs in. |
-| `C:\Meridian\install.log`    | What the installer did, line by line.    |
+| `C:\Meridian\projects\`           | One SQLite file per project. Your data.  |
+| `C:\Meridian\.env`                | Your Anthropic API key.                  |
+| `C:\Meridian\venv\`               | The Python environment Meridian runs in. |
+| `C:\Meridian\runtime\backend.pid` | PID of the running backend process.      |
+| `C:\Meridian\install.log`         | What the installer did, line by line.    |
 
 **To back up your work:** copy the entire `C:\Meridian\` folder to a USB
 drive, network share, or OneDrive. To restore on a new machine: install

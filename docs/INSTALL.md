@@ -16,15 +16,37 @@ desktop shortcut. It takes 5–15 minutes mostly waiting on downloads.
    - `Install-Meridian.ps1`
 3. Right-click `Install-Meridian.bat` → **Run as administrator**.
 4. Follow the prompts. The installer will pause and ask for your Anthropic
-   API key (paste it — input is hidden), then walks you through Meridian's
-   first-run wizard.
-5. When the installer finishes, look for a **Meridian** shortcut on your
-   Desktop. Double-click it any time you want to use Meridian.
+   API key (paste it — input is hidden).
+5. **The installer ends by starting the Meridian backend in the background
+   and opening your default browser at the GUI setup wizard**
+   (`http://localhost:8000/setup/welcome`). The wizard walks you through
+   creating your first project and importing your first documents — point
+   it at a folder of PDFs / Word docs / drawings and it picks them up.
+
+   If a browser doesn't open within a few seconds, paste this URL into one
+   yourself:
+
+   ```
+   http://localhost:8000/setup/welcome
+   ```
+
+   If the backend fails to start (rare — usually a port-8000 conflict), the
+   installer prints a clear "couldn't start the backend, falling back to
+   terminal setup" message and drops you into the legacy `meridian init`
+   wizard so you're not stranded.
+6. When you're done with the wizard, you can leave the browser open or
+   close it — Meridian is now installed. To re-launch later: double-click
+   the **Meridian** shortcut on your Desktop, or open PowerShell and run
+   `meridian start`.
 
 The first time you launch the installer, **Windows may show a SmartScreen
 warning** — click **More info** → **Run anyway**. See `installer/README.md`
 in the release for the full explanation. (Code-signing is on the roadmap;
 this warning will go away once we sign.)
+
+The backend's process ID is recorded at `C:\Meridian\runtime\backend.pid`
+so the uninstaller (and a future `meridian stop` command) can shut it
+down cleanly.
 
 To uninstall later, run `Uninstall-Meridian.bat` from the same release
 download (or from `C:\Meridian\` if you keep a copy there).
@@ -172,6 +194,35 @@ remove your projects. Project DBs are at `<projects_dir>/*.sqlite` —
 delete that directory (or back it up first via
 `meridian backup create <project>`) if you also want to remove project
 state.
+
+## Building from source
+
+If you're producing a release wheel yourself (rather than installing one
+that's already built), the **Next.js static export must be produced
+before `uv build` runs**, because the wheel bundles `apps/web/out/` as
+the package data directory `meridian/_web/`. Hatch errors at build time
+if `apps/web/out/` doesn't exist.
+
+```bash
+# 1. Build the Next.js static export (writes apps/web/out/).
+cd apps/web
+npm install         # first time only
+npm run build       # produces apps/web/out/
+
+# 2. Build the Python wheel from the repo root.
+cd ../..
+uv build            # produces dist/meridian-X.Y.Z-py3-none-any.whl
+```
+
+The built wheel has the GUI wizard's static assets baked in, so a
+plain `pip install meridian-X.Y.Z-py3-none-any.whl` is enough — no
+separate `npm` step on the install side. The FastAPI backend resolves
+`<package>/_web` at runtime to serve the wizard at
+`http://localhost:8000/setup/welcome`.
+
+If you forget step 1 and run `uv build` against a fresh checkout, hatch
+will fail with `Forced include not found: apps/web/out`. Run `npm run
+build` first and retry.
 
 ## Web shell (optional)
 

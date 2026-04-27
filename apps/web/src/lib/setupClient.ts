@@ -303,6 +303,60 @@ export const setupApi = {
     });
   },
 
+  /* ---------- folder-pick (alpha-2 reframe — Stream A endpoints) ---------- */
+
+  /**
+   * Scan a folder for ingestable documents. The backend walks the folder
+   * (no recursion limits beyond what Stream A enforces), buckets files by
+   * kind, and returns a manifest the wizard renders as a preview.
+   */
+  scanFolder(folderPath: string): Promise<FolderScanResponse> {
+    return apiFetch<FolderScanResponse>("/setup/import-folder/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_path: folderPath }),
+    });
+  },
+
+  /**
+   * Kick off a folder-import job. Returns a job id the wizard polls via
+   * `folderImportStatus`. `project_name` becomes the project's display
+   * name; the backend derives the slug.
+   */
+  importFolder(
+    folderPath: string,
+    projectName: string,
+  ): Promise<ImportResponse> {
+    return apiFetch<ImportResponse>("/setup/import-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_path: folderPath,
+        project_name: projectName,
+      }),
+    });
+  },
+
+  /** Poll a folder-import job for progress + terminal state. */
+  folderImportStatus(jobId: string): Promise<FolderImportJobStatus> {
+    return apiFetch<FolderImportJobStatus>(
+      `/setup/import-folder/${encodeURIComponent(jobId)}`,
+    );
+  },
+
+  /**
+   * Suggest a project name from a folder path. Backend derives a sensible
+   * default from the folder name and bumps with `-2`, `-3`, … if a
+   * project already uses that slug.
+   */
+  suggestProjectName(folderPath: string): Promise<SuggestNameResponse> {
+    return apiFetch<SuggestNameResponse>("/setup/projects/suggest-name", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_path: folderPath }),
+    });
+  },
+
   /**
    * Idempotent — safe to call from the ready page on every mount. Returns
    * the full state object so the caller can verify `complete: true`.
@@ -310,6 +364,75 @@ export const setupApi = {
   complete(): Promise<SetupState> {
     return apiFetch<SetupState>("/setup/complete", { method: "POST" });
   },
+};
+
+/* ---------- folder-pick types (alpha-2 reframe — Stream A shapes) ---------- */
+
+/**
+ * Manifest the scan endpoint returns. Each `files_by_kind` bucket is a
+ * flat list of absolute file paths; `skipped` enumerates files the
+ * backend chose to ignore (with a reason like "unsupported_extension"
+ * or "too_large"); `total_ingestable` is the sum across buckets.
+ */
+export interface FolderScanResponse {
+  folder_path: string;
+  folder_name: string;
+  files_by_kind: {
+    pdf: string[];
+    docx: string[];
+    xlsx: string[];
+    dwg: string[];
+    eml: string[];
+    msg: string[];
+  };
+  skipped: { path: string; reason: string }[];
+  total_ingestable: number;
+}
+
+/**
+ * Live status of a folder-import job. Re-uses the same `imported / deduped
+ * / failed / total` accounting as the per-file import endpoint, plus
+ * `current_file` so the progress card can show what's currently being
+ * crunched.
+ */
+export interface FolderImportJobStatus {
+  imported: number;
+  deduped: number;
+  failed: number;
+  total: number;
+  current_file: string | null;
+  status: "running" | "done" | "failed";
+}
+
+/**
+ * Response from `/setup/projects/suggest-name`. `is_available` is false
+ * when the suggested name's slug is already taken; the backend has
+ * already bumped (`shell-c-d` → `shell-c-d-2`) before returning, so the
+ * page just renders the suggestion verbatim.
+ */
+export interface SuggestNameResponse {
+  suggested_name: string;
+  is_available: boolean;
+}
+
+/** Friendly label for each `files_by_kind` bucket — used in the manifest. */
+export const FILE_KIND_LABELS: Record<keyof FolderScanResponse["files_by_kind"], string> = {
+  pdf: "PDF",
+  docx: "Word document",
+  xlsx: "Excel spreadsheet",
+  dwg: "AutoCAD drawing",
+  eml: "Email (.eml)",
+  msg: "Outlook email (.msg)",
+};
+
+/** Plural label for the manifest summary line ("Found 12 PDFs, 4 Word documents…"). */
+export const FILE_KIND_LABELS_PLURAL: Record<keyof FolderScanResponse["files_by_kind"], string> = {
+  pdf: "PDFs",
+  docx: "Word documents",
+  xlsx: "Excel spreadsheets",
+  dwg: "AutoCAD drawings",
+  eml: "emails (.eml)",
+  msg: "Outlook emails (.msg)",
 };
 
 /**

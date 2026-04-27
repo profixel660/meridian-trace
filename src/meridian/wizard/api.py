@@ -28,11 +28,17 @@ from fastapi import APIRouter, HTTPException, Request, status
 from meridian.config import settings
 from meridian.db.connection import connect
 from meridian.ingest import ingest_file
+from meridian.ingest.dispatcher import walk_directory
 from meridian.logging import get_logger
-from meridian.projects import create_project, project_db_path
+from meridian.projects import _slugify, create_project, project_db_path
 from meridian.wizard.models import (
     ApiKeyRequest,
     ApiKeyResponse,
+    FolderImportJobStatusResponse,
+    FolderImportRequest,
+    FolderScanRequest,
+    FolderScanResponse,
+    FolderSkipEntry,
     ImportJobResponse,
     ImportJobStatusResponse,
     ImportRequest,
@@ -42,6 +48,8 @@ from meridian.wizard.models import (
     ProjectCreateResponse,
     SetupCompleteResponse,
     SetupStateResponse,
+    SuggestNameRequest,
+    SuggestNameResponse,
 )
 from meridian.wizard.state import (
     OnboardingState,
@@ -107,6 +115,7 @@ class _ImportJob:
     __slots__ = (
         "_persisted",
         "completed",
+        "current_file",
         "deduped",
         "errors",
         "id",
@@ -123,6 +132,7 @@ class _ImportJob:
         self.imported = 0
         self.deduped = 0
         self.errors: list[str] = []
+        self.current_file: str | None = None
         self._persisted = False
 
 
@@ -145,6 +155,7 @@ def _run_import_job(job: _ImportJob, *, db_path: Path, paths: Iterable[str]) -> 
     try:
         for raw in paths:
             path = Path(raw).expanduser()
+            job.current_file = str(path)
             try:
                 if not path.exists():
                     job.errors.append(f"File not found: {path}")
@@ -165,6 +176,7 @@ def _run_import_job(job: _ImportJob, *, db_path: Path, paths: Iterable[str]) -> 
                 job.completed += 1
     finally:
         conn.close()
+        job.current_file = None
 
     job.status = "failed" if job.errors and job.imported == 0 and job.deduped == 0 else "succeeded"
 
@@ -490,6 +502,252 @@ def setup_complete() -> SetupCompleteResponse:
         )
     mark_setup_complete(state)
     return SetupCompleteResponse(**_state_to_response(load_wizard_state()).model_dump())
+
+
+# --------------------------------------------------------------------------
+# Folder-import endpoints (round-18 / Stream A)
+#
+# PMs do not think in files; they think in project folders. The
+# /setup/import-folder/{scan,POST,GET} trio lets the GUI render
+# "we'll ingest these 47 files from <folder>; press Import" instead of
+# forcing the user through a per-file picker.
+# --------------------------------------------------------------------------
+
+
+def _validate_folder_path(raw: str) -> Path:
+    """Resolve ``raw`` to an existing directory or raise HTTP 400.
+
+    Three failure modes — each surfaced with a distinct error code so the
+    GUI can render specific guidance:
+
+    * ``folder_not_found``     — path does not exist on disk.
+    * ``folder_not_a_directory`` — path exists but is a regular file.
+    * ``folder_access_denied`` — Errno 13 / PermissionError raised while
+      probing existence (e.g. Windows-elevated parent directory).
+    """
+    candidate = Path(raw).expanduser()
+    try:
+        exists = candidate.exists()
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "folder_access_denied",
+                "message": f"Cannot access this folder — permission denied. ({exc})",
+            },
+        ) from exc
+    except OSError as exc:
+        # Cover other Errno-13-adjacent failures (Windows long-path,
+        # network timeout on a UNC share, etc.).
+        if getattr(exc, "errno", None) == 13:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "folder_access_denied",
+                    "message": f"Cannot access this folder — permission denied. ({exc})",
+                },
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "folder_not_found",
+                "message": f"Cannot read this folder. ({exc})",
+            },
+        ) from exc
+    if not exists:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "folder_not_found",
+                "message": f"Folder does not exist: {candidate}",
+            },
+        )
+    if not candidate.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "folder_not_a_directory",
+                "message": (
+                    f"Path is not a directory — pick a folder, not a file: {candidate}"
+                ),
+            },
+        )
+    return candidate
+
+
+@wizard_router.post(
+    "/import-folder/scan",
+    response_model=FolderScanResponse,
+    responses={
+        400: {
+            "description": (
+                "folder_path missing, not a directory, or unreadable. The "
+                "detail body's `error` field is one of folder_not_found, "
+                "folder_not_a_directory, folder_access_denied."
+            )
+        },
+    },
+)
+def setup_import_folder_scan(req: FolderScanRequest) -> FolderScanResponse:
+    """Walk ``folder_path`` recursively and return a manifest.
+
+    Pure scan — no DB writes, no LLM calls, no ingest. Reuses
+    :func:`meridian.ingest.dispatcher.walk_directory` so the canonical
+    extension-set lives next to ``ingest_file``.
+    """
+    folder = _validate_folder_path(req.folder_path)
+    walked = walk_directory(folder)
+    return FolderScanResponse(
+        folder_path=walked.folder_path,
+        folder_name=walked.folder_name,
+        files_by_kind=walked.files_by_kind,
+        skipped=[
+            FolderSkipEntry(path=s.path, reason=s.reason)  # type: ignore[arg-type]
+            for s in walked.skipped
+        ],
+        total_ingestable=walked.total_ingestable,
+    )
+
+
+@wizard_router.post(
+    "/import-folder",
+    response_model=ImportJobResponse,
+    responses={
+        400: {"description": "folder_path is missing, not a directory, or unreadable."},
+    },
+)
+def setup_import_folder(req: FolderImportRequest) -> ImportJobResponse:
+    """Walk ``folder_path`` and queue every supported file for ingestion.
+
+    Auto-creates the project if it does not yet exist (the alpha-2 swapped
+    step order asks for the folder BEFORE the project name; the folder name
+    becomes the default project name and a project record is created here so
+    a downstream rename on /setup/first-project remains optional). Idempotent
+    — content_hash dedup is applied per-file in
+    :func:`meridian.ingest.ingest_file`; calling this twice on the same
+    folder produces a job whose ``deduped`` count equals the file count.
+    """
+    folder = _validate_folder_path(req.folder_path)
+    slug = _slugify(req.project_name)
+    db_path = project_db_path(slug)
+    if not db_path.exists():
+        # Side-effect: project is created on the fly. Mirrors the setup_create_project
+        # path so the wizard state stays consistent (first_project_slug stamped).
+        _project_id, db_path = create_project(name=req.project_name)
+        state = load_wizard_state()
+        mark_first_project(
+            state,
+            name=req.project_name,
+            slug=slug,
+            projects_dir=str(db_path.parent),
+        )
+
+    walked = walk_directory(folder)
+    paths: list[str] = []
+    for kind_paths in walked.files_by_kind.values():
+        paths.extend(kind_paths)
+
+    job = _ImportJob(total=len(paths))
+    with _jobs_lock:
+        _jobs[job.id] = job
+
+    thread = threading.Thread(
+        target=_run_import_job,
+        kwargs={"job": job, "db_path": db_path, "paths": paths},
+        daemon=True,
+        name=f"wizard-folder-import-{job.id[:8]}",
+    )
+    thread.start()
+    return ImportJobResponse(job_id=job.id)
+
+
+@wizard_router.get(
+    "/import-folder/{job_id}",
+    response_model=FolderImportJobStatusResponse,
+)
+def setup_import_folder_status(job_id: str) -> FolderImportJobStatusResponse:
+    """Poll a folder-import job. Same shape as ``/setup/import/{job_id}``
+    plus a ``current_file`` field for in-flight progress."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job not found: {job_id}",
+        )
+
+    # Same persistence side-effect as /setup/import/{job_id}: on the first
+    # poll that observes a 'succeeded' state, fold the import count into
+    # the durable wizard state. Re-polls are no-ops.
+    if job.status == "succeeded" and not job._persisted:
+        if job.imported > 0:
+            state = load_wizard_state()
+            mark_documents_imported(state, count=job.imported)
+        job._persisted = True
+
+    return FolderImportJobStatusResponse(
+        job_id=job.id,
+        status=job.status,  # type: ignore[arg-type]
+        total=job.total,
+        completed=job.completed,
+        imported=job.imported,
+        deduped=job.deduped,
+        failed=list(job.errors),
+        current_file=job.current_file,
+    )
+
+
+# --------------------------------------------------------------------------
+# /setup/projects/suggest-name (round-18 / Stream A)
+#
+# When the GUI's folder picker fires, the wizard wants to suggest a project
+# name = folder basename, slugified per ``meridian.projects._slugify`` so
+# the suggestion matches what the SQLite filename will actually be. This
+# endpoint also detects collision and bumps a numeric suffix until unique
+# so the user is never offered a name that will 409 on create.
+# --------------------------------------------------------------------------
+
+
+@wizard_router.post(
+    "/projects/suggest-name",
+    response_model=SuggestNameResponse,
+    responses={
+        400: {"description": "folder_path is missing, not a directory, or unreadable."},
+    },
+)
+def setup_suggest_project_name(req: SuggestNameRequest) -> SuggestNameResponse:
+    """Suggest a slugified project name from a folder basename.
+
+    Returns ``is_available=True`` when the naive (un-suffixed) slug is
+    free, ``False`` when the server had to bump the suffix because a
+    project at that slug already exists.
+    """
+    folder = _validate_folder_path(req.folder_path)
+    base = _slugify(folder.name)
+    if not project_db_path(base).exists():
+        return SuggestNameResponse(suggested_name=base, is_available=True)
+
+    # Bump suffix until unique. Cap at a sane number to avoid a runaway loop
+    # if someone has 10k projects all sharing a basename — at that point the
+    # GUI needs to surface the situation, not silently pick -10001.
+    for n in range(2, 10001):
+        candidate = f"{base}-{n}"
+        if not project_db_path(candidate).exists():
+            return SuggestNameResponse(suggested_name=candidate, is_available=False)
+
+    # Pathological: the user has 10k+ collisions. Surface a clear error
+    # rather than spin or fabricate. The same 400-shape pattern as
+    # _validate_folder_path above.
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "error": "name_collision_exhausted",
+            "message": (
+                "Could not find a free slug after 10,000 attempts — "
+                "pick a different folder name."
+            ),
+        },
+    )
 
 
 __all__ = ["wizard_router"]

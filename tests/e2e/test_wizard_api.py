@@ -135,7 +135,9 @@ def test_setup_api_key_valid_persists_and_advances(
 
     state_response = fastapi_client.get("/setup/state").json()
     assert state_response["api_key_set"] is True
-    assert state_response["next_step"] == "first_project"
+    # alpha-2 swapped step order: api_key → first_documents (folder pick) →
+    # first_project (auto-named confirm/rename) → ready.
+    assert state_response["next_step"] == "first_documents"
 
 
 def test_setup_api_key_invalid_does_not_persist(
@@ -472,3 +474,382 @@ def test_gui_save_then_cli_load_round_trips_known_fields(
     assert cli_state.first_project_slug == "round-trip-test"
     assert "api_key" in cli_state.completed_steps
     assert "first_project" in cli_state.completed_steps
+
+
+# --------------------------------------------------------------------------
+# /setup/import-folder/scan + /setup/import-folder + /setup/import-folder/{job_id}
+# (round-18 / Stream A)
+# --------------------------------------------------------------------------
+
+
+def _make_mixed_folder(root: Path, *, with_synthetic_docx: Path | None = None) -> Path:
+    """Materialise a folder with a few files of mixed kinds + skip cases.
+
+    Returns the folder path. Layout:
+        <root>/Project-Folder/
+            spec.pdf                          → ingestable (pdf)
+            schedule.xlsx                     → ingestable (xlsx)
+            sample.docx                       → ingestable (docx, copied from fixture)
+            notes.txt                         → skipped (unsupported_extension)
+            .hidden_file.pdf                  → skipped (hidden_or_system)
+            Thumbs.db                         → skipped (hidden_or_system)
+            subfolder/another.pdf             → ingestable (pdf, recurse)
+            __pycache__/garbage.pyc           → pruned wholesale
+            node_modules/foo.pdf              → pruned wholesale
+    """
+    folder = root / "Project-Folder"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "spec.pdf").write_bytes(b"%PDF-1.4 fake")
+    (folder / "schedule.xlsx").write_bytes(b"PK\x03\x04 fake xlsx")
+    (folder / "notes.txt").write_text("ignored", encoding="utf-8")
+    (folder / ".hidden_file.pdf").write_bytes(b"%PDF-1.4 hidden")
+    (folder / "Thumbs.db").write_bytes(b"junk")
+
+    sub = folder / "subfolder"
+    sub.mkdir(exist_ok=True)
+    (sub / "another.pdf").write_bytes(b"%PDF-1.4 sub")
+
+    pruned = folder / "__pycache__"
+    pruned.mkdir(exist_ok=True)
+    (pruned / "garbage.pyc").write_bytes(b"\x00\x01")
+
+    pruned2 = folder / "node_modules"
+    pruned2.mkdir(exist_ok=True)
+    (pruned2 / "foo.pdf").write_bytes(b"%PDF-1.4 noise")
+
+    if with_synthetic_docx is not None:
+        # Copy the synthetic docx so the import end-to-end test can
+        # actually verify a deliverable lands in DB. PDF/XLSX paths are
+        # left as fake bytes — those ingesters will fail (and surface in
+        # job.errors), which is also useful coverage.
+        (folder / "sample.docx").write_bytes(with_synthetic_docx.read_bytes())
+
+    return folder
+
+
+def test_setup_import_folder_scan_happy_path(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    folder = _make_mixed_folder(tmp_path)
+
+    response = fastapi_client.post(
+        "/setup/import-folder/scan",
+        json={"folder_path": str(folder)},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["folder_name"] == "Project-Folder"
+    assert Path(body["folder_path"]).resolve() == folder.resolve()
+
+    # Two PDFs (spec + subfolder/another), one XLSX, one DOCX-not-present.
+    pdfs = body["files_by_kind"]["pdf"]
+    assert len(pdfs) == 2, pdfs
+    assert any(p.endswith("spec.pdf") for p in pdfs)
+    assert any(p.endswith("another.pdf") for p in pdfs)
+
+    xlsxs = body["files_by_kind"]["xlsx"]
+    assert len(xlsxs) == 1
+    assert xlsxs[0].endswith("schedule.xlsx")
+
+    # Empty buckets are still present (stable layout for the GUI).
+    for kind in ("docx", "dwg", "eml", "msg"):
+        assert body["files_by_kind"][kind] == []
+
+    # total_ingestable = 2 PDFs + 1 XLSX
+    assert body["total_ingestable"] == 3
+
+    # Skipped: notes.txt (unsupported), .hidden_file.pdf (hidden), Thumbs.db (system).
+    skipped_reasons = sorted(s["reason"] for s in body["skipped"])
+    assert skipped_reasons == sorted(
+        ["unsupported_extension", "hidden_or_system", "hidden_or_system"]
+    )
+    skipped_paths = [s["path"] for s in body["skipped"]]
+    assert any("notes.txt" in p for p in skipped_paths)
+    assert any("Thumbs.db" in p for p in skipped_paths)
+    # node_modules and __pycache__ contents are pruned wholesale, NOT
+    # surfaced in the skipped list.
+    assert not any("node_modules" in p for p in skipped_paths)
+    assert not any("__pycache__" in p for p in skipped_paths)
+
+
+def test_setup_import_folder_scan_nonexistent_path_returns_400(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    bogus = tmp_path / "definitely-not-here"
+    response = fastapi_client.post(
+        "/setup/import-folder/scan",
+        json={"folder_path": str(bogus)},
+    )
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "folder_not_found"
+
+
+def test_setup_import_folder_scan_file_not_directory_returns_400(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    a_file = tmp_path / "definitely_a_file.pdf"
+    a_file.write_bytes(b"%PDF-1.4")
+    response = fastapi_client.post(
+        "/setup/import-folder/scan",
+        json={"folder_path": str(a_file)},
+    )
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "folder_not_a_directory"
+
+
+def test_setup_import_folder_end_to_end(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+) -> None:
+    """Walk the wizard: api-key, project, then a real folder import."""
+    # 1) Set up state to a created project.
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "Folder Import Test",
+            "slug": "folder-import-test",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+
+    # 2) Build a folder with the synthetic .docx (the only file the
+    # ingester can actually process end-to-end here — fake PDF bytes
+    # would fail upstream and be surfaced in job.errors).
+    folder = tmp_path / "Folder-Import-Test"
+    folder.mkdir()
+    (folder / "sample.docx").write_bytes(synthetic_docx.read_bytes())
+
+    # 3) Scan first — confirm the GUI's pre-import preview shape.
+    scan = fastapi_client.post(
+        "/setup/import-folder/scan",
+        json={"folder_path": str(folder)},
+    )
+    assert scan.status_code == 200, scan.text
+    assert scan.json()["total_ingestable"] == 1
+
+    # 4) Kick off the import job using the project name (server slugifies).
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={
+            "folder_path": str(folder),
+            "project_name": "Folder Import Test",
+        },
+    )
+    assert kick.status_code == 200, kick.text
+    job_id = kick.json()["job_id"]
+    assert isinstance(job_id, str) and len(job_id) > 8
+
+    # 5) Poll. Reuse the same poll-helper but on the folder endpoint.
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    assert body["status"] == "succeeded", body
+    assert body["total"] == 1
+    assert body["completed"] == 1
+    assert body["imported"] == 1
+    assert body["deduped"] == 0
+    assert body["failed"] == []
+    # current_file goes back to None on terminal status.
+    assert body["current_file"] is None
+
+    # 6) Verify the deliverable landed in the project's DB.
+    from meridian.db.connection import connect
+
+    db_path = tmp_projects_dir / "folder-import-test.sqlite"
+    assert db_path.exists(), f"project DB missing: {db_path}"
+    conn = connect(db_path)
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM source_document").fetchone()[0]
+        assert n == 1, f"expected 1 source_document row, found {n}"
+    finally:
+        conn.close()
+
+    # 7) Wizard state must reflect the import.
+    state_response = fastapi_client.get("/setup/state").json()
+    assert state_response["documents_imported"] == 1
+    assert state_response["next_step"] == "ready"
+
+
+def test_setup_import_folder_unknown_project_auto_creates(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """alpha-2 swap: import-folder is the first step that needs a project, so
+    if no project exists yet it is created on the fly (named after the folder)
+    rather than 404'd. The downstream first_project step becomes a rename
+    confirm rather than a create."""
+    folder = tmp_path / "lonely-folder"
+    folder.mkdir()
+    (folder / "spec.pdf").write_bytes(b"%PDF-1.4")
+
+    response = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "Never Created"},
+    )
+    assert response.status_code == 200, response.text
+    assert "job_id" in response.json()
+
+    # Wizard state was stamped with the auto-created project's slug.
+    state = load_wizard_state()
+    assert state.cli.first_project_slug == "never-created"
+
+
+# --------------------------------------------------------------------------
+# /setup/projects/suggest-name (round-18 / Stream A)
+# --------------------------------------------------------------------------
+
+
+def test_setup_suggest_name_happy_path(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "Shell-C-D"
+    folder.mkdir()
+
+    response = fastapi_client.post(
+        "/setup/projects/suggest-name",
+        json={"folder_path": str(folder)},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["suggested_name"] == "shell-c-d"
+    assert body["is_available"] is True
+
+
+def test_setup_suggest_name_collision_bumps_suffix(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "Shell-C-D"
+    folder.mkdir()
+
+    # Pre-create a project at the naive slug so the suggester collides.
+    first = fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "Shell-C-D",
+            "slug": "shell-c-d",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+    assert first.status_code == 200, first.text
+
+    response = fastapi_client.post(
+        "/setup/projects/suggest-name",
+        json={"folder_path": str(folder)},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["suggested_name"] == "shell-c-d-2"
+    assert body["is_available"] is False
+
+
+def test_setup_suggest_name_nonexistent_folder_returns_400(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    bogus = tmp_path / "definitely-not-here"
+    response = fastapi_client.post(
+        "/setup/projects/suggest-name",
+        json={"folder_path": str(bogus)},
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]["error"] == "folder_not_found"
+
+
+# --------------------------------------------------------------------------
+# StaticFiles mount (round-18 / Stream A)
+#
+# The mount is registered at module import time inside meridian.api.main, so
+# we exercise it by importing a fresh FastAPI app instance with the env var
+# set / unset before import. importlib.reload is the cleanest cross-test
+# reset that doesn't require touching the global ``app`` singleton.
+# --------------------------------------------------------------------------
+
+
+def test_static_files_mount_serves_index_when_web_dir_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    web_dir = tmp_path / "fake_out"
+    web_dir.mkdir()
+    (web_dir / "index.html").write_text(
+        "<!doctype html><html><body>fake-wizard-index</body></html>",
+        encoding="utf-8",
+    )
+
+    # MERIDIAN_WEB_DIR is read by settings.web_dir at attribute-access
+    # time (pure os.environ.get), so a reload of meridian.api.main is
+    # enough — no need to clear settings caches.
+    monkeypatch.setenv("MERIDIAN_WEB_DIR", str(web_dir))
+
+    import importlib
+
+    import meridian.api.main as main_mod
+
+    main_mod = importlib.reload(main_mod)
+    try:
+        with TestClient(main_mod.app) as client:
+            # Static index.
+            r = client.get("/")
+            assert r.status_code == 200, r.text
+            assert "fake-wizard-index" in r.text
+
+            # API still works (no shadowing).
+            r = client.get("/health")
+            assert r.status_code == 200
+            assert r.json()["status"] == "ok"
+    finally:
+        # Restore the canonical app for the rest of the test session by
+        # reloading without the env var.
+        monkeypatch.delenv("MERIDIAN_WEB_DIR", raising=False)
+        importlib.reload(main_mod)
+
+
+def test_static_files_mount_absent_when_web_dir_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When neither env override nor dev tree nor wheel bundle is found,
+    the API still starts cleanly and serves /health, with no static mount."""
+    monkeypatch.delenv("MERIDIAN_WEB_DIR", raising=False)
+    # Point project_root at a tmp dir so the dev-tree fallback misses.
+    from meridian.config import settings as live_settings
+
+    monkeypatch.setattr(live_settings, "project_root", tmp_path)
+
+    import importlib
+
+    import meridian.api.main as main_mod
+
+    main_mod = importlib.reload(main_mod)
+    try:
+        with TestClient(main_mod.app) as client:
+            r = client.get("/health")
+            assert r.status_code == 200
+            assert r.json()["status"] == "ok"
+            # No static mount → "/" returns 404 (no route).
+            r = client.get("/")
+            assert r.status_code == 404
+    finally:
+        # Restore.
+        monkeypatch.undo()
+        importlib.reload(main_mod)

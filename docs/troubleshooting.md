@@ -130,6 +130,49 @@ If the borderline count is still high (more than ~20% of total findings), file a
 
 - **Log event to grep:** `xref.sweep.complete` with the four-outcome counts.
 
+## I can't get into the setup wizard
+
+The round-17 installer ends by starting the FastAPI backend in the
+background and opening your default browser at
+`http://localhost:8000/setup/welcome`. A few ways this can fail:
+
+### Symptom: The browser opens but shows "This site can't be reached" / "ERR_CONNECTION_REFUSED"
+
+The backend didn't come up, or it came up on a different port. Check:
+
+1. **Is the backend running?** Look at `C:\Meridian\runtime\backend.pid`
+   for the recorded PID, then `tasklist /FI "PID eq <id>"` (Windows) or
+   `Get-Process -Id <id>` (PowerShell). If the process is gone, the
+   backend crashed silently.
+2. **Is port 8000 in use?** Run `netstat -ano | findstr :8000`. If
+   another process owns the port, restart with `meridian start --port 8010`
+   (and adjust the URL accordingly).
+3. **Re-launch:** open PowerShell and run `meridian start`. That command
+   probes `/health` first; if a backend is already up it just opens the
+   browser, otherwise it spawns uvicorn in the foreground so any startup
+   error is visible.
+
+### Symptom: The installer ended with "couldn't start the backend, falling back to terminal setup"
+
+The 60-second `/health` probe never returned 200. The installer printed
+the underlying reason — common causes are a port-8000 conflict or a
+missing dependency (e.g. uvicorn import failure). The installer fell
+back to the legacy `meridian init` terminal wizard so setup is not
+blocked. After you finish there, you can try `meridian start` again.
+
+### Symptom: The installer finished but no browser opened
+
+Check `C:\Meridian\install.log` for the line "Browser launched." If
+that's missing, the `Start-Process` call to open the URL failed — paste
+this URL into a browser yourself: <http://localhost:8000/setup/welcome>.
+
+### Symptom: I want to run setup again from scratch
+
+The wizard's progress lives in `<projects-dir>/_meridian/onboarding_state.json`
+(legacy CLI) and `<projects-dir>/_meridian/wizard_state.json` (GUI).
+Delete the relevant file and re-run `meridian start` (GUI) or
+`meridian init --restart` (CLI).
+
 ## Web shell won't start
 
 ### Symptom: `npm: command not found` when trying to run the web UI

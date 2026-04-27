@@ -2127,6 +2127,164 @@ def db_migrate(
         )
 
 
+@app.command("start")
+def start(
+    no_browser: Annotated[
+        bool,
+        typer.Option(
+            "--no-browser",
+            help=(
+                "Don't open the default browser after the backend is healthy. "
+                "Use this for headless boxes or when a Tauri shell has already "
+                "launched and will navigate itself."
+            ),
+        ),
+    ] = False,
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            help=(
+                "Port the backend listens on. Default 8000 — only change this "
+                "if you have a port conflict."
+            ),
+        ),
+    ] = 8000,
+) -> None:
+    """Start the Meridian backend and open the GUI in your browser.
+
+    If a Meridian backend is already responding on ``http://localhost:<port>/health``,
+    this command just opens the browser at the right page (the setup wizard
+    if onboarding isn't finished, the main app otherwise).
+
+    Otherwise it starts uvicorn in the foreground — Ctrl-C stops it. This is
+    the same command the future Tauri sidecar (round 18) invokes; keep the
+    surface tiny.
+    """
+    import time
+    import webbrowser
+    from urllib.error import URLError
+    from urllib.request import Request, urlopen
+
+    base_url = f"http://localhost:{port}"
+    health_url = f"{base_url}/health"
+    setup_state_url = f"{base_url}/setup/state"
+    welcome_url = f"{base_url}/setup/welcome"
+    home_url = f"{base_url}/"
+
+    def _probe(url: str, timeout: float = 1.0) -> int | None:
+        """Return HTTP status code from a GET, or None if the call failed."""
+        try:
+            req = Request(url, headers={"User-Agent": "meridian-cli/start"})
+            with urlopen(req, timeout=timeout) as resp:  # noqa: S310 — localhost only
+                return resp.status
+        except (URLError, TimeoutError, OSError):
+            return None
+
+    def _pick_target_url() -> str:
+        """Welcome page when setup isn't complete; main app otherwise."""
+        try:
+            req = Request(setup_state_url, headers={"User-Agent": "meridian-cli/start"})
+            with urlopen(req, timeout=2.0) as resp:  # noqa: S310 — localhost only
+                if resp.status == 200:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(payload, dict) and payload.get("is_complete") is True:
+                        return home_url
+                    if isinstance(payload, dict) and payload.get("complete") is True:
+                        return home_url
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+            pass
+        # Default: setup wizard. Safer to over-show the wizard than skip it.
+        return welcome_url
+
+    def _open(url: str) -> None:
+        if no_browser:
+            console.print(f"[dim](--no-browser) Skipping browser open. URL: {url}[/dim]")
+            return
+        opened = webbrowser.open(url)
+        if opened:
+            console.print(f"Opening: [cyan]{url}[/cyan]")
+        else:
+            console.print(
+                f"[yellow]Could not open a browser automatically.[/yellow] "
+                f"Paste this URL into one yourself: [cyan]{url}[/cyan]"
+            )
+
+    # Fast path: backend already up.
+    if _probe(health_url) == 200:
+        target = _pick_target_url()
+        console.print(f"[green]Meridian is already running at {base_url}.[/green]")
+        _open(target)
+        return
+
+    # Slow path: spawn uvicorn in-process (foreground) and wait for /health.
+    console.print(f"[cyan]Starting Meridian backend on port {port}...[/cyan]")
+    try:
+        import uvicorn  # noqa: PLC0415
+    except ImportError as exc:
+        console.print(f"[red]uvicorn is not installed: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    # Run uvicorn in a daemon thread so the main thread can poll /health
+    # and trigger the browser open before blocking on the server.
+    import threading
+
+    config = uvicorn.Config(
+        "meridian.api.main:app",
+        host="127.0.0.1",
+        port=port,
+        log_level="info",
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+
+    def _serve() -> None:
+        try:
+            server.run()
+        except Exception:  # pragma: no cover — surfaced via the health timeout
+            _log.exception("cli.start.server_crash")
+
+    thread = threading.Thread(target=_serve, name="meridian-uvicorn", daemon=True)
+    thread.start()
+
+    # Poll /health for up to 30 s. Uvicorn cold-starts in well under that
+    # even on slow disks; fail loud if we exceed it.
+    deadline = time.monotonic() + 30.0
+    healthy = False
+    while time.monotonic() < deadline:
+        if not thread.is_alive():
+            break
+        if _probe(health_url, timeout=0.5) == 200:
+            healthy = True
+            break
+        time.sleep(0.25)
+
+    if not healthy:
+        console.print(
+            "[red]Backend did not come up in 30 seconds.[/red] "
+            "Check stderr above for uvicorn errors."
+        )
+        # Ask the server to shut down cleanly so we don't leak the thread.
+        server.should_exit = True
+        raise typer.Exit(code=1)
+
+    target = _pick_target_url()
+    console.print(
+        f"[green]Meridian is running at {base_url} — Ctrl-C to stop.[/green]"
+    )
+    _open(target)
+
+    # Block on the server thread so foreground Ctrl-C reaches uvicorn's
+    # signal handler. join() with no timeout returns when the thread exits
+    # (graceful shutdown) or when the process is killed.
+    try:
+        thread.join()
+    except KeyboardInterrupt:
+        console.print("[yellow]Shutting down...[/yellow]")
+        server.should_exit = True
+        thread.join(timeout=5.0)
+
+
 def _wrap_app(app_obj: typer.Typer) -> typer.Typer:
     """Wrap the Typer app so any uncaught exception is captured to JSONL."""
     original_call = app_obj.__call__

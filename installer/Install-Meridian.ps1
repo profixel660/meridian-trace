@@ -66,6 +66,14 @@ $MERIDIAN_PROJECTS    = "$MERIDIAN_ROOT\projects"
 $MERIDIAN_ENV_FILE    = "$MERIDIAN_ROOT\.env"
 $MERIDIAN_LAUNCHER    = "$MERIDIAN_ROOT\Meridian-Console.ps1"
 $MERIDIAN_LOG         = "$MERIDIAN_ROOT\install.log"
+$MERIDIAN_RUNTIME_DIR = "$MERIDIAN_ROOT\runtime"
+$MERIDIAN_PID_FILE    = "$MERIDIAN_RUNTIME_DIR\backend.pid"
+
+# Backend / GUI wizard endpoints. The post-install step starts uvicorn on
+# this port and opens the user's default browser to the wizard page.
+$MERIDIAN_BACKEND_PORT  = 8000
+$MERIDIAN_HEALTH_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/health"
+$MERIDIAN_WIZARD_URL    = "http://localhost:$MERIDIAN_BACKEND_PORT/setup/welcome"
 
 $GITHUB_OWNER         = "profixel660"
 $GITHUB_REPO          = "meridian-trace"
@@ -154,7 +162,7 @@ function Show-Banner {
     Write-Host "   4. Download and install Meridian itself"                      -ForegroundColor Gray
     Write-Host "   5. Ask you for your Anthropic API key"                        -ForegroundColor Gray
     Write-Host "   6. Put a 'Meridian' shortcut on your Desktop"                 -ForegroundColor Gray
-    Write-Host "   7. Walk you through your first project (meridian init)"      -ForegroundColor Gray
+    Write-Host "   7. Open the Meridian setup wizard in your browser"           -ForegroundColor Gray
     Write-Host ""
     Write-Host " Expected time: 5 to 15 minutes (mostly downloading)."           -ForegroundColor DarkGray
     Write-Host "================================================================" -ForegroundColor Cyan
@@ -380,7 +388,7 @@ function Enable-LongPaths {
 function Ensure-InstallDirs {
     Say-Step "Preparing install folder at $MERIDIAN_ROOT..."
     Say-Why  "We use a short path (C:\Meridian) instead of your Documents folder so deep package paths don't cause errors."
-    foreach ($d in @($MERIDIAN_ROOT, $MERIDIAN_PROJECTS)) {
+    foreach ($d in @($MERIDIAN_ROOT, $MERIDIAN_PROJECTS, $MERIDIAN_RUNTIME_DIR)) {
         if (-not (Test-Path -LiteralPath $d)) {
             New-Item -ItemType Directory -Path $d -Force | Out-Null
             Say-OK "Created $d"
@@ -654,7 +662,8 @@ function Show-Banner {
     Write-Host "                         M E R I D I A N                        " -ForegroundColor White
     Write-Host "================================================================" -ForegroundColor Cyan
     Write-Host " Common commands:"                                                 -ForegroundColor White
-    Write-Host "   meridian init                  -- onboarding wizard"           -ForegroundColor Gray
+    Write-Host "   meridian start                 -- launch backend + open GUI"  -ForegroundColor Gray
+    Write-Host "   meridian init                  -- terminal onboarding wizard" -ForegroundColor Gray
     Write-Host "   meridian status <project>      -- show project state"         -ForegroundColor Gray
     Write-Host "   meridian review-status <proj>  -- review extraction quality"  -ForegroundColor Gray
     Write-Host "   meridian docs                  -- open documentation"         -ForegroundColor Gray
@@ -687,17 +696,15 @@ if (-not (Test-Path -LiteralPath $VenvActivate)) {
 Set-Location -LiteralPath $MeridianRoot
 Show-Banner
 
-# 3. First-run handoff to onboarding wizard.
-if (-not (Test-Path -LiteralPath $OnboardState)) {
-    Write-Host "It looks like this is your first time running Meridian." -ForegroundColor Cyan
-    Write-Host "Starting the onboarding wizard now..." -ForegroundColor Cyan
-    Write-Host ""
-    meridian init
-    Write-Host ""
-    Write-Host "Onboarding finished. You are now at the Meridian prompt." -ForegroundColor Green
-    Write-Host "Type 'meridian --help' to see what else you can do."     -ForegroundColor Gray
-    Write-Host ""
-}
+# 3. Launch the Meridian backend + GUI setup wizard in the browser.
+#    `meridian start` is idempotent: if the backend is already running on
+#    :8000 it just opens the browser; otherwise it starts uvicorn in the
+#    foreground (Ctrl-C to stop). The GUI wizard handles first-run setup;
+#    once complete it routes to the main app.
+Write-Host "Starting Meridian (this opens the GUI in your default browser)..." -ForegroundColor Cyan
+Write-Host "Leave this window open while you use Meridian; press Ctrl-C to stop." -ForegroundColor Gray
+Write-Host ""
+meridian start
 '@
 
     Set-Content -LiteralPath $MERIDIAN_LAUNCHER -Value $launcher -Encoding UTF8
@@ -725,37 +732,120 @@ function New-DesktopShortcut {
 }
 
 # -----------------------------------------------------------------------------
-# 11. Run meridian init
+# 11. Start FastAPI backend + open the GUI setup wizard in the user's browser
 # -----------------------------------------------------------------------------
-function Run-MeridianInit {
-    Say-Step "Starting the Meridian onboarding wizard (meridian init)..."
-    Say-Why  "This walks you through optional two-factor setup, your first project, and importing your first document."
+function Test-BackendHealth {
+    param([string]$Url, [int]$TimeoutMs = 1500)
+    try {
+        $req = [System.Net.HttpWebRequest]::Create($Url)
+        $req.Method            = "GET"
+        $req.Timeout           = $TimeoutMs
+        $req.ReadWriteTimeout  = $TimeoutMs
+        $req.UserAgent         = "Meridian-Installer/1.0 (PowerShell)"
+        $resp = $req.GetResponse()
+        $status = [int]$resp.StatusCode
+        $resp.Close()
+        return ($status -eq 200)
+    } catch {
+        return $false
+    }
+}
 
-    $venvPython = Join-Path $MERIDIAN_VENV "Scripts\python.exe"
+function Start-BackendAndOpenBrowser {
+    Say-Step "Starting the Meridian setup wizard in your browser..."
+    Say-Why  ("Round-17 swaps the terminal-only setup for a guided web wizard. The installer launches " +
+              "the Meridian backend in the background, waits until it answers, then opens your default " +
+              "browser at the welcome page.")
+
+    $venvPython  = Join-Path $MERIDIAN_VENV "Scripts\python.exe"
     $meridianExe = Join-Path $MERIDIAN_VENV "Scripts\meridian.exe"
-    if (-not (Test-Path -LiteralPath $meridianExe)) {
-        Say-Warn "meridian.exe not found at $meridianExe. Skipping init -- run it later from the Desktop shortcut."
+    if (-not (Test-Path -LiteralPath $venvPython)) {
+        Say-Warn "Python interpreter not found at $venvPython -- skipping backend launch. You can start setup later by running 'meridian start' from the Desktop shortcut."
         return
     }
 
-    # Load .env into the current process so meridian sees the key.
+    # Load .env into the current process so the spawned backend sees the API key.
     $envMap = Read-EnvFile -Path $MERIDIAN_ENV_FILE
     foreach ($k in $envMap.Keys) { Set-Item -Path "Env:$k" -Value $envMap[$k] }
 
-    Write-Host ""
-    Write-Host "----------------------------------------------------------------" -ForegroundColor DarkCyan
-    try {
-        & $meridianExe init
-        $rc = $LASTEXITCODE
-    } catch {
-        $rc = -1
-        Say-Warn "meridian init raised an error: $($_.Exception.Message)"
-    }
-    Write-Host "----------------------------------------------------------------" -ForegroundColor DarkCyan
-    if ($rc -eq 0) {
-        Say-OK "Onboarding wizard finished."
+    # If something else already responds on /health, don't double-spawn.
+    if (Test-BackendHealth -Url $MERIDIAN_HEALTH_URL -TimeoutMs 1000) {
+        Say-Info "Backend already responding at $MERIDIAN_HEALTH_URL -- reusing it."
     } else {
-        Say-Warn "meridian init exited with code $rc. You can re-run it any time by double-clicking the Meridian Desktop shortcut."
+        # Ensure the runtime directory exists for the PID file.
+        if (-not (Test-Path -LiteralPath $MERIDIAN_RUNTIME_DIR)) {
+            New-Item -ItemType Directory -Path $MERIDIAN_RUNTIME_DIR -Force | Out-Null
+        }
+
+        Say-Info "Launching the Meridian backend in the background (no console window)..."
+        try {
+            # Detached -- WindowStyle Hidden keeps it off the user's taskbar.
+            # PassThru gives us back the Process object so we can record the PID.
+            $proc = Start-Process `
+                -FilePath $venvPython `
+                -ArgumentList @("-m", "meridian.api.main") `
+                -WindowStyle Hidden `
+                -PassThru `
+                -ErrorAction Stop
+            try {
+                Set-Content -LiteralPath $MERIDIAN_PID_FILE -Value $proc.Id -Encoding ASCII
+                Say-OK "Backend started (PID $($proc.Id)). Recorded to $MERIDIAN_PID_FILE."
+            } catch {
+                Say-Warn "Backend started (PID $($proc.Id)) but could not write the PID file: $($_.Exception.Message)"
+            }
+        } catch {
+            Say-Warn "Could not launch the backend: $($_.Exception.Message). Falling back to terminal setup."
+            Run-CliInitFallback -MeridianExe $meridianExe -Reason "Start-Process raised: $($_.Exception.Message)"
+            return
+        }
+
+        # Poll /health for up to 60 seconds, 250 ms intervals (240 attempts).
+        Say-Info "Waiting for the backend to come up at $MERIDIAN_HEALTH_URL..."
+        $maxAttempts = 240
+        $healthy = $false
+        for ($i = 1; $i -le $maxAttempts; $i++) {
+            if (Test-BackendHealth -Url $MERIDIAN_HEALTH_URL -TimeoutMs 1000) {
+                $healthy = $true
+                Say-OK "Backend is healthy after $([math]::Round($i * 0.25, 1))s."
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+
+        if (-not $healthy) {
+            Say-Warn "Backend did not come up in 60 seconds. Falling back to terminal setup."
+            Run-CliInitFallback -MeridianExe $meridianExe -Reason "Backend health probe at $MERIDIAN_HEALTH_URL never returned 200 within 60s."
+            return
+        }
+    }
+
+    # Open the user's default browser. Start-Process on a URL resolves to the
+    # default-handler app for "http" -- which is the user's chosen browser.
+    Say-Info "Opening $MERIDIAN_WIZARD_URL in your default browser..."
+    try {
+        Start-Process $MERIDIAN_WIZARD_URL -ErrorAction Stop
+        Say-OK "Browser launched."
+    } catch {
+        Say-Warn "Could not open the browser automatically: $($_.Exception.Message). Paste this URL into your browser yourself: $MERIDIAN_WIZARD_URL"
+    }
+}
+
+function Run-CliInitFallback {
+    param([string]$MeridianExe, [string]$Reason)
+    Write-Host ""
+    Write-Host "================================================================" -ForegroundColor Yellow
+    Write-Host " Couldn't start the backend, falling back to terminal setup."     -ForegroundColor Yellow
+    Write-Host "================================================================" -ForegroundColor Yellow
+    Write-Host " Reason: $Reason"                                                 -ForegroundColor Gray
+    Write-Host ""
+    if (-not (Test-Path -LiteralPath $MeridianExe)) {
+        Say-Warn "meridian.exe not found at $MeridianExe -- cannot fall back. Re-run the installer once the backend issue is resolved, or run 'meridian init' manually."
+        return
+    }
+    try {
+        & $MeridianExe init | Out-Null
+    } catch {
+        Say-Warn "meridian init raised an error: $($_.Exception.Message). Run it manually from the Desktop shortcut once you've sorted the underlying issue."
     }
 }
 
@@ -767,13 +857,18 @@ function Show-FinalBanner {
     Write-Host "================================================================" -ForegroundColor Green
     Write-Host "          M E R I D I A N   I S   I N S T A L L E D             " -ForegroundColor White
     Write-Host "================================================================" -ForegroundColor Green
+    Write-Host " Meridian is starting up. Setup will open in your browser."       -ForegroundColor White
+    Write-Host " If a browser doesn't open in a few seconds, paste this address"  -ForegroundColor Gray
+    Write-Host " into one:"                                                       -ForegroundColor Gray
+    Write-Host "     $MERIDIAN_WIZARD_URL"                                        -ForegroundColor Cyan
+    Write-Host ""
     Write-Host " Installed at:    $MERIDIAN_ROOT"                                  -ForegroundColor Gray
     Write-Host " Your projects:   $MERIDIAN_PROJECTS"                              -ForegroundColor Gray
     Write-Host " Setup log:       $MERIDIAN_LOG"                                   -ForegroundColor Gray
     Write-Host ""
-    Write-Host " To start Meridian:"                                               -ForegroundColor White
+    Write-Host " To re-launch Meridian later:"                                    -ForegroundColor White
     Write-Host "   * Double-click 'Meridian' on your Desktop, OR"                 -ForegroundColor Gray
-    Write-Host "   * Open PowerShell and type 'meridian'"                         -ForegroundColor Gray
+    Write-Host "   * Open PowerShell and run 'meridian start'"                    -ForegroundColor Gray
     Write-Host ""
     Write-Host " Documentation:   $DOCS_URL"                                       -ForegroundColor Gray
     Write-Host "================================================================" -ForegroundColor Green
@@ -797,7 +892,7 @@ try {
     Prompt-ApiKey
     Write-ConsoleLauncher
     New-DesktopShortcut
-    Run-MeridianInit
+    Start-BackendAndOpenBrowser
     Show-FinalBanner
     Write-Log "Installer finished successfully." "DONE"
     Write-Host "Press Enter to close this window..." -ForegroundColor DarkGray

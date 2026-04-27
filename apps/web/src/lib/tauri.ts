@@ -35,6 +35,12 @@ export function isInTauri(): boolean {
  * cancels. In browser fallback mode the absolute path is unavailable
  * (security restriction); we return `null` so the wizard surfaces the
  * "browser mode can't pick real folders — open the desktop app" guidance.
+ *
+ * For the alpha-2 folder-pick flow, callers that want to gracefully fall
+ * back to a typed-path prompt should use `pickFolderWithFallback` (below)
+ * — it returns the directory NAME from the browser picker so the page
+ * can prefill a follow-up "type the absolute path" input with a sensible
+ * default rather than asking blind.
  */
 export async function pickFolder(opts?: {
   defaultPath?: string;
@@ -84,6 +90,72 @@ export async function pickFolder(opts?: {
     input.oncancel = () => {
       document.body.removeChild(input);
       resolve(null);
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+/**
+ * Outcome of a folder-pick attempt that gracefully degrades when running
+ * outside Tauri.
+ *
+ *   { kind: "native",  path }      — Tauri picker returned an absolute path
+ *   { kind: "browser", folderName} — webkitdirectory returned a folder name
+ *                                    (no absolute path); caller should
+ *                                    prompt the user to type or paste it
+ *   { kind: "cancelled" }          — user dismissed the dialog
+ */
+export type PickFolderResult =
+  | { kind: "native"; path: string }
+  | { kind: "browser"; folderName: string | null }
+  | { kind: "cancelled" };
+
+/**
+ * Folder picker with a browser-friendly fallback.
+ *
+ * In Tauri: returns `{ kind: "native", path }` with the absolute path.
+ * In a browser: opens `<input webkitdirectory>` and returns
+ * `{ kind: "browser", folderName }` with the picked folder's NAME (derived
+ * from `File.webkitRelativePath`'s first path segment) so the calling
+ * page can prompt the user to type or paste the absolute path with a
+ * sensible default already filled in.
+ */
+export async function pickFolderWithFallback(opts?: {
+  defaultPath?: string;
+  title?: string;
+}): Promise<PickFolderResult> {
+  if (isInTauri()) {
+    const path = await pickFolder(opts);
+    if (path) return { kind: "native", path };
+    return { kind: "cancelled" };
+  }
+  // Browser path — show webkitdirectory and harvest the folder name only.
+  return new Promise((resolve) => {
+    if (typeof document === "undefined") {
+      resolve({ kind: "cancelled" });
+      return;
+    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+    input.style.display = "none";
+    input.onchange = () => {
+      const files = input.files;
+      let folderName: string | null = null;
+      if (files && files.length > 0) {
+        const first = files[0] as File & { webkitRelativePath?: string };
+        const rel = first.webkitRelativePath ?? "";
+        const segs = rel.split("/").filter(Boolean);
+        folderName = segs[0] ?? null;
+      }
+      document.body.removeChild(input);
+      resolve({ kind: "browser", folderName });
+    };
+    input.oncancel = () => {
+      document.body.removeChild(input);
+      resolve({ kind: "cancelled" });
     };
     document.body.appendChild(input);
     input.click();
