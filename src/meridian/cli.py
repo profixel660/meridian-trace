@@ -46,10 +46,36 @@ from meridian.projects import (
 
 _log = get_logger("meridian.cli")
 
+_DOCS_BASE_URL = "https://github.com/profixel660/meridian-trace/tree/main/docs"
+_RELEASES_URL = "https://github.com/profixel660/meridian-trace/releases"
+
+# Maps `meridian docs <topic>` shortcuts to the on-repo file path.
+# Keep in sync with the actual file names under docs/.
+_DOCS_TOPICS: dict[str, str] = {
+    "readme": "README.md",
+    "getting-started": "getting-started.md",
+    "install": "INSTALL.md",
+    "concepts": "concepts.md",
+    "cli": "cli-reference.md",
+    "cli-reference": "cli-reference.md",
+    "troubleshooting": "troubleshooting.md",
+    "security": "security.md",
+    "architecture": "architecture.md",
+    "release-notes": "release-notes.md",
+    "releases": "release-notes.md",
+    "decisions": "DECISIONS.md",
+    "concurrency": "concurrency-analysis.md",
+}
+
 app = typer.Typer(
     name="meridian",
     help="Meridian — extract per-trade deliverables from project documents.",
     no_args_is_help=True,
+    epilog=(
+        f"Docs: {_DOCS_BASE_URL}  ·  Releases: {_RELEASES_URL}  ·  "
+        "`meridian docs` opens the docs in your browser; "
+        "`meridian docs <topic>` jumps to a specific page."
+    ),
 )
 console = Console()
 
@@ -1969,6 +1995,87 @@ app.add_typer(backup_app, name="backup")
 
 
 # Round-10 also bumped the schema (v2 → v3, adds cross_reference_sweep_*).
+# ────────────────────────────────────────────────────────────────────────────
+# Docs convenience — a one-shot URL opener so newcomers don't have to
+# remember the GitHub URL. Pure stdlib (webbrowser); offline-safe (just
+# prints the URL + lists topics if the open call fails).
+# ────────────────────────────────────────────────────────────────────────────
+
+
+@app.command("docs")
+def docs(
+    topic: Annotated[
+        str | None,
+        typer.Argument(
+            help=(
+                "Optional topic shortcut: getting-started, install, concepts, "
+                "cli, troubleshooting, security, architecture, release-notes, "
+                "decisions. Omit to open the docs index."
+            ),
+        ),
+    ] = None,
+    list_topics: Annotated[
+        bool,
+        typer.Option(
+            "--list", help="Print available topic shortcuts and exit."
+        ),
+    ] = False,
+    print_only: Annotated[
+        bool,
+        typer.Option(
+            "--print",
+            help="Print the URL without opening a browser (useful in SSH / headless contexts).",
+        ),
+    ] = False,
+) -> None:
+    """Open the Meridian docs in your default browser.
+
+    Examples:
+      meridian docs                          # opens the docs index
+      meridian docs getting-started          # opens the 5-minute quickstart
+      meridian docs troubleshooting          # opens the troubleshooting guide
+      meridian docs --list                   # lists every available topic
+      meridian docs install --print          # prints the URL only
+    """
+    if list_topics:
+        console.print("[bold]Available topics:[/bold]")
+        for shortcut, filename in sorted(_DOCS_TOPICS.items()):
+            console.print(f"  [cyan]{shortcut:18}[/cyan] -> docs/{filename}")
+        console.print(f"\nDocs base URL: [dim]{_DOCS_BASE_URL}[/dim]")
+        return
+
+    if topic is None:
+        url = _DOCS_BASE_URL
+    else:
+        key = topic.strip().lower()
+        if key not in _DOCS_TOPICS:
+            console.print(f"[yellow]Unknown topic: {topic!r}[/yellow]")
+            console.print(
+                "Run [bold]meridian docs --list[/bold] to see available topics, "
+                f"or browse the index at {_DOCS_BASE_URL}"
+            )
+            raise typer.Exit(code=2)
+        url = f"{_DOCS_BASE_URL}/{_DOCS_TOPICS[key]}"
+
+    if print_only:
+        console.print(url)
+        return
+
+    import webbrowser  # noqa: PLC0415
+
+    opened = webbrowser.open(url)
+    if opened:
+        console.print(f"Opening: [cyan]{url}[/cyan]")
+    else:
+        # webbrowser.open returns False on some headless / locked-down hosts
+        # (corporate Windows, SSH sessions). Fall back to printing the URL
+        # so the user can copy/paste it.
+        console.print(
+            f"[yellow]Could not open a browser automatically.[/yellow] "
+            f"Copy this URL: [cyan]{url}[/cyan]"
+        )
+
+
 # Existing project DBs need a one-time migration; new projects get v3 free
 # via create_project. Migration is idempotent (CREATE TABLE IF NOT EXISTS +
 # INSERT OR IGNORE on schema_migrations) so re-running is safe.
