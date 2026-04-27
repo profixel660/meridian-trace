@@ -12,7 +12,45 @@
     WHY. Idempotent: safe to re-run.
 
     Logs to C:\Meridian\install.log.
+
+.PARAMETER SkipNetworkCheck
+    Skip the up-front "can we reach github.com" probe. Useful on corporate
+    networks where the probe is blocked but the actual install operations
+    (which use the system proxy + default credentials) still succeed.
+
+.PARAMETER Verbose
+    Standard PowerShell flag. When set, network failures print the full
+    underlying exception instead of just the friendly summary — useful when
+    debugging proxy or TLS issues.
 #>
+[CmdletBinding()]
+param(
+    [switch]$SkipNetworkCheck
+)
+
+# -----------------------------------------------------------------------------
+# TLS + proxy setup — run before ANY network call.
+#   - Force TLS 1.2 (older Windows defaults to TLS 1.0/1.1 which GitHub rejects).
+#   - Tell .NET WebRequest + Invoke-* cmdlets to use the system's default proxy
+#     with the current user's credentials. On non-corporate machines the
+#     default proxy is a no-op; on corporate machines this is what makes
+#     subsequent downloads succeed.
+# -----------------------------------------------------------------------------
+try {
+    [System.Net.ServicePointManager]::SecurityProtocol =
+        [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+} catch {
+    # If even setting the protocol fails, surface it later in the probe.
+}
+try {
+    $defaultProxy = [System.Net.WebRequest]::GetSystemWebProxy()
+    if ($defaultProxy) {
+        $defaultProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+        [System.Net.WebRequest]::DefaultWebProxy = $defaultProxy
+    }
+} catch {
+    # Same — non-fatal here; the probe will surface details if it matters.
+}
 
 # -----------------------------------------------------------------------------
 # Constants — bump when a new Python 3.12 patch is released.
@@ -147,6 +185,10 @@ function Ensure-Admin {
             "-ExecutionPolicy", "Bypass",
             "-File", "`"$scriptPath`""
         )
+        # Propagate user-supplied flags through the UAC re-launch so the
+        # elevated session sees the same options the user chose.
+        if ($SkipNetworkCheck) { $argList += "-SkipNetworkCheck" }
+        if ($VerbosePreference -eq "Continue") { $argList += "-Verbose" }
         Start-Process -FilePath "powershell.exe" -ArgumentList $argList -Verb RunAs -ErrorAction Stop
         Say-OK "Re-launched with Administrator rights. This window will now close."
         Start-Sleep -Seconds 2
@@ -163,17 +205,64 @@ function Ensure-Admin {
 function Test-Internet {
     Say-Step "Checking internet connection..."
     Say-Why  "Meridian setup needs internet to download Python and the Meridian package."
-    try {
-        $req = [System.Net.WebRequest]::Create("https://api.github.com")
-        $req.Method  = "HEAD"
-        $req.Timeout = 8000
-        $resp = $req.GetResponse()
-        $resp.Close()
-        Say-OK "Internet looks good."
-    } catch {
-        Stop-WithError -Message "Cannot reach https://api.github.com -- you appear to be offline or behind a firewall." -ExitCode 4 `
-            -NextStep "Connect to the internet and run this installer again. If you are on a corporate network, ask IT to allow access to github.com and python.org."
+
+    if ($SkipNetworkCheck) {
+        Say-Warn "Skipping the up-front network check (-SkipNetworkCheck flag). If a download fails later, the underlying error will be shown."
+        return
     }
+
+    # Try several endpoints in order. The probe passes if ANY one succeeds —
+    # corporate networks sometimes block the GitHub API specifically while
+    # allowing the assets host, or vice versa.
+    $probeTargets = @(
+        "https://api.github.com",
+        "https://github.com",
+        "https://www.python.org"
+    )
+
+    $lastException = $null
+    foreach ($url in $probeTargets) {
+        try {
+            $req = [System.Net.HttpWebRequest]::Create($url)
+            $req.Method            = "HEAD"
+            $req.Timeout           = 15000
+            $req.ReadWriteTimeout  = 15000
+            $req.UserAgent         = "Meridian-Installer/1.0 (PowerShell)"
+            # Inherit the global proxy + credentials we configured at script-top.
+            $req.Proxy             = [System.Net.WebRequest]::DefaultWebProxy
+            if ($req.Proxy) { $req.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials }
+
+            $resp = $req.GetResponse()
+            $status = [int]$resp.StatusCode
+            $resp.Close()
+
+            Say-OK "Reached $url (HTTP $status)."
+            return
+        } catch {
+            $lastException = $_
+            Say-Info "Could not reach $url -- $($_.Exception.Message)"
+            continue
+        }
+    }
+
+    # All probes failed. Surface the actual exception details — these are
+    # the only signal that distinguishes a TLS pin / proxy / DNS / firewall
+    # block. Without this, support gets blind reports of "didn't work".
+    $detail = ""
+    if ($lastException) {
+        $ex = $lastException.Exception
+        $detail = "$($ex.GetType().Name): $($ex.Message)"
+        if ($ex.InnerException) {
+            $detail += " (inner: $($ex.InnerException.GetType().Name): $($ex.InnerException.Message))"
+        }
+    }
+
+    Stop-WithError -Message "Could not reach any of github.com / api.github.com / python.org. $detail" -ExitCode 4 `
+        -NextStep ("Most-common causes:`n" +
+                   "  - Corporate proxy needs auth or blocks api.github.com -- ask IT to whitelist github.com and www.python.org.`n" +
+                   "  - Older Windows defaults to TLS 1.0/1.1 (we already set TLS 1.2; if this still failed, your machine may have TLS 1.2 disabled).`n" +
+                   "  - You can re-run the installer with the -SkipNetworkCheck flag to bypass this probe and let the actual download attempts surface their own errors:`n" +
+                   "      powershell -ExecutionPolicy Bypass -File Install-Meridian.ps1 -SkipNetworkCheck")
 }
 
 # -----------------------------------------------------------------------------

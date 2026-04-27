@@ -1,6 +1,6 @@
 [project]
 name = "meridian"
-version = "0.1.1"
+version = "0.1.2"
 description = "Meridian — per-trade deliverables register from heterogeneous construction project documents."
 readme = "CONTEXT.md"
 requires-python = ">=3.12"
