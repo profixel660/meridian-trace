@@ -92,6 +92,35 @@ def create_project(
         conn.close()
 
 
+def adopt_project(
+    *,
+    old_db_path: Path,
+    new_db_path: Path,
+    new_name: str,
+) -> None:
+    """Move ``old_db_path`` to ``new_db_path`` and rewrite the ``project.name``
+    row inside the SQLite file to ``new_name``.
+
+    Used by the wizard when the user picks a projects_dir / name DIFFERENT
+    from the slug used during folder-import. Avoids minting a fresh empty
+    DB and stranding imported sources in the staging file.
+
+    Raises FileExistsError if ``new_db_path`` already exists.
+    """
+    if new_db_path.exists():
+        raise FileExistsError(f"adopt target already exists: {new_db_path}")
+    new_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    import shutil  # noqa: PLC0415 — local; rare path
+    shutil.move(str(old_db_path), str(new_db_path))
+
+    # Update the in-DB project.name. Use a short-lived connection so we don't
+    # leave WAL/SHM files lingering.
+    with sqlite3.connect(new_db_path) as conn:
+        conn.execute("UPDATE project SET name = ?", (new_name,))
+        conn.commit()
+
+
 def open_project(name: str) -> sqlite3.Connection:
     """Open an existing project's SQLite file. Returns a connection."""
     db_path = project_db_path(name)
@@ -510,6 +539,7 @@ __all__ = [
     "ProjectBusy",
     "ProjectLock",
     "acquire_project_lock",
+    "adopt_project",
     "create_project",
     "get_air_gapped",
     "get_project_routing",
