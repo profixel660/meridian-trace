@@ -107,7 +107,8 @@ class ProjectCoverage(BaseModel):
     last_llm_call_at: str | None
     last_review_action_at: str | None
 
-    is_baseline_trustworthy: bool
+    is_data_present: bool
+    is_baseline_trustworthy: bool | None
     baseline_trust_blockers: list[str]
 
 
@@ -381,38 +382,50 @@ def project_coverage(conn: sqlite3.Connection) -> ProjectCoverage:
     ]
     last_review_action_at = _max_str(last_review_candidates)
 
-    blockers: list[str] = []
-    if status.quarantined:
-        blockers.append(
-            f"{status.quarantined} quarantined deliverables awaiting review"
-        )
-    if audit.pending:
-        blockers.append(f"{audit.pending} audit rows awaiting promote/reject")
-    if questions.pending:
-        blockers.append(f"{questions.pending} pending HITL questions")
-    if conflicts.pending:
-        blockers.append(f"{conflicts.pending} pending conflicts")
-    if taxonomy.pending_proposals:
-        blockers.append(
-            f"{taxonomy.pending_proposals} pending taxonomy proposals"
-        )
-    if provenance.fully_provenanced_pct < 100.0:
-        missing = provenance.total_deliverables - provenance.fully_provenanced
-        blockers.append(
-            f"{missing} deliverables missing full provenance "
-            f"({provenance.fully_provenanced_pct}% complete)"
-        )
-    if cost.cost_pct_known < 95.0:
-        blockers.append(
-            f"only {cost.cost_pct_known}% of LLM calls have known cost "
-            f"({cost.calls_with_null_cost} of {cost.total_calls} unpriced)"
-        )
+    # Aggregate "any data exists" signal across sources, deliverables, and LLM
+    # calls. Empty projects (no opinion yet) get is_data_present=False,
+    # is_baseline_trustworthy=None, and an empty blocker list — instead of the
+    # nonsense "0% complete" messaging that previously fired the dashboard
+    # NEEDS REVIEW banner on a project that just needs documents added.
+    total_data_signals = sources_imported + status.total + cost.total_calls
+    is_data_present = total_data_signals > 0
 
-    is_baseline_trustworthy = (
-        pending_decisions == 0
-        and provenance.fully_provenanced_pct == 100.0
-        and cost.cost_pct_known >= 95.0
-    )
+    if not is_data_present:
+        is_baseline_trustworthy: bool | None = None
+        blockers: list[str] = []
+    else:
+        blockers = []
+        if status.quarantined:
+            blockers.append(
+                f"{status.quarantined} quarantined deliverables awaiting review"
+            )
+        if audit.pending:
+            blockers.append(f"{audit.pending} audit rows awaiting promote/reject")
+        if questions.pending:
+            blockers.append(f"{questions.pending} pending HITL questions")
+        if conflicts.pending:
+            blockers.append(f"{conflicts.pending} pending conflicts")
+        if taxonomy.pending_proposals:
+            blockers.append(
+                f"{taxonomy.pending_proposals} pending taxonomy proposals"
+            )
+        if provenance.fully_provenanced_pct < 100.0:
+            missing = provenance.total_deliverables - provenance.fully_provenanced
+            blockers.append(
+                f"{missing} deliverables missing full provenance "
+                f"({provenance.fully_provenanced_pct}% complete)"
+            )
+        if cost.cost_pct_known < 95.0:
+            blockers.append(
+                f"only {cost.cost_pct_known}% of LLM calls have known cost "
+                f"({cost.calls_with_null_cost} of {cost.total_calls} unpriced)"
+            )
+
+        is_baseline_trustworthy = (
+            pending_decisions == 0
+            and provenance.fully_provenanced_pct == 100.0
+            and cost.cost_pct_known >= 95.0
+        )
 
     return ProjectCoverage(
         project_name=project_name,
@@ -434,6 +447,7 @@ def project_coverage(conn: sqlite3.Connection) -> ProjectCoverage:
         last_extraction_at=last_extraction_at,
         last_llm_call_at=last_llm_call_at,
         last_review_action_at=last_review_action_at,
+        is_data_present=is_data_present,
         is_baseline_trustworthy=is_baseline_trustworthy,
         baseline_trust_blockers=blockers,
     )
@@ -518,7 +532,9 @@ def render_coverage_text(c: ProjectCoverage) -> str:
         f"Last review action: {c.last_review_action_at or 'never'}"
     )
     lines.append("")
-    if c.is_baseline_trustworthy:
+    if c.is_baseline_trustworthy is None:
+        lines.append("[--] NO DATA YET: add documents to populate coverage.")
+    elif c.is_baseline_trustworthy:
         lines.append(
             "[OK] BASELINE TRUSTWORTHY: 0 pending decisions, full provenance."
         )
