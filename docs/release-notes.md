@@ -4,6 +4,60 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.22
+
+Closes the bod-2 zero-sources bug end-to-end. Alpha-21 shipped a wizard where the user could import 4 PDFs successfully, walk through the rest of setup, and land on a dashboard reading "0 sources". Root cause: wizard state file path was coupled to `settings.projects_dir`, which the projects-creation handler mutates mid-process — orphaning every prior step's progress at the old location AND minting a fresh empty SQLite at the user-chosen location instead of adopting the staging DB.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step. **One-shot legacy state migration on first wizard run after upgrade** — explained below.
+
+### What broke
+
+Walking the wizard with a non-default `projects_dir` choice ended with: 4 imported PDFs stranded at `C:\Meridian\data\projects\<slug>.sqlite`, a fresh empty `<chosen_dir>\<slug>.sqlite`, `/api/setup/complete` returning 400, the frontend swallowing the 400, and a project page showing "0 sources" with a nonsense "NEEDS REVIEW: 0 deliverables missing full provenance (0.0% complete)" amber banner.
+
+Two on-disk `onboarding_state.json` files were the smoking gun — one with the API key and import counters, one with just the new project slug. The wizard had been writing to two different state files without realising it.
+
+### The eight fixes (one comprehensive arc)
+
+1. **`state_path()` decoupled from `projects_dir`.** Wizard JSON state now lives at `%USERPROFILE%\.meridian\onboarding_state.json` (or `MERIDIAN_WIZARD_STATE_DIR` for tests). Survives any mid-process mutation of `settings.data_dir`. **Legacy migration:** on first wizard run after upgrading, an alpha-21 state file at `<projects_dir>/_meridian/onboarding_state.json` is read once, written to the new path, and unlinked. Subsequent loads see only the new path. Defensive try/except handles corrupt legacy JSON.
+
+2. **`adopt_project(old_db_path, new_db_path, new_name)` helper.** New low-level primitive in `meridian.projects` that performs WAL checkpoint + journal_mode=DELETE on the source (so no orphaned `-wal`/`-shm` sidecars), `shutil.move`s the file, then rewrites the in-DB `project.name` row inside a `contextlib.closing` block. Best-effort rollback if the post-move UPDATE fails (logs `projects.adopt.rollback_failed` if rollback itself fails). Refuses to overwrite a pre-existing target file.
+
+3. **Wizard `/api/setup/projects` adopts the staging DB.** Previously minted a fresh empty SQLite at the user's chosen `projects_dir`, stranding any imported documents at the staging location. Now dispatches three branches: no staging → original `create_project` fresh; staging at the same path AND same slug → in-place name UPDATE; otherwise → `adopt_project` (file move + name rewrite). New 409 error code `import_in_progress` blocks the projects step if a folder-import job is still writing to the staging DB. New 409 error code `staging_db_locked` for adopt_project failures that the user can recover from.
+
+4. **`/api/setup/projects/suggest-name` excludes the wizard's own staging.** Previously bumped "bod" → "bod-2" because the staging file at `bod.sqlite` existed, silently changing the user's typed name. Now the staging file is excluded from the collision check (via the `_jobs` registry). Real pre-existing projects (created out-of-band) still cause the suffix bump.
+
+5. **Coverage endpoint distinguishes "no data" from "untrustworthy".** New `is_data_present: bool` field on `/api/projects/<slug>/coverage`. `is_baseline_trustworthy` widened from `bool` to `bool | None` — `None` when `is_data_present` is false (no opinion yet). `baseline_trust_blockers` is `[]` on empty projects. CLI renderer adds `[EMPTY] NO DATA YET:` branch.
+
+6. **Ready page surfaces `/api/setup/complete` 400.** Previously called `setupApi.complete().catch(() => {})` — fire-and-forget. The user saw "Setup complete ✓" and an active "Open project" button even when gates failed. Now: 400 responses with `error: "setup_incomplete"` render a red error panel with the backend's `next_step` hint and a "Continue: <step>" CTA. The Open Project button is disabled. Generic non-2xx responses (network error, 500) render a "Try again" button that retries `complete()` via a nonce-bumped `useEffect`. `aria-describedby` plumbed for screen readers.
+
+7. **Dashboard suppresses `BaselineBanner` on empty projects + adds an empty-state CTA.** The amber banner previously fired on zero-data projects. Now early-returns `null` when `is_data_present === false`. A new welcome panel renders an "Add documents" CTA jumping straight to `/setup/first-documents` and a "What does Meridian do?" link to the glossary. The sources page replaces the bare "No sources imported" string with a styled empty-state via the existing `EmptyState` component (extended with optional `ctaHref` / `ctaLabel` props).
+
+8. **First-project page surfaces the bumped-suffix hint.** When `suggest-name` returns `is_available: false`, an inline amber `<p role="status">` appears beneath the name input: `A project with the name "X" already exists. We suggested "X-2" — feel free to change it.` User can edit the suggestion or accept it knowingly. Now narrowly applicable (Task 4 above means the wizard's own staging no longer triggers it), but if there IS a real prior project at the same slug the user sees what changed.
+
+### Tests + gauntlet
+
+172 e2e passing (was 158 at start of cycle). 14 new alpha-22-specific tests across 5 new test files (`test_alpha22_*`), plus extensions to `test_wizard_api.py`. Frontend `npm run build` clean. Gauntlet 14 steps green on the 0.2.0a22 wheel.
+
+### Edge cases worth knowing about
+
+- **Process restart between import and projects-POST:** the in-process `_jobs` registry is empty on the new process, so the staging-detection bypass for the early-409 doesn't fire. The user gets `slug_exists` (409) for their imported staging. Recovery: delete `<old_projects_dir>/<staging_slug>.sqlite` and re-import. Low-probability path; not addressed in alpha-22.
+- **Two parallel projects-POSTs:** not guarded. Wizard UI is single-user single-tab so this is academic.
+- **Reentrant `setup_import_folder` against a pre-existing real project DB:** silently clobbers `project.name` via the case-2 in-place UPDATE. Requires deliberately driving the wizard at an unrelated existing slug. No SME workflow does this. Hardening tracked for alpha-23.
+
+### Backward-compatibility note
+
+Coverage endpoint's `is_baseline_trustworthy` is now `bool | null` (was `bool`). Scripts using identity comparisons against `False` (`body["is_baseline_trustworthy"] is False`) will silently see different behaviour on empty projects — switch to truthy checks (`if body["is_baseline_trustworthy"]:`) or test the new `is_data_present` flag.
+
+### Carry-overs to alpha-23
+
+- Frontend `_jobs` registry has no TTL/cap (grows for the backend's process lifetime — small in practice but unbounded).
+- T2 `adopt_project` rollback path has no automated test (covered manually).
+- Welcome-panel "Add documents" CTA routes back into the wizard (`/setup/first-documents`) rather than a project-scoped sources flow — works (wizard is idempotent + content-hash-deduped) but worth a project-scoped picker eventually.
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+
 ## What's new in v0.2.0-alpha.10
 
 First release shipped under the new pre-ship scrutiny grid. Five real findings from grid-walking alpha-9 (none surfaced by the gauntlet alone): missing backend test, lying TS contract, untestable inline path construction, broken UX for Windows-copied paths, silent observability gap. All five fixed.
