@@ -7,9 +7,12 @@ HTTP API, and the Next.js review dashboard all render.
 Trustworthiness rule (see CONTEXT.md §3, §9, §14):
 
     is_baseline_trustworthy
-      ⇔  pending_decisions == 0
-         AND provenance.fully_provenanced_pct == 100.0
-         AND cost.cost_pct_known >= 95.0
+      None  if no data yet (sources_imported + deliverables + LLM calls
+            all 0),
+      True  iff pending_decisions == 0
+               AND provenance.fully_provenanced_pct == 100.0
+               AND cost.cost_pct_known >= 95.0,
+      False otherwise.
 
 The 95% cost-coverage threshold is a soft floor: a handful of pre-pricing
 LLM calls (e.g. quality scans run before the cost catalogue had the model)
@@ -387,6 +390,11 @@ def project_coverage(conn: sqlite3.Connection) -> ProjectCoverage:
     # is_baseline_trustworthy=None, and an empty blocker list — instead of the
     # nonsense "0% complete" messaging that previously fired the dashboard
     # NEEDS REVIEW banner on a project that just needs documents added.
+    #
+    # Three signals suffice: audit / questions / conflicts / taxonomy are
+    # all downstream of deliverables, so a project can't have those without
+    # also having deliverables (or sources). LLM calls are an independent
+    # axis (a debug-only call without sources is rare but possible).
     total_data_signals = sources_imported + status.total + cost.total_calls
     is_data_present = total_data_signals > 0
 
@@ -533,7 +541,7 @@ def render_coverage_text(c: ProjectCoverage) -> str:
     )
     lines.append("")
     if c.is_baseline_trustworthy is None:
-        lines.append("[--] NO DATA YET: add documents to populate coverage.")
+        lines.append("[EMPTY] NO DATA YET: add documents to populate coverage.")
     elif c.is_baseline_trustworthy:
         lines.append(
             "[OK] BASELINE TRUSTWORTHY: 0 pending decisions, full provenance."

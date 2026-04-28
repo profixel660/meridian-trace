@@ -97,3 +97,28 @@ def test_coverage_populated_project_still_reports_trustworthiness(
     # is_baseline_trustworthy is now a bool (not None) — could be true OR false
     # depending on the existing trust-computation logic, but it must NOT be None.
     assert isinstance(body["is_baseline_trustworthy"], bool), body
+
+
+def test_render_coverage_text_empty_state(tmp_path: Path, monkeypatch) -> None:
+    """The CLI renderer must surface the new is_data_present=False
+    branch as 'EMPTY: NO DATA YET' (or similar), NOT fall through to
+    the BLOCKED branch.
+    """
+    from meridian.config import settings
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    from meridian.projects import create_project, project_db_path
+    from meridian.coverage.dashboard import (
+        project_coverage,
+        render_coverage_text,
+    )
+    create_project(name="empty-render-test")
+    db = project_db_path("empty-render-test")
+    import sqlite3
+    with sqlite3.connect(db) as conn:
+        coverage = project_coverage(conn)
+
+    text = render_coverage_text(coverage)
+    assert "NO DATA YET" in text, text
+    # Crucial: must NOT render the BLOCKED branch on an empty project.
+    assert "BASELINE NOT YET TRUSTWORTHY" not in text, text
+    assert "BLOCKED" not in text, text
