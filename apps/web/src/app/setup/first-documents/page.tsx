@@ -16,6 +16,11 @@ import {
   type FolderImportJobStatus,
   type FolderScanResponse,
 } from "@/lib/setupClient";
+import {
+  buildPrefilledPath,
+  looksAbsolute,
+  stripSurroundingQuotes,
+} from "@/lib/setupPaths";
 import { isInTauri, pickFolderWithFallback } from "@/lib/tauri";
 
 /**
@@ -175,8 +180,16 @@ export default function SetupFirstDocumentsPage() {
       .then((d) => {
         if (!cancelled && d?.home_dir) setHomeDir(d.home_dir);
       })
-      .catch(() => {
+      .catch((err) => {
         // 404 / network — frontend falls back to no-pre-fill behaviour.
+        // Alpha-10 grid finding: alpha-9 swallowed silently which left
+        // the operator no way to diagnose why the smart pre-fill wasn't
+        // appearing. console.warn surfaces it in DevTools.
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[setup/first-documents] /setup/defaults failed; smart pre-fill disabled.",
+          err,
+        );
       });
     return () => {
       cancelled = true;
@@ -263,23 +276,12 @@ export default function SetupFirstDocumentsPage() {
         void scanFolder(result.path);
         return;
       }
-      // Browser fallback — pre-fill the manual-path input with the
-      // smartest guess we can construct. Browser webkitdirectory only
-      // exposes the folder NAME (security restriction), so the
-      // alpha-8-and-earlier behaviour of pre-filling with just the
-      // folder name silently sent the backend something like
-      // {"folder_path":"Syd02 document repository"} → folder_not_found
-      // (no drive letter). Alpha-9: prepend <home>\Documents\ if we have
-      // home_dir from /setup/defaults. Correct for ~90% of users; one
-      // edit if the project lives elsewhere.
+      // Browser fallback — pre-fill via the extracted pure helper
+      // (alpha-10: extracted from inline construction so it's
+      // unit-testable and consistent across edge cases like trailing
+      // separators on homeDir, mixed separators, empty folderName).
       const folderName = result.folderName ?? "";
-      let prefilled = folderName;
-      if (folderName && homeDir) {
-        const sep = homeDir.includes("\\") ? "\\" : "/";
-        const documents = `${homeDir}${sep}Documents`;
-        prefilled = `${documents}${sep}${folderName}`;
-      }
-      setManualPath(prefilled);
+      setManualPath(buildPrefilledPath(homeDir, folderName));
       setPhase({ kind: "browser_path_prompt", folderName: result.folderName });
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -293,36 +295,35 @@ export default function SetupFirstDocumentsPage() {
   }, [scanFolder]);
 
   // Alpha-9: client-side path-shape validation. Browser webkitdirectory
-  // only gives us the folder name, so the typed-path input is the only
-  // way to get a real absolute path into the wizard. If the user submits
-  // something that's clearly NOT an absolute path (e.g. just the folder
-  // name), the backend will 400 with folder_not_found — better to refuse
-  // here with a clear inline message than send a doomed request.
+  // only gives us the folder name; the typed-path input is the only
+  // way to get a real absolute path into the wizard. If the user
+  // submits something that's clearly NOT an absolute path (e.g. just
+  // the folder name), the backend will 400 with folder_not_found —
+  // refuse here with a clear inline message instead of sending a
+  // doomed request.
+  //
+  // Alpha-10: helpers extracted to lib/setupPaths.ts and made unit-
+  // testable. submitManualPath now also strips surrounding double-
+  // quotes BEFORE the looksAbsolute check, because Windows 11's
+  // "Copy as path" (Win+Shift+C) wraps copied paths in double quotes
+  // — alpha-9 users who pasted a copied-from-Explorer path saw a
+  // confusing "doesn't look like a full path" error.
   const [pathError, setPathError] = useState<string | null>(null);
-  const looksAbsolute = (p: string): boolean => {
-    // Windows drive-letter path: "C:\..." or "C:/..."
-    if (/^[A-Za-z]:[\\/]/.test(p)) return true;
-    // Windows UNC: "\\server\share\..."
-    if (/^\\\\/.test(p)) return true;
-    // POSIX absolute: "/foo/bar"
-    if (p.startsWith("/")) return true;
-    return false;
-  };
 
   const submitManualPath = () => {
-    const trimmed = manualPath.trim();
-    if (!trimmed) {
+    const cleaned = stripSurroundingQuotes(manualPath.trim());
+    if (!cleaned) {
       setPathError("Please enter the folder path.");
       return;
     }
-    if (!looksAbsolute(trimmed)) {
+    if (!looksAbsolute(cleaned)) {
       setPathError(
         `That doesn't look like a full path. Add the drive letter (e.g. C:\\Users\\...). Your browser only gave us the folder NAME — not the full path — so we need you to add the prefix.`,
       );
       return;
     }
     setPathError(null);
-    void scanFolder(trimmed);
+    void scanFolder(cleaned);
   };
 
   /* ------------------------------ import flow ----------------------------- */

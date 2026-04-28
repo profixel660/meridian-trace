@@ -4,6 +4,45 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.10
+
+First release shipped under the new pre-ship scrutiny grid. Five real findings from grid-walking alpha-9 (none surfaced by the gauntlet alone): missing backend test, lying TS contract, untestable inline path construction, broken UX for Windows-copied paths, silent observability gap. All five fixed.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### Findings + fixes
+
+1. **Backend `/setup/defaults` had zero test coverage** for the new `home_dir` field added in alpha-9 — a regression could ship invisible. Alpha-10 adds `test_setup_defaults_returns_real_paths` asserting both fields are present, non-empty, and contain no placeholder tokens (catches the alpha-5 422 class).
+
+2. **TS contract was lying about runtime.** `SetupDefaults.home_dir: string` declared the field as required, but the frontend code accessed it via `d?.home_dir` (optional). An alpha-9 frontend talking to an alpha-8 backend would see the field absent and the type would be wrong. Alpha-10 marks the field optional in the TS interface — type contract now matches reality.
+
+3. **`buildPrefilledPath` and `looksAbsolute` extracted to `lib/setupPaths.ts`** as pure functions. Inline construction in `handlePickFolder` couldn't be unit-tested and had subtle edge cases (trailing separator on `homeDir` doubled the slash, empty `folderName` produced `<home>\Documents\` which then passed `looksAbsolute` and triggered a folder-not-found scan of Documents itself). Pure functions let us cover those edge cases when frontend test infra lands. `buildPrefilledPath` now also trims trailing separators from `homeDir`.
+
+4. **Surrounding double-quotes are now stripped before path validation.** Windows 11's `Win+Shift+C` ("Copy as path") wraps the copied path in `"…"`. Alpha-9 users who pasted that into the typed-path input got "doesn't look like a full path" because position 0 was `"` not a letter. Alpha-10 strips outer quotes in `submitManualPath` before calling `looksAbsolute`. Mid-path quoted segments (rare but valid in NTFS) survive.
+
+5. **`setupApi.defaults()` failure now logs to the console.** Alpha-9 swallowed the error silently (`.catch(() => {})`), leaving the operator no way to know why the smart pre-fill wasn't appearing. Alpha-10 calls `console.warn` with the underlying error so DevTools surfaces it. User-facing behaviour unchanged (still falls back to no-pre-fill).
+
+### Process change shipped alongside
+
+A pre-ship scrutiny grid is now applied to every commit going forward (saved as user-feedback memory). For each change: enumerate failure modes per concrete input/dependency, audit cross-stack contract, check backward-compat, define UX failure mode, verify observability, and check test rigour with the "could this test pass while production is broken?" question. Tier the rigor by reversibility (Reversible / Scoped / Systemic). Filled grid goes in the commit message body so the audit trail is durable.
+
+The grid surfaced the five alpha-10 findings in 15 minutes — none of which would have been caught by "tests pass + gauntlet green". Worth doing BEFORE shipping each alpha going forward.
+
+### Tests + gauntlet
+
+105 e2e passing in ~13s (was 104 + 1 new). Release gauntlet 9 steps — `[ ALL ] PASSED`.
+
+### Deferred
+
+* **Frontend unit test infra (vitest).** The pure helpers in `lib/setupPaths.ts` are now extractable and ready to test, but adding vitest is a systemic change that warrants its own grid pass. Tracked as alpha-11 candidate.
+
+### Carry-overs from alpha-9
+
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX — and is the proper fix for the entire browser-path-restriction class.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+
 ## What's new in v0.2.0-alpha.9
 
 The folder-pick browser-fallback wasted users' time: pre-fill was just the folder name, no warning that the path needed extending, and the wizard sent the malformed payload to the backend which 400'd. Alpha-9 makes the typed-path step actually usable.

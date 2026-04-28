@@ -801,6 +801,44 @@ def test_setup_suggest_name_nonexistent_folder_returns_400(
 
 
 # --------------------------------------------------------------------------
+# /setup/defaults (alpha-9 / alpha-10 grid audit)
+#
+# Returns the OS-resolved defaults the frontend uses to pre-fill form
+# fields. Both fields are required Pydantic strings. Alpha-9 added
+# home_dir; alpha-10 adds this regression test (audit found the new
+# field had zero coverage — a regression could ship invisible).
+# --------------------------------------------------------------------------
+
+
+def test_setup_defaults_returns_real_paths(fastapi_client: TestClient) -> None:
+    """``/setup/defaults`` returns server-resolved real paths (no
+    placeholder tokens like ``<you>``) for both ``projects_dir`` and
+    ``home_dir``. Both fields must be non-empty strings — the frontend
+    submits them verbatim into form inputs / pre-fill construction; a
+    placeholder reaching the user re-introduces the alpha-5 422 bug
+    class.
+    """
+    response = fastapi_client.get("/setup/defaults")
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    # Both fields present and non-empty (Pydantic min_length=1 enforces
+    # this server-side; assert here to catch a future "made it optional"
+    # regression that would silently break the smart pre-fill).
+    assert "projects_dir" in body, body
+    assert "home_dir" in body, body
+    assert isinstance(body["projects_dir"], str) and body["projects_dir"], body
+    assert isinstance(body["home_dir"], str) and body["home_dir"], body
+
+    # No placeholder tokens — these strings go straight into form
+    # defaults; <you> shaped values were the alpha-5 422 root cause.
+    for v in (body["projects_dir"], body["home_dir"]):
+        assert "<" not in v and ">" not in v, (
+            f"placeholder-shaped token in defaults response: {v!r}"
+        )
+
+
+# --------------------------------------------------------------------------
 # StaticFiles mount (round-18 / Stream A)
 #
 # The mount is registered at module import time inside meridian.api.main, so

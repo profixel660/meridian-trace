@@ -455,7 +455,14 @@ export interface FolderImportJobStatus {
  */
 export interface SetupDefaults {
   projects_dir: string;
-  home_dir: string;
+  /**
+   * Optional in the TS contract even though alpha-9+ backends always
+   * include it: a frontend bundle running against an alpha-8-or-earlier
+   * backend will see this field absent. Marking optional keeps the TS
+   * type honest about runtime reality. Frontend code uses `d?.home_dir`
+   * and falls back to no smart-pre-fill when missing.
+   */
+  home_dir?: string;
 }
 
 /**
