@@ -96,12 +96,14 @@ export default function SourcesPage() {
           body={
             <>
               Source documents are PDFs, drawings, and Excel files that the
-              project pulls deliverables from. Import via the FastAPI{" "}
-              <code>POST /projects/{name}/sources</code> endpoint or the
-              upcoming Onboarding flow.
+              project pulls deliverables from. Use the setup wizard to import
+              a folder of documents, or add files individually.
             </>
           }
+          ctaHref="/setup/first-documents"
+          ctaLabel="Add documents"
           learnMoreHref="/glossary#provenance"
+          learnMoreLabel="What is a source document?"
         />
       ) : (
         <ul className="space-y-3">

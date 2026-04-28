@@ -293,7 +293,8 @@ export interface ProjectCoverage {
   last_extraction_at: string | null;
   last_llm_call_at: string | null;
   last_review_action_at: string | null;
-  is_baseline_trustworthy: boolean;
+  is_data_present: boolean;
+  is_baseline_trustworthy: boolean | null;
   baseline_trust_blockers: string[];
 }
 

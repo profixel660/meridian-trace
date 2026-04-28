@@ -94,6 +94,32 @@ function DashboardBody({
     <div className="space-y-8">
       <BaselineBanner coverage={coverage} />
 
+      {!coverage.is_data_present ? (
+        <section className="rounded-lg border border-accent/40 bg-accent/5 p-6">
+          <h2 className="text-lg font-semibold text-text-primary">
+            Welcome to your project
+          </h2>
+          <p className="mt-2 text-sm text-text-muted">
+            No sources imported yet. Add some documents to get started —
+            Meridian will extract requirements and group them by trade.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              href={`/projects/${encodeURIComponent(projectName)}/sources`}
+              className="rounded-full bg-accent px-5 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              Add documents →
+            </Link>
+            <Link
+              href="/glossary"
+              className="rounded-full border border-border px-5 py-2 text-sm text-text-primary hover:border-accent"
+            >
+              What does Meridian do?
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Sources"
@@ -164,6 +190,11 @@ function DashboardBody({
 }
 
 function BaselineBanner({ coverage }: { coverage: ProjectCoverage }) {
+  if (!coverage.is_data_present) {
+    // No documents yet — no opinion on trustworthiness. Suppress the banner
+    // entirely; the welcome panel below handles the empty-project UX.
+    return null;
+  }
   if (coverage.is_baseline_trustworthy) {
     return (
       <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4 text-sm text-emerald-200">

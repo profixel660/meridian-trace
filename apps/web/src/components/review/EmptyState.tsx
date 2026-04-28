@@ -10,6 +10,9 @@ interface EmptyStateProps {
   /** Optional glossary link for the term that defines this queue. */
   learnMoreHref?: string;
   learnMoreLabel?: string;
+  /** Optional primary CTA rendered as an accent button above the learn-more link. */
+  ctaHref?: string;
+  ctaLabel?: string;
 }
 
 /**
@@ -22,6 +25,8 @@ export function EmptyState({
   body,
   learnMoreHref,
   learnMoreLabel = "What is this queue?",
+  ctaHref,
+  ctaLabel = "Add documents",
 }: EmptyStateProps) {
   return (
     <div className="rounded-lg border border-dashed border-border bg-surface-elevated p-8 text-center">
@@ -29,6 +34,14 @@ export function EmptyState({
       <div className="mx-auto mt-2 max-w-prose text-sm leading-relaxed text-text-muted">
         {body}
       </div>
+      {ctaHref ? (
+        <Link
+          href={ctaHref}
+          className="mt-4 inline-block rounded-full bg-accent px-5 py-2 text-sm font-medium text-white hover:opacity-90"
+        >
+          {ctaLabel} →
+        </Link>
+      ) : null}
       {learnMoreHref ? (
         <Link
           href={learnMoreHref}
