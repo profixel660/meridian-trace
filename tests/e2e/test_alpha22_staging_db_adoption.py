@@ -59,3 +59,40 @@ def test_adopt_project_refuses_to_overwrite(tmp_path: Path, monkeypatch) -> None
 
     with pytest.raises(FileExistsError):
         adopt_project(old_db_path=src, new_db_path=dst, new_name="x")
+
+
+def test_adopt_project_creates_deeply_nested_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """`mkdir(parents=True)` should create multi-level missing parents."""
+    from meridian.config import settings
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "staging")
+    (tmp_path / "staging").mkdir()
+
+    _id, src = create_project(name="src")
+    deeply_nested = tmp_path / "a" / "b" / "c" / "final.sqlite"
+    assert not deeply_nested.parent.exists(), "precondition: deep dirs missing"
+
+    adopt_project(old_db_path=src, new_db_path=deeply_nested, new_name="X")
+
+    assert deeply_nested.exists()
+    assert deeply_nested.parent.is_dir()
+
+
+def test_adopt_project_handles_unicode_name(tmp_path: Path, monkeypatch) -> None:
+    """`new_name` containing Unicode + apostrophes must round-trip
+    via parameter binding (no string interpolation)."""
+    from meridian.config import settings
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "staging")
+    (tmp_path / "staging").mkdir()
+
+    _id, src = create_project(name="src")
+    dst = tmp_path / "final.sqlite"
+    tricky_name = "Café Project · 'quotes' «test»"
+
+    adopt_project(old_db_path=src, new_db_path=dst, new_name=tricky_name)
+
+    with sqlite3.connect(dst) as conn:
+        rows = list(conn.execute("SELECT name FROM project"))
+    assert rows == [(tricky_name,)], rows

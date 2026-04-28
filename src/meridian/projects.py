@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import time
@@ -98,27 +99,72 @@ def adopt_project(
     new_db_path: Path,
     new_name: str,
 ) -> None:
-    """Move ``old_db_path`` to ``new_db_path`` and rewrite the ``project.name``
-    row inside the SQLite file to ``new_name``.
+    """Adopt a SQLite project file into a new path under a new name.
 
-    Used by the wizard when the user picks a projects_dir / name DIFFERENT
-    from the slug used during folder-import. Avoids minting a fresh empty
-    DB and stranding imported sources in the staging file.
+    Moves ``old_db_path`` to ``new_db_path`` and rewrites the
+    ``project.name`` row inside the moved DB to ``new_name``.
 
-    Raises FileExistsError if ``new_db_path`` already exists.
+    Pre-conditions:
+        - ``new_db_path`` must not exist (refuses to overwrite).
+        - ``old_db_path`` must be a closed SQLite file (no live
+          connections from other processes / threads). The helper
+          checkpoints WAL and switches to rollback-journal mode
+          before moving so no ``-wal`` / ``-shm`` sidecars are
+          orphaned.
+
+    Post-conditions:
+        - ``new_db_path`` exists with the moved data and the new
+          ``project.name``.
+        - ``old_db_path`` no longer exists.
+        - On UPDATE failure, a best-effort rollback moves the file
+          back to ``old_db_path`` and the original exception is
+          re-raised. If the rollback itself fails, an error is
+          logged but the original exception still surfaces.
+
+    Raises:
+        FileExistsError: if ``new_db_path`` already exists.
+        OSError: if the move fails (e.g. source file in use on
+            Windows).
+
+    Used by the wizard's ``setup_create_project`` to adopt the
+    import-staging DB into the user's chosen projects_dir + name.
     """
     if new_db_path.exists():
         raise FileExistsError(f"adopt target already exists: {new_db_path}")
     new_db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    import shutil  # noqa: PLC0415 — local; rare path
+    # I2: Checkpoint WAL and switch to rollback-journal mode BEFORE moving so
+    # no -wal / -shm sidecars are orphaned at the staging path and no unflushed
+    # WAL pages are lost. Use contextlib.closing (M3) so the connection is
+    # actually closed, not merely committed, before the file move.
+    with contextlib.closing(sqlite3.connect(old_db_path)) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("PRAGMA journal_mode=DELETE")
+
     shutil.move(str(old_db_path), str(new_db_path))
 
-    # Update the in-DB project.name. Use a short-lived connection so we don't
-    # leave WAL/SHM files lingering.
-    with sqlite3.connect(new_db_path) as conn:
-        conn.execute("UPDATE project SET name = ?", (new_name,))
-        conn.commit()
+    # I3: Wrap the post-move UPDATE in try/except so a failure (disk full,
+    # permission flip, etc.) triggers a best-effort rollback of the file move.
+    # M3: contextlib.closing ensures the connection is actually closed so no
+    # WAL/SHM sidecars linger at new_db_path.
+    try:
+        with contextlib.closing(sqlite3.connect(new_db_path)) as conn:
+            conn.execute("UPDATE project SET name = ?", (new_name,))
+            conn.commit()
+    except Exception:
+        # Best-effort rollback so the user isn't stranded with a moved file
+        # that has the wrong name. If THIS fails, log loudly so the
+        # operator can recover manually.
+        try:
+            shutil.move(str(new_db_path), str(old_db_path))
+        except OSError as rollback_exc:
+            _log.error(
+                "projects.adopt.rollback_failed",
+                old_db_path=str(old_db_path),
+                new_db_path=str(new_db_path),
+                error=f"{type(rollback_exc).__name__}: {rollback_exc}",
+            )
+        raise
 
 
 def open_project(name: str) -> sqlite3.Connection:
