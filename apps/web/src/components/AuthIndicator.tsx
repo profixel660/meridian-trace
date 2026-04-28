@@ -67,14 +67,12 @@ export function AuthIndicator() {
   }
 
   if (!hasToken) {
-    return (
-      <a
-        href="/login"
-        className="rounded border border-border px-2 py-1 text-xs text-text-muted hover:border-accent hover:text-accent"
-      >
-        Sign in
-      </a>
-    );
+    // Alpha-17: hide the "Sign in" affordance entirely while TOTP
+    // enforcement is off. Showing a Sign in link when no route requires
+    // auth confused alpha-15/16 users into thinking they had to enrol.
+    // When auth is re-enabled at v0.3 readiness, restore the original
+    // <a href="/login">Sign in</a> render.
+    return null;
   }
 
   return (

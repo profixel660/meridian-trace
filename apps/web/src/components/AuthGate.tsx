@@ -1,28 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
-
-import { isAuthenticated } from "@/lib/auth";
-import { loginUrlForCurrentPath } from "@/lib/fetcher";
-
 /**
- * Mount-time auth guard for client-side pages that require a session.
+ * Alpha-17: AuthGate is now a no-op.
  *
- * Renders nothing visually — its single job is to check `isAuthenticated()`
- * on the browser and bounce to `/login?from=<current-path>` when the user
- * isn't signed in. Server-side renders fall through with no-op behaviour
- * so the SSR pass can still emit useful HTML for read-only consumers.
+ * Alpha-15 removed all backend ``Depends(require_session)`` gates so no
+ * route returns 401, but this client-side guard kept redirecting to
+ * /login whenever localStorage had no token. Net result: the user
+ * still hit the TOTP login screen even though the product had no
+ * server-side auth. Alpha-17 makes the gate a no-op until TOTP
+ * enforcement is re-enabled at v0.3 readiness.
  *
- * The actual write-action calls are independently auth-gated by the
- * `meridianRequest` 401 interceptor — this gate is a UX nicety so the
- * user sees the login screen *before* they click "Build" / "Accept" and
- * get bounced mid-flow.
+ * The component is preserved (rather than deleted) so the existing
+ * call sites under projects/[name]/page.tsx and setup/ready/page.tsx
+ * keep compiling. Restoring auth = reverting this file.
  */
 export function AuthGate() {
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      window.location.assign(loginUrlForCurrentPath());
-    }
-  }, []);
   return null;
 }
