@@ -26,7 +26,14 @@ import { withAuth } from "./auth";
 // an LAN IP) is exactly the API origin — no CORS, no host-mismatch.
 // Set `NEXT_PUBLIC_MERIDIAN_API` at build time to override (e.g. for a
 // deployment that splits frontend and backend across different hosts).
-const API_BASE = process.env.NEXT_PUBLIC_MERIDIAN_API ?? "";
+// Alpha-20: API endpoints live under /api/. Browser-navigation URLs like
+// /projects/<slug>/quarantine are SPA HTML routes served by FastAPI's
+// StaticFiles fallback; they MUST NOT collide with the JSON API or a
+// browser link click hits the JSON endpoint and renders raw JSON.
+//
+// Override with NEXT_PUBLIC_MERIDIAN_API=https://api.example.com (no
+// trailing slash) when frontend and backend are on separate origins.
+export const API_BASE = process.env.NEXT_PUBLIC_MERIDIAN_API ?? "/api";
 
 export class MeridianApiError extends Error {
   status: number;

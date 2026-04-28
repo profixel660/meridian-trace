@@ -18,7 +18,7 @@ from meridian.projects import create_project
 
 def test_get_projects_empty(fastapi_client: TestClient) -> None:
     """No project files in the projects dir → GET /projects returns []."""
-    response = fastapi_client.get("/projects")
+    response = fastapi_client.get("/api/projects")
     assert response.status_code == 200
     assert response.json() == []
 
@@ -27,7 +27,7 @@ def test_get_project_after_create(fastapi_client: TestClient) -> None:
     """Create a project via projects.py and confirm GET /projects shows it."""
     create_project(name="api-listed-proj", notes=None)
 
-    response = fastapi_client.get("/projects")
+    response = fastapi_client.get("/api/projects")
     assert response.status_code == 200
     rows = response.json()
     names = {r["name"] for r in rows}
@@ -73,7 +73,7 @@ def test_get_tender_trades(
     run_job_over_sources(conn, source_ids=[src_id])
     conn.close()
 
-    response = fastapi_client.get(f"/projects/{name}/tender/trades")
+    response = fastapi_client.get(f"/api/projects/{name}/tender/trades")
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["project"] == name
@@ -167,7 +167,7 @@ def test_taxonomy_pending_includes_llm_fields(
         llm_reasoning="47 chiller-specific paragraphs across 3 docs",
     )
 
-    response = fastapi_client.get(f"/projects/{name}/taxonomy/pending")
+    response = fastapi_client.get(f"/api/projects/{name}/taxonomy/pending")
     assert response.status_code == 200, response.text
     rows = response.json()
     match = next((r for r in rows if r["value"] == "Chiller System"), None)
@@ -199,7 +199,7 @@ def test_taxonomy_pending_handles_legacy_null_fields(
         llm_reasoning=None,
     )
 
-    response = fastapi_client.get(f"/projects/{name}/taxonomy/pending")
+    response = fastapi_client.get(f"/api/projects/{name}/taxonomy/pending")
     assert response.status_code == 200, response.text
     rows = response.json()
     match = next((r for r in rows if r["value"] == "Legacy Value"), None)

@@ -6,6 +6,7 @@ import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import {
+  API_BASE,
   type MasterRow,
   type ProjectCoverage,
 } from "@/lib/api";
@@ -82,9 +83,7 @@ export default function MasterPage() {
       counts={counts}
       actions={
         <a
-          href={`${
-            process.env.NEXT_PUBLIC_MERIDIAN_API ?? ""
-          }/projects/${encodeURIComponent(name)}/export.xlsx`}
+          href={`${API_BASE}/projects/${encodeURIComponent(name)}/export.xlsx`}
           className="rounded-full border border-border px-4 py-2 text-sm text-text-primary hover:border-text-muted"
         >
           Download Excel

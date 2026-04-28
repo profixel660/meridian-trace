@@ -77,7 +77,7 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
@@ -113,6 +113,17 @@ app = FastAPI(
     version=__version__,
     description="Per-trade deliverables register from heterogeneous construction project documents.",
 )
+
+# Alpha-20: every /projects/{name}/<verb> JSON endpoint is registered on
+# this router and mounted under the /api prefix. The bare /projects/<slug>
+# URL space is reserved for the SPA — Next.js static-export HTML served
+# directly by FastAPI's StaticFiles + the SPA-fallback routes for runtime
+# slugs. Prior alphas registered API routes at /projects/{name}/... AND
+# the SPA fallback at /projects/{slug}/{page}/..., which collided: a
+# browser navigation to /projects/bod-2/quarantine matched the JSON API
+# route (registered first) and the user got raw JSON instead of the SPA
+# shell. Splitting at the URL level is the only collision-free fix.
+_projects_api = APIRouter()
 
 
 @app.middleware("http")
@@ -322,7 +333,7 @@ def health() -> dict[str, str]:
 # v1 is single-user desktop; first-time setup needs to create the very first
 # project before the operator has any way to log in. Tighten this in v2 once
 # we have a "first user" flow that can mint a token without an existing project.
-@app.post("/projects", response_model=CreateProjectResponse)
+@_projects_api.post("/projects", response_model=CreateProjectResponse)
 def projects_create(req: CreateProjectRequest) -> CreateProjectResponse:
     try:
         project_id, db_path = create_project(
@@ -336,7 +347,7 @@ def projects_create(req: CreateProjectRequest) -> CreateProjectResponse:
     return CreateProjectResponse(project_id=project_id, db_path=str(db_path))
 
 
-@app.get("/projects", response_model=list[ProjectListItem])
+@_projects_api.get("/projects", response_model=list[ProjectListItem])
 def projects_list() -> list[ProjectListItem]:
     """List every project SQLite file under `settings.projects_dir`.
 
@@ -390,7 +401,7 @@ def projects_list() -> list[ProjectListItem]:
     return items
 
 
-@app.get("/projects/{name}/status")
+@_projects_api.get("/projects/{name}/status")
 def projects_status(name: str) -> dict[str, Any]:
     db_path = _ensure_project(name)
     conn = connect(db_path)
@@ -411,7 +422,7 @@ def projects_status(name: str) -> dict[str, Any]:
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/sources",
     response_model=ImportResponse,
 )
@@ -440,7 +451,7 @@ async def projects_import_source(name: str, file: UploadFile) -> ImportResponse:
         conn.close()
 
 
-@app.get("/projects/{name}/sources", response_model=list[SourceItem])
+@_projects_api.get("/projects/{name}/sources", response_model=list[SourceItem])
 def projects_list_sources(name: str) -> list[SourceItem]:
     """List source documents imported into the project."""
     db_path = _ensure_project(name)
@@ -483,7 +494,7 @@ def projects_list_sources(name: str) -> list[SourceItem]:
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/extract",
     response_model=ExtractResponse,
 )
@@ -536,7 +547,7 @@ def projects_extract(name: str, req: ExtractRequest) -> ExtractResponse:
         conn.close()
 
 
-@app.get("/projects/{name}/quarantine")
+@_projects_api.get("/projects/{name}/quarantine")
 def projects_quarantine(name: str, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
     """List quarantined deliverables awaiting human review (CONTEXT.md §9)."""
     from meridian.review.deliverables import list_quarantined
@@ -549,7 +560,7 @@ def projects_quarantine(name: str, limit: int = 200, offset: int = 0) -> list[di
         conn.close()
 
 
-@app.get("/projects/{name}/master")
+@_projects_api.get("/projects/{name}/master")
 def projects_master(name: str) -> list[dict[str, Any]]:
     db_path = _ensure_project(name)
     conn = connect(db_path)
@@ -596,7 +607,7 @@ def projects_master(name: str) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------
 
 
-@app.get("/projects/{name}/questions", response_model=list[QuestionItem])
+@_projects_api.get("/projects/{name}/questions", response_model=list[QuestionItem])
 def projects_list_questions(
     name: str,
     status: Literal["pending", "resolved", "dismissed", "all"] = Query("pending"),
@@ -642,7 +653,7 @@ def projects_list_questions(
         conn.close()
 
 
-@app.get("/projects/{name}/conflicts", response_model=list[ConflictItem])
+@_projects_api.get("/projects/{name}/conflicts", response_model=list[ConflictItem])
 def projects_list_conflicts(
     name: str,
     status: str = Query("pending"),
@@ -732,7 +743,7 @@ def projects_list_conflicts(
         conn.close()
 
 
-@app.get("/projects/{name}/audit", response_model=list[AuditItem])
+@_projects_api.get("/projects/{name}/audit", response_model=list[AuditItem])
 def projects_list_audit(
     name: str,
     source_id: str | None = Query(None),
@@ -787,7 +798,7 @@ def projects_list_audit(
         conn.close()
 
 
-@app.get("/projects/{name}/jobs/{job_id}", response_model=JobStatusResponse)
+@_projects_api.get("/projects/{name}/jobs/{job_id}", response_model=JobStatusResponse)
 def projects_job_status(name: str, job_id: str) -> JobStatusResponse:
     """Return job state plus per-source progress for an extraction job.
 
@@ -866,7 +877,7 @@ def projects_job_status(name: str, job_id: str) -> JobStatusResponse:
 # --------------------------------------------------------------------------
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/export",
 )
 def projects_export(name: str, output_path: str) -> dict[str, str]:
@@ -885,7 +896,7 @@ def projects_export(name: str, output_path: str) -> dict[str, str]:
         conn.close()
 
 
-@app.get("/projects/{name}/export.xlsx")
+@_projects_api.get("/projects/{name}/export.xlsx")
 def projects_export_stream(name: str) -> FileResponse:
     """Stream the project's master workbook to the client.
 
@@ -1047,7 +1058,7 @@ class _TaxonomyRejectRequest(BaseModel):
     value: str
 
 
-@app.get("/projects/{name}/coverage")
+@_projects_api.get("/projects/{name}/coverage")
 def projects_coverage(name: str) -> dict[str, Any]:
     """Baseline-trustworthiness dashboard (CONTEXT.md §9 + §14)."""
     from meridian.coverage import project_coverage
@@ -1060,7 +1071,7 @@ def projects_coverage(name: str) -> dict[str, Any]:
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/deliverables/{deliverable_id}/accept",
 )
 def deliverable_accept(name: str, deliverable_id: str, req: _AcceptRequest) -> dict[str, Any]:
@@ -1078,7 +1089,7 @@ def deliverable_accept(name: str, deliverable_id: str, req: _AcceptRequest) -> d
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/deliverables/{deliverable_id}/reject",
 )
 def deliverable_reject(name: str, deliverable_id: str, req: _RejectRequest) -> dict[str, Any]:
@@ -1092,7 +1103,7 @@ def deliverable_reject(name: str, deliverable_id: str, req: _RejectRequest) -> d
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/deliverables/{deliverable_id}/edit",
 )
 def deliverable_edit(name: str, deliverable_id: str, req: _EditRequest) -> dict[str, Any]:
@@ -1116,7 +1127,7 @@ def deliverable_edit(name: str, deliverable_id: str, req: _EditRequest) -> dict[
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/audit/{audit_id}/promote",
 )
 def audit_promote(name: str, audit_id: str, req: _PromoteAuditRequest) -> dict[str, Any]:
@@ -1139,7 +1150,7 @@ def audit_promote(name: str, audit_id: str, req: _PromoteAuditRequest) -> dict[s
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/questions/{question_id}/resolve",
 )
 def question_resolve(name: str, question_id: str, req: _QuestionResolveRequest) -> dict[str, Any]:
@@ -1158,7 +1169,7 @@ def question_resolve(name: str, question_id: str, req: _QuestionResolveRequest) 
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/questions/{question_id}/dismiss",
 )
 def question_dismiss(name: str, question_id: str, req: _QuestionDismissRequest) -> dict[str, Any]:
@@ -1172,7 +1183,7 @@ def question_dismiss(name: str, question_id: str, req: _QuestionDismissRequest) 
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/conflicts/{conflict_id}/resolve",
 )
 def conflict_resolve(name: str, conflict_id: str, req: _ConflictResolveRequest) -> dict[str, Any]:
@@ -1196,7 +1207,7 @@ def conflict_resolve(name: str, conflict_id: str, req: _ConflictResolveRequest) 
         conn.close()
 
 
-@app.get(
+@_projects_api.get(
     "/projects/{name}/taxonomy/pending",
     response_model=list[_TaxonomyPendingResponse],
 )
@@ -1217,7 +1228,7 @@ def taxonomy_list_pending(name: str) -> list[dict[str, Any]]:
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/taxonomy/confirm",
 )
 def taxonomy_confirm(name: str, req: _TaxonomyConfirmRequest) -> dict[str, Any]:
@@ -1231,7 +1242,7 @@ def taxonomy_confirm(name: str, req: _TaxonomyConfirmRequest) -> dict[str, Any]:
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/taxonomy/merge",
 )
 def taxonomy_merge(name: str, req: _TaxonomyMergeRequest) -> dict[str, Any]:
@@ -1247,7 +1258,7 @@ def taxonomy_merge(name: str, req: _TaxonomyMergeRequest) -> dict[str, Any]:
         conn.close()
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/taxonomy/reject",
 )
 def taxonomy_reject(name: str, req: _TaxonomyRejectRequest) -> dict[str, Any]:
@@ -1273,7 +1284,7 @@ class _BootstrapRequest(BaseModel):
     model: str | None = None
 
 
-@app.post(
+@_projects_api.post(
     "/projects/{name}/bootstrap",
 )
 def projects_bootstrap_run(name: str, req: _BootstrapRequest) -> dict[str, Any]:
@@ -1303,7 +1314,7 @@ def projects_bootstrap_run(name: str, req: _BootstrapRequest) -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/projects/{name}/bootstrap")
+@_projects_api.get("/projects/{name}/bootstrap")
 def projects_bootstrap_latest(name: str) -> dict[str, Any]:
     """Return the latest bootstrap proposal for the project."""
     from meridian.bootstrap import load_latest_proposal
@@ -1322,7 +1333,7 @@ def projects_bootstrap_latest(name: str) -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/projects/{name}/bootstrap/list")
+@_projects_api.get("/projects/{name}/bootstrap/list")
 def projects_bootstrap_list(name: str) -> list[dict[str, str]]:
     """List past bootstrap proposals (newest first)."""
     from meridian.bootstrap import list_proposals
@@ -1344,15 +1355,15 @@ def projects_bootstrap_list(name: str) -> list[dict[str, str]]:
 
 from meridian.tender.api import tender_router  # noqa: E402
 
-app.include_router(tender_router)
+app.include_router(tender_router, prefix="/api")
 
 from meridian.evidence.api import evidence_router  # noqa: E402
 
-app.include_router(evidence_router)
+app.include_router(evidence_router, prefix="/api")
 
 from meridian.extract.cross_references_api import xref_router  # noqa: E402
 
-app.include_router(xref_router)
+app.include_router(xref_router, prefix="/api")
 
 # ── Round 12: API-side auth (POST /auth/login, /logout, /whoami, /status) ──
 # §3.2 enforcement (POST-only) is now wired — see the file-top docstring and
@@ -1367,6 +1378,15 @@ app.include_router(auth_router)
 from meridian.wizard import wizard_router  # noqa: E402
 
 app.include_router(wizard_router)
+
+# ── Alpha-20: project JSON endpoints under /api ──────────────────────────
+# Every /projects/{name}/<verb> route registered above on _projects_api
+# now mounts at /api/projects/{name}/<verb>. The bare /projects/<slug>
+# URL space is owned exclusively by the SPA (StaticFiles + the SPA
+# fallback below), eliminating the alpha-19 collision where a browser
+# navigation to /projects/bod-2/quarantine matched the JSON list endpoint
+# and the user got raw JSON instead of the React shell.
+app.include_router(_projects_api, prefix="/api")
 
 
 # ── Round 18: StaticFiles mount serving the Next.js GUI export ────────────
@@ -1407,6 +1427,14 @@ if _web_dir is not None:
     _projects_placeholder_html = _projects_placeholder_dir / "index.html"
 
     if _projects_placeholder_html.exists():
+        # SPA-fallback routes register on `app` directly (NOT on
+        # `_projects_api`) — they live in the bare `/projects/<slug>/...`
+        # URL space, NOT under `/api`. Alpha-20 reviewer caught: the
+        # global `@app.get → @_projects_api.get` replace incorrectly
+        # caught these too, sending them to `/api/projects/<slug>` AND
+        # registering them on the router AFTER it had already been
+        # included into the app — so they never reached `app.routes`
+        # at all. Both bugs fixed by going back to `@app.get(...)`.
         @app.get("/projects/{slug}", include_in_schema=False)
         @app.get("/projects/{slug}/", include_in_schema=False)
         def _spa_project_root(slug: str):  # noqa: ARG001 — slug is read by the SPA from window.location
