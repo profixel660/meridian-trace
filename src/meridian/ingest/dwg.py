@@ -92,6 +92,38 @@ def _locate_oda_binary() -> Path:
     )
 
 
+def oda_available() -> tuple[bool, Path | None, str | None]:
+    """Pre-flight ODA File Converter availability probe.
+
+    Returns ``(available, binary_path, version)`` — non-throwing wrapper
+    around :func:`_locate_oda_binary` and :func:`_detect_oda_version` so
+    callers (the wizard scan endpoint, the gauntlet) can show a
+    discoverable "install ODA to enable DWG ingest" hint BEFORE the user
+    triggers an import that will silently skip every drawing.
+
+    Why this exists (alpha-11):
+        Without pre-flight detection, a real-world SME corpus with 18
+        DWG files in 347 had every drawing fail mid-import with the same
+        error string. Burying that in a post-hoc ``failed[]`` list is a
+        UX failure mode (memory: feedback_ux_discoverability.md).
+
+    The probe never raises — a totally absent binary returns
+    ``(False, None, None)`` and a present-but-unparseable version
+    returns ``(True, <path>, None)``.
+    """
+    try:
+        binary = _locate_oda_binary()
+    except FileNotFoundError:
+        return (False, None, None)
+    version = _detect_oda_version(binary)
+    return (True, binary, version)
+
+
+# Public install URL re-exported so callers (wizard scan endpoint) can
+# surface the canonical link without hardcoding a duplicate string.
+ODA_INSTALL_URL = _ODA_INSTALL_URL
+
+
 def _detect_oda_version(binary: Path) -> str | None:
     """Best-effort: parse `ODAFileConverter --version` output.
 
@@ -223,4 +255,4 @@ def extract(path: Path) -> _Extracted:
     )
 
 
-__all__ = ["extract"]
+__all__ = ["ODA_INSTALL_URL", "extract", "oda_available"]

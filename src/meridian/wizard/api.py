@@ -15,6 +15,7 @@ on localhost inside Tauri.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -29,6 +30,7 @@ from meridian.config import settings
 from meridian.db.connection import connect
 from meridian.ingest import ingest_file
 from meridian.ingest.dispatcher import walk_directory
+from meridian.ingest.dwg import ODA_INSTALL_URL, oda_available
 from meridian.logging import get_logger
 from meridian.projects import _slugify, create_project, project_db_path
 from meridian.wizard.models import (
@@ -39,11 +41,15 @@ from meridian.wizard.models import (
     FolderScanRequest,
     FolderScanResponse,
     FolderSkipEntry,
+    ImportErrorCode,
+    ImportErrorEntry,
+    ImportErrorGroup,
     ImportJobResponse,
     ImportJobStatusResponse,
     ImportRequest,
     ImportSkipRequest,
     ImportSkipResponse,
+    OdaStatus,
     ProjectCreateRequest,
     ProjectCreateResponse,
     SetupCompleteResponse,
@@ -68,6 +74,18 @@ from meridian.wizard.state import (
 )
 
 _log = get_logger("meridian.wizard")
+
+# Stdlib logger routed through the root logging tree so import-worker
+# events also surface in uvicorn's stderr capture (the SME-visible
+# ``backend.log``). The structlog logger above continues to write JSON
+# lines into the per-project log file. Two surfaces, one event vocabulary.
+#
+# Alpha-11 finding: alpha-10 backend.log was silent during a 30-min
+# folder import — operator (the SME) had no way to tell whether the
+# worker was alive, working, or dead, because per-file events lived only
+# in the per-project structlog file. This stdlib logger fixes that
+# without giving up the structured per-project log.
+_stdlog = logging.getLogger("meridian.wizard.import")
 
 # --------------------------------------------------------------------------
 # Rate limiting — same shape as meridian/auth/login_api.py: in-memory
@@ -134,7 +152,11 @@ class _ImportJob:
         self.completed = 0
         self.imported = 0
         self.deduped = 0
-        self.errors: list[str] = []
+        # Structured error store. The legacy flat list[str] view used by
+        # alpha-10-and-earlier responses is derived in the response
+        # builder via ``_legacy_error_strings(...)`` so we don't carry
+        # duplicate state here.
+        self.errors: list[ImportErrorEntry] = []
         self.current_file: str | None = None
         self._persisted = False
 
@@ -143,26 +165,255 @@ _jobs: dict[str, _ImportJob] = {}
 _jobs_lock = Lock()
 
 
+# --------------------------------------------------------------------------
+# Error classification + coalescing — alpha-11
+# --------------------------------------------------------------------------
+#
+# Alpha-11 finding: a real-world SME corpus produced 18 identical 800-byte
+# strings for "ODA File Converter not installed" inside ``failed: list[str]``.
+# Operator UX failure mode: the GUI rendered each as a separate row,
+# unreadable and unactionable. The fix:
+#
+#   * Per-file failures are stored as :class:`ImportErrorEntry` with a
+#     stable ``code`` field.
+#   * The status response coalesces same-code entries into
+#     :class:`ImportErrorGroup` with a PM-language summary + remediation.
+#
+# Adding a new code is a scoped change here AND in
+# ``meridian.wizard.models.ImportErrorCode`` AND in the frontend's copy.
+
+_ERROR_REMEDIATION: dict[ImportErrorCode, str] = {
+    "oda_missing": (
+        "Install ODA File Converter from "
+        f"{ODA_INSTALL_URL} and re-scan this folder. The wizard "
+        "detects the binary automatically once it is on PATH or in the "
+        "default Windows install location."
+    ),
+    "pdf_unreadable": (
+        "Open the file in a PDF reader to confirm it isn't corrupt. "
+        "If the PDF is a scan with no text layer, re-export it from "
+        "the source application or run OCR before re-importing."
+    ),
+    "file_locked": (
+        "Close the file in any other application (Word, Excel, "
+        "AutoCAD, your file manager's preview pane) and re-scan."
+    ),
+    "permission_denied": (
+        "Grant read access to this file (right-click → Properties "
+        "→ Security on Windows) or move it out of a system-protected "
+        "directory and re-scan."
+    ),
+    "file_missing": (
+        "The file was deleted or moved between scan and import. "
+        "Re-scan the folder and try again."
+    ),
+    "unsupported_mime": (
+        "The dispatcher refused this file type. If you believe it "
+        "should be supported, file a GitHub issue with the filename "
+        "and the error message below."
+    ),
+    "worker_aborted": (
+        "The import worker terminated unexpectedly. Capture the "
+        "backend.log lines around this entry and file a GitHub issue. "
+        "You can re-run the import — successfully ingested files "
+        "are de-duplicated by content hash."
+    ),
+    "unknown": "",  # rendered with no remediation; raw message only.
+}
+
+
+_GROUP_SUMMARY: dict[ImportErrorCode, str] = {
+    "oda_missing": (
+        "{count} AutoCAD drawing{plural} {verb} skipped — ODA File "
+        "Converter is not installed."
+    ),
+    "pdf_unreadable": "{count} PDF{plural} could not be parsed.",
+    "file_locked": "{count} file{plural} {verb} locked by another application.",
+    "permission_denied": "{count} file{plural} {verb} unreadable (permission denied).",
+    "file_missing": "{count} file{plural} disappeared between scan and import.",
+    "unsupported_mime": "{count} file{plural} {verb} an unsupported type.",
+    "worker_aborted": (
+        "The import worker terminated unexpectedly after processing "
+        "{count} file{plural}."
+    ),
+    "unknown": "{count} file{plural} failed for an unclassified reason.",
+}
+
+
+def _classify_ingest_error(exc: BaseException) -> ImportErrorCode:
+    """Map a caught exception to a stable :class:`ImportErrorCode`.
+
+    Alpha-11: classification lives here (rather than scattered through
+    the worker) so the test suite can exercise every branch directly.
+    """
+    msg = str(exc)
+    msg_lower = msg.lower()
+    # ODA File Converter — dwg.py raises FileNotFoundError with that exact
+    # phrase. Match on the phrase rather than ``isinstance(exc,
+    # FileNotFoundError)`` because FileNotFoundError is also raised for
+    # file-missing-at-import-time.
+    if isinstance(exc, FileNotFoundError) and "oda file converter" in msg_lower:
+        return "oda_missing"
+    if isinstance(exc, FileNotFoundError):
+        return "file_missing"
+    if isinstance(exc, NotImplementedError):
+        return "unsupported_mime"
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    # Windows sharing violation: WinError 32 surfaces as OSError with
+    # winerror=32 OR as a generic OSError with "being used by another
+    # process" in the message. Both flavours fall here.
+    if isinstance(exc, OSError):
+        winerror = getattr(exc, "winerror", None)
+        if winerror == 32:
+            return "file_locked"
+        if "being used by another process" in msg_lower:
+            return "file_locked"
+        if getattr(exc, "errno", None) == 13:
+            return "permission_denied"
+    # PDF parse failures: pypdf raises PdfReadError (a ValueError
+    # subclass) and pdfplumber raises various RuntimeError flavours. We
+    # match on the substrings rather than importing those modules to
+    # avoid a hard dep here. Add new triggers as we see them in the wild.
+    if any(t in msg_lower for t in ("pypdf", "pdfplumber", "pdf header", "eof marker", "stream length")):
+        return "pdf_unreadable"
+    return "unknown"
+
+
+def _format_group_summary(code: ImportErrorCode, count: int) -> str:
+    plural = "" if count == 1 else "s"
+    verb = "was" if count == 1 else "were"
+    template = _GROUP_SUMMARY.get(code, _GROUP_SUMMARY["unknown"])
+    return template.format(count=count, plural=plural, verb=verb)
+
+
+_FILES_PER_GROUP_CAP = 100
+
+
+def _coalesce_errors(errors: Iterable[ImportErrorEntry]) -> list[ImportErrorGroup]:
+    """Group :class:`ImportErrorEntry` records by ``code``.
+
+    Files-per-group is capped at :data:`_FILES_PER_GROUP_CAP`; the
+    ``truncated`` flag tells the GUI to render an ``and N more`` tail.
+    This keeps the JSON payload bounded even on a 10k-file corpus.
+    """
+    by_code: dict[ImportErrorCode, list[ImportErrorEntry]] = {}
+    for entry in errors:
+        by_code.setdefault(entry.code, []).append(entry)
+    groups: list[ImportErrorGroup] = []
+    for code, entries in by_code.items():
+        files_full = [e.file for e in entries]
+        truncated = len(files_full) > _FILES_PER_GROUP_CAP
+        files = files_full[:_FILES_PER_GROUP_CAP]
+        groups.append(
+            ImportErrorGroup(
+                code=code,
+                count=len(entries),
+                summary=_format_group_summary(code, len(entries)),
+                remediation=_ERROR_REMEDIATION.get(code, ""),
+                files=files,
+                truncated=truncated,
+            )
+        )
+    # Stable ordering: oda_missing first (it usually has the largest
+    # count and the most actionable remediation), then by descending
+    # count so the most-impactful group surfaces above.
+    priority: dict[ImportErrorCode, int] = {
+        "oda_missing": 0,
+        "pdf_unreadable": 1,
+        "file_locked": 2,
+        "permission_denied": 3,
+        "file_missing": 4,
+        "unsupported_mime": 5,
+        "worker_aborted": 6,
+        "unknown": 7,
+    }
+    groups.sort(key=lambda g: (priority.get(g.code, 99), -g.count))
+    return groups
+
+
+def _legacy_error_strings(errors: Iterable[ImportErrorEntry]) -> list[str]:
+    """Materialise the alpha-10-shape ``"{file}: {message}"`` list.
+
+    Kept for one release of frontend-bundle backward compatibility.
+    Will be removed alongside the deprecated fields in alpha-13.
+    """
+    return [f"{e.file}: {e.message}" for e in errors]
+
+
+def _oda_status_now() -> OdaStatus:
+    """Snapshot ODA File Converter availability for response embedding."""
+    available, binary, version = oda_available()
+    return OdaStatus(
+        available=available,
+        version=version,
+        install_url=ODA_INSTALL_URL,
+        binary_path=str(binary) if binary is not None else None,
+    )
+
+
 def _run_import_job(job: _ImportJob, *, db_path: Path, paths: Iterable[str]) -> None:
-    """Worker body — drives ingest_file over each path, updates the job record."""
+    """Worker body — drives ingest_file over each path, updates the job record.
+
+    Alpha-11 hardening:
+
+    * Per-file INFO logging via :data:`_stdlog` so the operator-visible
+      ``backend.log`` shows what the worker is doing in real time
+      (alpha-10 silence drove a 30-min triage).
+    * Top-level ``BaseException`` catch so a ``KeyboardInterrupt`` /
+      ``SystemExit`` / ``MemoryError`` cannot kill the thread silently
+      and leave ``status='running'`` forever (alpha-10 finding).
+    * Structured per-file error entries with a stable ``code`` field so
+      the GUI can coalesce same-cause failures into one row with a
+      remediation hint.
+    * ``completed`` increments in exactly ONE place (the per-file
+      ``finally`` block) — the alpha-10 ``not path.exists()`` branch
+      double-incremented because both the inline ``+= 1`` and the
+      enclosing ``finally`` ran.
+    """
+    paths_list = list(paths)  # materialise so we can index for logging
     job.status = "running"
+    _stdlog.info(
+        "import_job.start job=%s total=%d db=%s",
+        job.id, job.total, db_path,
+    )
     try:
         # Long busy_timeout: another process (e.g. CLI) might hold the
         # write lock. 30s mirrors the existing ingest endpoint.
         conn = connect(db_path, busy_timeout_ms=30000)
     except Exception as exc:  # pragma: no cover — extremely defensive
+        _stdlog.exception("import_job.db_open_failed job=%s", job.id)
         job.status = "failed"
-        job.errors.append(f"Could not open project DB: {exc}")
+        job.errors.append(
+            ImportErrorEntry(
+                code="unknown",
+                file="<db>",
+                message=f"Could not open project DB: {exc}",
+            )
+        )
         return
 
+    aborted_with: BaseException | None = None
     try:
-        for raw in paths:
+        for index, raw in enumerate(paths_list, start=1):
             path = Path(raw).expanduser()
             job.current_file = str(path)
+            t0 = time.monotonic()
+            file_outcome: str = "imported"
             try:
                 if not path.exists():
-                    job.errors.append(f"File not found: {path}")
-                    job.completed += 1
+                    job.errors.append(
+                        ImportErrorEntry(
+                            code="file_missing",
+                            file=path.name,
+                            message=f"File not found: {path}",
+                        )
+                    )
+                    file_outcome = "missing"
+                    # NB: NO `completed += 1` here — the enclosing
+                    # `finally` handles it. Alpha-10 had both, which
+                    # double-incremented when files vanished between
+                    # scan and import.
                     continue
                 result = ingest_file(
                     conn,
@@ -171,17 +422,75 @@ def _run_import_job(job: _ImportJob, *, db_path: Path, paths: Iterable[str]) -> 
                 )
                 if result.deduped:
                     job.deduped += 1
+                    file_outcome = "deduped"
                 else:
                     job.imported += 1
+                    file_outcome = "imported"
             except Exception as exc:  # noqa: BLE001 — surface every error to UI
-                job.errors.append(f"{Path(raw).name}: {exc}")
+                code = _classify_ingest_error(exc)
+                job.errors.append(
+                    ImportErrorEntry(
+                        code=code,
+                        file=path.name,
+                        message=str(exc),
+                    )
+                )
+                file_outcome = f"failed:{code}"
+                _stdlog.warning(
+                    "import_job.file_failed job=%s [%d/%d] file=%s code=%s err=%s",
+                    job.id, index, job.total, path.name, code, exc,
+                )
             finally:
                 job.completed += 1
+                elapsed = time.monotonic() - t0
+                # Per-file INFO line (or already-WARNING'd in the except).
+                # Suppress redundant duplicate when the except branch
+                # already logged a warning.
+                if not file_outcome.startswith("failed:"):
+                    _stdlog.info(
+                        "import_job.file_done job=%s [%d/%d] file=%s outcome=%s elapsed=%.2fs",
+                        job.id, index, job.total, path.name, file_outcome, elapsed,
+                    )
+    except BaseException as exc:  # noqa: BLE001 — keep the thread observable
+        # Alpha-11: BaseException catches KeyboardInterrupt / SystemExit /
+        # MemoryError / asyncio.CancelledError. Without this the worker
+        # thread can die silently and the job stays at status='running'
+        # while the frontend polls forever (alpha-10 lived this).
+        aborted_with = exc
+        _stdlog.exception(
+            "import_job.aborted job=%s after_completed=%d/%d",
+            job.id, job.completed, job.total,
+        )
+        job.errors.append(
+            ImportErrorEntry(
+                code="worker_aborted",
+                file=job.current_file or "<worker>",
+                message=f"{type(exc).__name__}: {exc}",
+            )
+        )
+        # Do NOT re-raise. We want the job record to stay coherent so the
+        # frontend can show a clear failure to the user. Re-raising here
+        # would also mean the conn.close() below is skipped.
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — best-effort cleanup
+            pass
         job.current_file = None
 
-    job.status = "failed" if job.errors and job.imported == 0 and job.deduped == 0 else "succeeded"
+    if aborted_with is not None:
+        job.status = "failed"
+    else:
+        job.status = (
+            "failed"
+            if job.errors and job.imported == 0 and job.deduped == 0
+            else "succeeded"
+        )
+    _stdlog.info(
+        "import_job.finish job=%s status=%s imported=%d deduped=%d failed=%d completed=%d/%d",
+        job.id, job.status, job.imported, job.deduped, len(job.errors),
+        job.completed, job.total,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -475,7 +784,10 @@ def setup_import_status(job_id: str) -> ImportJobStatusResponse:
         completed=job.completed,
         imported=job.imported,
         deduped=job.deduped,
-        errors=list(job.errors),
+        # Legacy flat list — populated for one release of frontend
+        # backward-compat. Will go away in alpha-13.
+        errors=_legacy_error_strings(job.errors),
+        error_groups=_coalesce_errors(job.errors),
     )
 
 
@@ -630,6 +942,11 @@ def setup_import_folder_scan(req: FolderScanRequest) -> FolderScanResponse:
             for s in walked.skipped
         ],
         total_ingestable=walked.total_ingestable,
+        # Alpha-11: pre-flight ODA detection so the GUI can surface "18
+        # of your AutoCAD drawings won't import — install ODA File
+        # Converter first" BEFORE the user hits Import. Probes the
+        # filesystem only; never raises.
+        oda=_oda_status_now(),
     )
 
 
@@ -716,8 +1033,15 @@ def setup_import_folder_status(job_id: str) -> FolderImportJobStatusResponse:
         completed=job.completed,
         imported=job.imported,
         deduped=job.deduped,
-        failed=list(job.errors),
+        # Legacy flat list — populated for one release of frontend
+        # backward-compat. Will go away in alpha-13.
+        failed=_legacy_error_strings(job.errors),
+        failed_groups=_coalesce_errors(job.errors),
         current_file=job.current_file,
+        # ODA availability re-checked at poll time so the GUI's
+        # partial-success panel can offer "install ODA and re-scan" as
+        # remediation without a separate probe round-trip.
+        oda=_oda_status_now(),
     )
 
 

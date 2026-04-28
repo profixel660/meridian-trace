@@ -15,6 +15,7 @@ import {
   setupApi,
   type FolderImportJobStatus,
   type FolderScanResponse,
+  type ImportErrorGroup,
 } from "@/lib/setupClient";
 import {
   buildPrefilledPath,
@@ -104,6 +105,45 @@ const SCAN_INVALID_HINT_MARKERS = [
  * entirely. The actual reason lives in `MeridianApiError.body` as JSON
  * shaped `{"detail": {"error": "<code>", "message": "..."}}`.
  */
+/**
+ * One row in the partial-success panel — a coalesced error group with
+ * a PM-language summary, the per-code remediation copy, and an
+ * expandable list of the affected basenames. Alpha-11.
+ */
+function ImportErrorGroupRow({ group }: { group: ImportErrorGroup }) {
+  const remediation = FIRST_DOCS_COPY.errorGroupRemediation[group.code] ?? "";
+  return (
+    <li className="rounded border border-amber-500/30 bg-surface-elevated p-3">
+      <details>
+        <summary className="cursor-pointer list-none">
+          <span className="text-sm font-medium text-text-primary">
+            {group.summary}
+          </span>
+        </summary>
+        <div className="mt-2 space-y-2">
+          {remediation ? (
+            <p className="text-xs text-amber-200">
+              <span className="font-medium">How to fix:</span> {remediation}
+            </p>
+          ) : null}
+          <ul className="list-inside list-disc font-mono text-[11px] text-text-muted">
+            {group.files.map((f) => (
+              <li key={f} className="truncate" title={f}>
+                {f}
+              </li>
+            ))}
+            {group.truncated ? (
+              <li className="italic">
+                …and {group.count - group.files.length} more
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      </details>
+    </li>
+  );
+}
+
 function classifyScanError(err: unknown): ScanErrorClassification {
   // Default — no information beyond "something went wrong".
   let backendError: ScanBackendError = "unknown";
@@ -354,12 +394,31 @@ export default function SetupFirstDocumentsPage() {
               ? { kind: "importing", jobId: prev.jobId, status: s }
               : prev,
           );
-          if (s.status === "done" || s.status === "failed") {
+          // Alpha-11 pivot fix: backend returns "succeeded" / "failed",
+          // never "done" — alpha-10 typed-it-wrong so the polling loop
+          // never terminated for a real corpus that completed with any
+          // failures. Pivoting on the canonical strings here aligns
+          // with the backend's _run_import_job state machine.
+          if (s.status === "succeeded" || s.status === "failed") {
             if (pollHandle.current) {
               clearInterval(pollHandle.current);
               pollHandle.current = null;
             }
-            if (s.status === "failed" || s.imported === 0) {
+            const failedCount = s.failed_groups.reduce(
+              (acc, g) => acc + g.count,
+              0,
+            );
+            // Alpha-11 reviewer-finding fix: alpha-10 routed all
+            // `imported === 0` outcomes to "failed" — but a re-import
+            // where every file de-duplicates is `imported=0`,
+            // `deduped>0` and shouldn't surface the red "no files
+            // imported" panel. Treat the all-deduped case as
+            // succeeded; only fail when there is genuinely no
+            // progress at all (no imports AND no dedups).
+            if (
+              s.status === "failed" ||
+              (s.imported === 0 && s.deduped === 0)
+            ) {
               setPhase({
                 kind: "failed",
                 status: s,
@@ -368,7 +427,9 @@ export default function SetupFirstDocumentsPage() {
                     ? "Import job failed — see details below."
                     : "No files were imported successfully.",
               });
-            } else if (s.failed > 0) {
+            } else if (failedCount > 0) {
+              // Partial: some files imported, some failed. Show
+              // coalesced groups with remediation per-category.
               setPhase({ kind: "partial", status: s });
             } else {
               setPhase({ kind: "imported", status: s });
@@ -707,6 +768,38 @@ export default function SetupFirstDocumentsPage() {
               <FolderManifestPreview manifest={phase.manifest} />
             )}
 
+            {/* Alpha-11: pre-flight ODA-missing callout.
+                Surfaces BEFORE import when the manifest has any DWG
+                files but the converter isn't installed — without this,
+                drawings silently fail mid-import and users see 18
+                identical "ODA not installed" errors at the end. */}
+            {phase.manifest.files_by_kind.dwg.length > 0 &&
+            !phase.manifest.oda.available ? (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+                <p className="text-sm font-medium text-amber-300">
+                  ⚠ {FIRST_DOCS_COPY.odaMissingCallout.headline(
+                    phase.manifest.files_by_kind.dwg.length,
+                  )}
+                </p>
+                <p className="mt-1 text-sm text-text-muted">
+                  {FIRST_DOCS_COPY.odaMissingCallout.body}
+                </p>
+                <p className="mt-2 text-xs text-text-muted">
+                  <a
+                    href={phase.manifest.oda.install_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent underline-offset-2 hover:underline"
+                  >
+                    {FIRST_DOCS_COPY.odaMissingCallout.installLinkLabel} →
+                  </a>
+                </p>
+                <p className="mt-1 text-xs text-text-muted">
+                  {FIRST_DOCS_COPY.odaMissingCallout.skipNote}
+                </p>
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap items-center gap-3 pt-2">
               {phase.manifest.total_ingestable > 0 ? (
                 <button
@@ -749,36 +842,34 @@ export default function SetupFirstDocumentsPage() {
                 {FIRST_DOCS_COPY.progressCurrentFile(phase.status.current_file)}
               </p>
             ) : null}
-            <div
-              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={
+            {(() => {
+              // Alpha-11 progress fix: alpha-10 derived progress from
+              // `imported + deduped + failed`, but `failed` is a
+              // string[] not a number — adding it to a number yielded
+              // NaN and the bar never ticked. The backend's
+              // `completed` field is ground truth (incremented in the
+              // worker's per-file `finally`); use it directly.
+              const pct =
                 phase.status && phase.status.total > 0
                   ? Math.round(
-                      ((phase.status.imported + phase.status.deduped + phase.status.failed) /
-                        phase.status.total) *
-                        100,
+                      (phase.status.completed / phase.status.total) * 100,
                     )
-                  : 0
-              }
-            >
-              <div
-                className="h-full bg-accent transition-[width]"
-                style={{
-                  width: `${
-                    phase.status && phase.status.total > 0
-                      ? Math.round(
-                          ((phase.status.imported + phase.status.deduped + phase.status.failed) /
-                            phase.status.total) *
-                            100,
-                        )
-                      : 0
-                  }%`,
-                }}
-              />
-            </div>
+                  : 0;
+              return (
+                <div
+                  className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={pct}
+                >
+                  <div
+                    className="h-full bg-accent transition-[width]"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              );
+            })()}
             <p className="mt-2 text-xs text-text-muted">
               {FIRST_DOCS_COPY.progressBackgroundNote}
             </p>
@@ -789,30 +880,49 @@ export default function SetupFirstDocumentsPage() {
         {phase.kind === "imported" ? (
           <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4">
             <p className="text-sm font-medium text-emerald-300">
-              ✓ {phase.status.imported} of {phase.status.total} files imported
-              {phase.status.deduped > 0
-                ? ` (${phase.status.deduped} already in the project — skipped)`
-                : ""}
-              .
+              ✓ {FIRST_DOCS_COPY.outcomes.succeeded.headline}
             </p>
             <p className="mt-1 text-sm text-text-muted">
-              Press Continue to confirm your project name.
+              {FIRST_DOCS_COPY.outcomes.succeeded.body(
+                phase.status.imported,
+                phase.status.deduped,
+              )}
             </p>
           </div>
         ) : null}
 
-        {/* Partial — amber. */}
+        {/* Partial — amber. Coalesced error groups with per-code
+            remediation. Alpha-11: this used to render "{phase.status.failed} failed"
+            where `failed` was an array (rendered as comma-joined strings, or
+            "[object Object]" depending on shape) — now it groups by error code
+            and shows one row per category with an actionable next step. */}
         {phase.kind === "partial" ? (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
-            <p className="text-sm font-medium text-amber-300">
-              ⚠ {FIRST_DOCS_COPY.outcomes.partial.headline}
-            </p>
+          <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+            <div>
+              <p className="text-sm font-medium text-amber-300">
+                ⚠ {FIRST_DOCS_COPY.outcomes.partial.headline}
+              </p>
+              <p className="mt-1 text-sm text-text-muted">
+                {phase.status.imported} of {phase.status.total} files
+                imported.{" "}
+                {phase.status.failed_groups.reduce(
+                  (acc, g) => acc + g.count,
+                  0,
+                )}{" "}
+                failed.
+              </p>
+              <p className="mt-2 text-xs text-text-muted">
+                {FIRST_DOCS_COPY.outcomes.partial.body}
+              </p>
+            </div>
+            <ul className="space-y-2">
+              {phase.status.failed_groups.map((g) => (
+                <ImportErrorGroupRow key={g.code} group={g} />
+              ))}
+            </ul>
             <p className="mt-1 text-sm text-text-muted">
-              {phase.status.imported} of {phase.status.total} files imported.{" "}
-              {phase.status.failed} failed.
-            </p>
-            <p className="mt-2 text-xs text-text-muted">
-              {FIRST_DOCS_COPY.outcomes.partial.body}
+              Press Continue to confirm your project name — you can fix the
+              skipped files later from your project's Sources screen.
             </p>
           </div>
         ) : null}

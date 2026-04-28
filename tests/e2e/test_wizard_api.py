@@ -948,105 +948,16 @@ def test_setup_state_reflects_env_var_when_state_file_blank(
 # --------------------------------------------------------------------------
 
 
-def test_validate_anthropic_key_falls_back_to_litellm_when_sdk_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """anthropic SDK ImportError → litellm.completion() probe → 'valid'."""
-    import builtins
-    import sys
+def _force_anthropic_sdk_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Helper: make ``from anthropic import Anthropic`` raise ImportError.
 
-    from meridian.onboarding import wizard as cli_wizard
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fallback-test")
-
-    # Force `from anthropic import Anthropic` to raise ImportError, even if
-    # the SDK happens to be installed in the test environment.
-    real_import = builtins.__import__
-
-    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
-        if name == "anthropic" or name.startswith("anthropic."):
-            raise ImportError("simulated: anthropic SDK not installed")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
-    # Also evict any cached module so the lazy import re-runs the hook.
-    monkeypatch.delitem(sys.modules, "anthropic", raising=False)
-
-    # Stub litellm.completion to short-circuit network. We only care that
-    # the function is *called* with the right shape and returns success.
-    captured: dict[str, object] = {}
-
-    def _fake_completion(**kwargs: object) -> object:
-        captured.update(kwargs)
-        return object()  # the validator only checks for non-exception
-
-    import litellm
-
-    monkeypatch.setattr(litellm, "completion", _fake_completion)
-
-    outcome, detail = cli_wizard._validate_anthropic_key()
-    assert outcome == "valid", (outcome, detail)
-    # Verify the fallback actually used litellm, not some other path.
-    assert captured["api_key"] == "sk-ant-fallback-test"
-    assert captured["max_tokens"] == 1
-    # litellm uses the "anthropic/" prefix to route to Anthropic.
-    assert str(captured["model"]).startswith("anthropic/")
-
-
-def test_validate_anthropic_key_litellm_fallback_classifies_auth_error_as_invalid(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """anthropic SDK ImportError + litellm AuthenticationError → 'invalid'."""
-    import builtins
-    import sys
-
-    from meridian.onboarding import wizard as cli_wizard
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-bad-key")
-
-    real_import = builtins.__import__
-
-    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
-        if name == "anthropic" or name.startswith("anthropic."):
-            raise ImportError("simulated: anthropic SDK not installed")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
-    monkeypatch.delitem(sys.modules, "anthropic", raising=False)
-
-    import litellm
-    from litellm.exceptions import AuthenticationError
-
-    def _raise_auth(**kwargs: object) -> object:
-        raise AuthenticationError(
-            message="401 Unauthorized: invalid x-api-key",
-            llm_provider="anthropic",
-            model="claude-haiku-4-5-20251001",
-        )
-
-    monkeypatch.setattr(litellm, "completion", _raise_auth)
-
-    outcome, detail = cli_wizard._validate_anthropic_key()
-    assert outcome == "invalid", (outcome, detail)
-    assert "AuthenticationError" in detail
-
-
-def test_validate_anthropic_key_litellm_fallback_network_error_is_unable_to_verify(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """anthropic SDK ImportError + transient network → 'unable_to_verify'.
-
-    Belt-and-braces: misclassifying a network blip as 'invalid' would block
-    a user with a perfectly good key. The fallback must surface the
-    middle-ground outcome.
+    Used by the alpha-11 httpx-fallback tests below. Alpha-10 had three
+    near-identical tests doing this inline; consolidating the boilerplate
+    here keeps each test focused on the actual contract being verified.
     """
     import builtins
     import sys
 
-    from meridian.onboarding import wizard as cli_wizard
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-some-key")
-
     real_import = builtins.__import__
 
     def _fake_import(name: str, *args: object, **kwargs: object) -> object:
@@ -1057,12 +968,123 @@ def test_validate_anthropic_key_litellm_fallback_network_error_is_unable_to_veri
     monkeypatch.setattr(builtins, "__import__", _fake_import)
     monkeypatch.delitem(sys.modules, "anthropic", raising=False)
 
-    import litellm
 
-    def _raise_connection(**kwargs: object) -> object:
-        raise ConnectionError("simulated DNS failure")
+def _stub_httpx_client(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    status_code: int | None = None,
+    raise_request_error: bool = False,
+    captured: dict[str, object] | None = None,
+) -> None:
+    """Replace ``httpx.Client`` with a context-manager-aware fake.
 
-    monkeypatch.setattr(litellm, "completion", _raise_connection)
+    Set ``status_code`` for a synthetic HTTP reply; ``raise_request_error``
+    to simulate a transport failure (DNS, TCP, TLS, timeout). Pass a
+    ``captured`` dict to record the keyword args the validator passed
+    to ``post`` so call-shape can be asserted.
+    """
+    import httpx
+
+    class _FakeResp:
+        def __init__(self, code: int) -> None:
+            self.status_code = code
+            self.text = (
+                '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
+                if code == 401
+                else "{}"
+            )
+            self.is_success = 200 <= code < 300
+
+    class _FakeClient:
+        def __init__(self, **kw: object) -> None:
+            self.kw = kw
+
+        def __enter__(self) -> _FakeClient:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, object] | None = None,
+        ) -> _FakeResp:
+            if captured is not None:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+            if raise_request_error:
+                raise httpx.ConnectError("simulated DNS failure")
+            assert status_code is not None  # pragma: no cover — caller bug
+            return _FakeResp(status_code)
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+
+def test_validate_anthropic_key_falls_back_to_httpx_when_sdk_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """anthropic SDK ImportError → direct httpx POST → 'valid' on 200.
+
+    Alpha-11 replaced the alpha-10 LiteLLM fallback with a direct
+    ``httpx.Client`` POST inside a ``with`` block. The litellm-stub
+    tests this used to be paired with are gone; the new contract is
+    verified here AND in
+    test_alpha11_validate_anthropic_key_via_httpx_uses_with_block.
+    """
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fallback-test")
+    _force_anthropic_sdk_import_error(monkeypatch)
+
+    captured: dict[str, object] = {}
+    _stub_httpx_client(monkeypatch, status_code=200, captured=captured)
+
+    outcome, detail = cli_wizard._validate_anthropic_key()
+    assert outcome == "valid", (outcome, detail)
+    # Verify the fallback hit Anthropic's /v1/messages, with the api
+    # key in the x-api-key header (NOT a bearer Authorization), and a
+    # 1-token max so a real prod request would be near-zero cost.
+    assert captured["url"] == "https://api.anthropic.com/v1/messages"
+    headers = captured["headers"]
+    assert isinstance(headers, dict)
+    assert headers["x-api-key"] == "sk-ant-fallback-test"
+    body = captured["json"]
+    assert isinstance(body, dict)
+    assert body["max_tokens"] == 1
+
+
+def test_validate_anthropic_key_httpx_fallback_classifies_auth_error_as_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """anthropic SDK ImportError + httpx 401 → 'invalid'."""
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-bad-key")
+    _force_anthropic_sdk_import_error(monkeypatch)
+    _stub_httpx_client(monkeypatch, status_code=401)
+
+    outcome, detail = cli_wizard._validate_anthropic_key()
+    assert outcome == "invalid", (outcome, detail)
+    assert "401" in detail
+
+
+def test_validate_anthropic_key_httpx_fallback_network_error_is_unable_to_verify(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """anthropic SDK ImportError + transient network → 'unable_to_verify'.
+
+    Belt-and-braces: misclassifying a network blip as 'invalid' would
+    block a user with a perfectly good key. The fallback must surface
+    the middle-ground outcome.
+    """
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-some-key")
+    _force_anthropic_sdk_import_error(monkeypatch)
+    _stub_httpx_client(monkeypatch, raise_request_error=True)
 
     outcome, _detail = cli_wizard._validate_anthropic_key()
     assert outcome == "unable_to_verify"
@@ -1097,3 +1119,569 @@ def test_static_files_mount_absent_when_web_dir_unset(
         # Restore.
         monkeypatch.undo()
         importlib.reload(main_mod)
+
+
+# ==========================================================================
+# Alpha-11 — folder-import hardening + structured errors + ODA pre-flight
+# ==========================================================================
+#
+# Background: alpha-10 shipped a folder-import flow that worked for
+# clean PDF-only corpora but exhibited four failure modes on a real-
+# world SME corpus (347 files, 18 of them DWGs, no ODA installed):
+#
+#   1. Frontend pivot bug (wrong status string + wrong type for `failed`).
+#   2. Worker silently dropping a thread on BaseException.
+#   3. `completed` double-incremented on path.exists()=False.
+#   4. 18 identical "ODA not installed" strings in `failed[]` with no
+#      coalescing or remediation.
+#
+# These tests lock down the alpha-11 fix for each. They live below the
+# existing wizard tests so the file's narrative reads top-to-bottom by
+# release.
+
+
+from meridian.wizard import api as wizard_api_mod  # noqa: E402 — keep alpha-11 block self-contained
+
+
+def test_alpha11_classify_ingest_error_routes_oda_missing() -> None:
+    """FileNotFoundError carrying 'ODA File Converter' → 'oda_missing'."""
+    exc = FileNotFoundError(
+        "ODA File Converter binary not found. Set the ODA_FILE_CONVERTER "
+        "environment variable..."
+    )
+    assert wizard_api_mod._classify_ingest_error(exc) == "oda_missing"
+
+
+def test_alpha11_classify_ingest_error_routes_file_missing() -> None:
+    """Plain FileNotFoundError (no 'ODA' marker) → 'file_missing'."""
+    exc = FileNotFoundError("[Errno 2] No such file or directory: 'gone.pdf'")
+    assert wizard_api_mod._classify_ingest_error(exc) == "file_missing"
+
+
+def test_alpha11_classify_ingest_error_routes_permission_denied() -> None:
+    """PermissionError → 'permission_denied'; OSError errno=13 also."""
+    exc1 = PermissionError("Access is denied")
+    assert wizard_api_mod._classify_ingest_error(exc1) == "permission_denied"
+    exc2 = OSError(13, "Permission denied")
+    assert wizard_api_mod._classify_ingest_error(exc2) == "permission_denied"
+
+
+def test_alpha11_classify_ingest_error_routes_unsupported_mime() -> None:
+    """NotImplementedError → 'unsupported_mime' (dispatcher refused)."""
+    exc = NotImplementedError("No ingester wired for mime_type='application/x-foo'")
+    assert wizard_api_mod._classify_ingest_error(exc) == "unsupported_mime"
+
+
+def test_alpha11_classify_ingest_error_routes_file_locked_by_message() -> None:
+    """OSError with the canonical Windows-sharing-violation message."""
+    exc = OSError("[WinError 32] The process cannot access the file because it is being used by another process")
+    assert wizard_api_mod._classify_ingest_error(exc) == "file_locked"
+
+
+def test_alpha11_classify_ingest_error_routes_pdf_unreadable() -> None:
+    """pypdf / pdfplumber failure messages → 'pdf_unreadable'."""
+    exc1 = ValueError("EOF marker not found")
+    assert wizard_api_mod._classify_ingest_error(exc1) == "pdf_unreadable"
+    exc2 = RuntimeError("pypdf could not parse this stream length")
+    assert wizard_api_mod._classify_ingest_error(exc2) == "pdf_unreadable"
+
+
+def test_alpha11_classify_ingest_error_routes_unknown() -> None:
+    """Anything else falls through to 'unknown'."""
+    exc = RuntimeError("kaboom — totally unforeseen error")
+    assert wizard_api_mod._classify_ingest_error(exc) == "unknown"
+
+
+def test_alpha11_coalesce_errors_groups_by_code_and_orders_oda_first() -> None:
+    """Group ordering: oda_missing first, then by descending count."""
+    from meridian.wizard.models import ImportErrorEntry
+
+    entries = [
+        ImportErrorEntry(code="pdf_unreadable", file="a.pdf", message="x"),
+        ImportErrorEntry(code="oda_missing", file="b.dwg", message="y"),
+        ImportErrorEntry(code="oda_missing", file="c.dwg", message="y"),
+        ImportErrorEntry(code="pdf_unreadable", file="d.pdf", message="x"),
+        ImportErrorEntry(code="unknown", file="e.bin", message="z"),
+    ]
+    groups = wizard_api_mod._coalesce_errors(entries)
+    codes = [g.code for g in groups]
+    # Priority order: oda_missing first, then pdf_unreadable, then unknown.
+    assert codes == ["oda_missing", "pdf_unreadable", "unknown"]
+    by_code = {g.code: g for g in groups}
+    assert by_code["oda_missing"].count == 2
+    assert sorted(by_code["oda_missing"].files) == ["b.dwg", "c.dwg"]
+    assert by_code["pdf_unreadable"].count == 2
+    # Remediation copy non-empty for known codes; empty for 'unknown'.
+    assert by_code["oda_missing"].remediation
+    assert by_code["unknown"].remediation == ""
+    # Summaries contain plurals tuned to count.
+    assert "drawings" in by_code["oda_missing"].summary
+    assert "PDFs" in by_code["pdf_unreadable"].summary
+
+
+def test_alpha11_coalesce_errors_caps_files_at_100() -> None:
+    """A group with 250 files surfaces 100 in `files` and `truncated=True`."""
+    from meridian.wizard.models import ImportErrorEntry
+
+    entries = [
+        ImportErrorEntry(code="oda_missing", file=f"d{i}.dwg", message="missing")
+        for i in range(250)
+    ]
+    groups = wizard_api_mod._coalesce_errors(entries)
+    assert len(groups) == 1
+    g = groups[0]
+    assert g.code == "oda_missing"
+    assert g.count == 250
+    assert len(g.files) == 100
+    assert g.truncated is True
+
+
+def test_alpha11_summary_pluralises_when_count_is_one() -> None:
+    """Singular grammar when only one file failed."""
+    from meridian.wizard.models import ImportErrorEntry
+
+    [g] = wizard_api_mod._coalesce_errors(
+        [ImportErrorEntry(code="oda_missing", file="x.dwg", message="m")]
+    )
+    assert "1 AutoCAD drawing" in g.summary
+    assert "drawings" not in g.summary
+    assert "was skipped" in g.summary
+
+
+def test_alpha11_scan_response_includes_oda_status(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """`oda` field is populated on every scan response, never null."""
+    folder = tmp_path / "scan-oda-probe"
+    folder.mkdir()
+
+    response = fastapi_client.post(
+        "/setup/import-folder/scan",
+        json={"folder_path": str(folder)},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "oda" in body, "scan response missing alpha-11 'oda' field"
+    oda = body["oda"]
+    # Required fields.
+    assert "available" in oda
+    assert isinstance(oda["available"], bool)
+    assert oda["install_url"].startswith("http")
+    # Optional fields are present (may be null).
+    assert "version" in oda
+    assert "binary_path" in oda
+
+
+def test_alpha11_status_response_includes_failed_groups_and_oda(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+) -> None:
+    """folder-import status response carries `failed_groups` (empty list when no failures) and `oda`."""
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha11-status-shape",
+            "slug": "alpha11-status-shape",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+
+    folder = tmp_path / "alpha11-status-shape"
+    folder.mkdir()
+    (folder / "sample.docx").write_bytes(synthetic_docx.read_bytes())
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha11-status-shape"},
+    )
+    assert kick.status_code == 200, kick.text
+    job_id = kick.json()["job_id"]
+
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    assert body["status"] == "succeeded"
+    # Alpha-11 contract additions.
+    assert "failed_groups" in body
+    assert isinstance(body["failed_groups"], list)
+    assert body["failed_groups"] == []  # no failures in this happy-path corpus
+    assert "oda" in body
+    assert isinstance(body["oda"]["available"], bool)
+    # Legacy `failed` list still present for one release of backward-compat.
+    assert "failed" in body
+    assert body["failed"] == []
+
+
+def test_alpha11_status_response_groups_oda_missing_failures(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ODA is missing, .dwg files all coalesce into one group with remediation."""
+    # Force ingest_file to raise the canonical ODA-missing error so we
+    # don't depend on a real DWG fixture or a real ODA binary.
+    from meridian.ingest import dispatcher as dispatcher_mod
+
+    real_ingest = dispatcher_mod.ingest_file
+
+    def faux_ingest(*args, **kwargs):
+        path = kwargs.get("file_path")
+        if path is not None and Path(path).suffix.lower() == ".dwg":
+            raise FileNotFoundError(
+                "ODA File Converter binary not found. Set the ODA_FILE_CONVERTER "
+                "environment variable to the executable path..."
+            )
+        return real_ingest(*args, **kwargs)
+
+    # Patch on the wizard-api module too — it imports ingest_file at
+    # module load time so monkeypatching the dispatcher alone doesn't
+    # reach the worker.
+    monkeypatch.setattr(wizard_api_mod, "ingest_file", faux_ingest)
+
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha11-oda-coalesce",
+            "slug": "alpha11-oda-coalesce",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+
+    folder = tmp_path / "alpha11-oda-coalesce"
+    folder.mkdir()
+    # Three pretend DWGs (will each raise oda_missing) + one real docx
+    # (will succeed) so we get a partial-success outcome.
+    for n in range(3):
+        (folder / f"drawing-{n}.dwg").write_bytes(b"DWG fake bytes")
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha11-oda-coalesce"},
+    )
+    job_id = kick.json()["job_id"]
+
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    # 3 dwg failures + 1 docx success = succeeded with partial.
+    assert body["status"] == "succeeded"
+    assert body["imported"] == 1
+    # The 18 identical strings in the user's corpus collapse here to
+    # one group with count=3.
+    assert len(body["failed_groups"]) == 1
+    g = body["failed_groups"][0]
+    assert g["code"] == "oda_missing"
+    assert g["count"] == 3
+    assert "ODA File Converter" in g["remediation"]
+    assert sorted(g["files"]) == ["drawing-0.dwg", "drawing-1.dwg", "drawing-2.dwg"]
+    # Legacy flat list still has 3 entries.
+    assert len(body["failed"]) == 3
+
+
+def test_alpha11_completed_does_not_double_increment_on_missing_file(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Alpha-10 had ``completed += 1`` in the missing-file branch AND in
+    the enclosing finally. Alpha-11 fix: only the finally increments."""
+    from meridian.ingest import dispatcher as dispatcher_mod
+
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha11-no-double-increment",
+            "slug": "alpha11-no-double-increment",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+
+    folder = tmp_path / "alpha11-no-double-increment"
+    folder.mkdir()
+    (folder / "real.docx").write_bytes(synthetic_docx.read_bytes())
+    ghost = folder / "ghost.docx"
+    ghost.write_bytes(synthetic_docx.read_bytes())
+
+    # Patch walk_directory to also list a non-existent file so the
+    # `if not path.exists()` branch fires inside the worker.
+    real_walk = dispatcher_mod.walk_directory
+
+    def faux_walk(folder_path: Path):
+        result = real_walk(folder_path)
+        # Inject a ghost path that vanishes between scan and import.
+        result.files_by_kind.setdefault("docx", []).append(str(folder / "vanished.docx"))
+        result.total_ingestable += 1
+        return result
+
+    monkeypatch.setattr(wizard_api_mod, "walk_directory", faux_walk)
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha11-no-double-increment"},
+    )
+    job_id = kick.json()["job_id"]
+
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    # 3 paths total (2 real + 1 ghost). completed must equal total
+    # exactly — no double-increment from the missing-file branch.
+    assert body["total"] == 3
+    assert body["completed"] == 3, (
+        f"completed double-incremented? expected 3, got {body['completed']}: {body}"
+    )
+    # The ghost should be in failed_groups with code=file_missing.
+    by_code = {g["code"]: g for g in body["failed_groups"]}
+    assert "file_missing" in by_code
+    assert by_code["file_missing"]["count"] == 1
+    assert by_code["file_missing"]["files"] == ["vanished.docx"]
+
+
+def test_alpha11_worker_baseexception_marks_failed_not_running(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A BaseException inside the worker must transition status to 'failed' and surface a worker_aborted entry."""
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha11-baseexc",
+            "slug": "alpha11-baseexc",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+
+    folder = tmp_path / "alpha11-baseexc"
+    folder.mkdir()
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+
+    def faux_ingest(*args, **kwargs):
+        # SystemExit is a BaseException, NOT an Exception — alpha-10
+        # `except Exception` would let this kill the thread silently.
+        raise SystemExit("synthetic worker abort")
+
+    monkeypatch.setattr(wizard_api_mod, "ingest_file", faux_ingest)
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha11-baseexc"},
+    )
+    job_id = kick.json()["job_id"]
+
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    # The thread did NOT die silently — status flipped to 'failed' and
+    # the worker_aborted entry surfaces in failed_groups so the GUI can
+    # show the user an actionable message rather than spinning forever.
+    assert body["status"] == "failed", body
+    by_code = {g["code"]: g for g in body["failed_groups"]}
+    assert "worker_aborted" in by_code
+    assert by_code["worker_aborted"]["count"] == 1
+
+
+def test_alpha11_reimport_all_deduped_yields_succeeded_imported_zero_deduped_nonzero(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+) -> None:
+    """Re-importing the same folder twice must terminate with status='succeeded',
+    imported=0, deduped>0 — NOT failed.
+
+    Locks the contract the frontend's alpha-11 fix relies on: alpha-10
+    routed all `imported === 0` outcomes to a red 'No files imported'
+    panel, but a re-import where every file de-duplicates is a SUCCESS
+    (the user just imported the same folder again — nothing is new but
+    nothing failed either). The frontend now requires
+    `imported === 0 && deduped === 0` to render the failure panel; this
+    test ensures the backend produces the state the frontend now branches
+    on.
+    """
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha11-reimport",
+            "slug": "alpha11-reimport",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+    folder = tmp_path / "alpha11-reimport"
+    folder.mkdir()
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+
+    def _kick_and_wait() -> dict:
+        kick = fastapi_client.post(
+            "/setup/import-folder",
+            json={"folder_path": str(folder), "project_name": "alpha11-reimport"},
+        )
+        job_id = kick.json()["job_id"]
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            r = fastapi_client.get(f"/setup/import-folder/{job_id}").json()
+            if r["status"] in ("succeeded", "failed"):
+                return r
+            time.sleep(0.05)
+        return {}
+
+    first = _kick_and_wait()
+    assert first["status"] == "succeeded"
+    assert first["imported"] == 1
+    assert first["deduped"] == 0
+
+    second = _kick_and_wait()
+    # Critical: status='succeeded', imported=0, deduped=1. The frontend
+    # MUST NOT render this as failed.
+    assert second["status"] == "succeeded", second
+    assert second["imported"] == 0, second
+    assert second["deduped"] == 1, second
+    assert second["failed_groups"] == [], second
+
+
+def test_alpha11_validate_anthropic_key_via_httpx_uses_with_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The httpx fallback validator must open and close its client cleanly.
+
+    Alpha-10 LiteLLM fallback leaked a CloseWait socket per call; the
+    alpha-11 replacement uses ``with httpx.Client(...)`` so the socket
+    is released on return. We assert __enter__ and __exit__ are both
+    called — that's the contract that fixes the leak.
+    """
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+
+    enter_calls: list[bool] = []
+    exit_calls: list[bool] = []
+
+    class _FakeResp:
+        status_code = 200
+        text = "{}"
+        is_success = True
+
+    class _FakeClient:
+        def __init__(self, **kw):
+            self.kw = kw
+
+        def __enter__(self):
+            enter_calls.append(True)
+            return self
+
+        def __exit__(self, *exc):
+            exit_calls.append(True)
+            return False
+
+        def post(self, url, headers=None, json=None):
+            return _FakeResp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+    outcome, detail = cli_wizard._validate_anthropic_key_via_httpx()
+    assert outcome == "valid"
+    assert enter_calls == [True], "httpx.Client.__enter__ was not called — with-block missing"
+    assert exit_calls == [True], "httpx.Client.__exit__ was not called — socket leak risk"
+
+
+def test_alpha11_validate_anthropic_key_via_httpx_classifies_401_as_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+
+    class _FakeResp:
+        status_code = 401
+        text = "authentication error"
+        is_success = False
+
+    class _FakeClient:
+        def __init__(self, **kw):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def post(self, url, headers=None, json=None):
+            return _FakeResp()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+    outcome, detail = cli_wizard._validate_anthropic_key_via_httpx()
+    assert outcome == "invalid"
+
+
+def test_alpha11_validate_anthropic_key_via_httpx_classifies_network_error_as_unable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A flaky network must NEVER punish a user with a valid key."""
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+
+    class _FakeClient:
+        def __init__(self, **kw):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def post(self, url, headers=None, json=None):
+            import httpx
+            raise httpx.ConnectError("DNS resolution failed")
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+    outcome, detail = cli_wizard._validate_anthropic_key_via_httpx()
+    assert outcome == "unable_to_verify"
+    assert "DNS" in detail or "RequestError" in detail

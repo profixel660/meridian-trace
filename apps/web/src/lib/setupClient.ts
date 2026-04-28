@@ -396,10 +396,71 @@ export const setupApi = {
 /* ---------- folder-pick types (alpha-2 reframe — Stream A shapes) ---------- */
 
 /**
+ * Stable error codes the backend tags every per-file failure with.
+ * Adding a new code is a scoped change here AND in
+ * `meridian.wizard.models.ImportErrorCode` AND in
+ * `components/setup/copy.ts` (where the per-code remediation copy
+ * lives). Removing one is a frontend-breaking change.
+ */
+export type ImportErrorCode =
+  | "oda_missing"
+  | "pdf_unreadable"
+  | "file_locked"
+  | "permission_denied"
+  | "file_missing"
+  | "unsupported_mime"
+  | "worker_aborted"
+  | "unknown";
+
+/**
+ * One coalesced same-cause error group from the backend's import-job
+ * status. Replaces alpha-10's flat `string[]` of "{file}: {message}"
+ * lines, which produced 18 identical rows for one corpus's 18 missing
+ * ODA-converter cases.
+ *
+ * The backend also returns the legacy `failed: string[]` /
+ * `errors: string[]` for one release of backward-compat (alpha-13
+ * removes it); the frontend should always read the groups field and
+ * ignore the flat list.
+ */
+export interface ImportErrorGroup {
+  code: ImportErrorCode;
+  count: number;
+  /** PM-language summary, e.g. "18 AutoCAD drawings were skipped — ODA File Converter is not installed." */
+  summary: string;
+  /** Specific user action to fix this category. Empty string when no remediation applies. */
+  remediation: string;
+  /** Basenames of every file in this group, capped server-side at 100. */
+  files: string[];
+  /** True when the file list was truncated to the server-side cap. */
+  truncated: boolean;
+}
+
+/**
+ * ODA File Converter pre-flight detection. Surfaced on
+ * `FolderScanResponse` (so the GUI can warn before import) and on
+ * `FolderImportJobStatus` (so the post-import partial-success panel
+ * can offer 'install ODA and re-scan' as remediation).
+ */
+export interface OdaStatus {
+  available: boolean;
+  /** Best-effort version string, e.g. "25.4.0". May be null. */
+  version: string | null;
+  /** Canonical installer URL — surfaced by the backend so the frontend doesn't hardcode. */
+  install_url: string;
+  /** Absolute path of the located binary, or null when unavailable. */
+  binary_path: string | null;
+}
+
+/**
  * Manifest the scan endpoint returns. Each `files_by_kind` bucket is a
  * flat list of absolute file paths; `skipped` enumerates files the
  * backend chose to ignore (with a reason like "unsupported_extension"
  * or "too_large"); `total_ingestable` is the sum across buckets.
+ *
+ * Alpha-11: `oda` carries pre-flight ODA File Converter availability so
+ * the GUI can surface "install ODA to ingest your N drawings" BEFORE
+ * the user kicks off an import that will silently skip every drawing.
  */
 export interface FolderScanResponse {
   folder_path: string;
@@ -414,21 +475,43 @@ export interface FolderScanResponse {
   };
   skipped: { path: string; reason: string }[];
   total_ingestable: number;
+  oda: OdaStatus;
 }
 
 /**
- * Live status of a folder-import job. Re-uses the same `imported / deduped
- * / failed / total` accounting as the per-file import endpoint, plus
- * `current_file` so the progress card can show what's currently being
- * crunched.
+ * Live status of a folder-import job. Alpha-11 corrects two contract
+ * drift bugs against the backend:
+ *
+ *   1. `status` was typed as `"running" | "done" | "failed"` but the
+ *      backend writes `"succeeded"` (not `"done"`). The page's pivot
+ *      branch never fired — root cause of the alpha-10 "stuck at
+ *      329 of 347" report.
+ *
+ *   2. `failed` was typed as `number` but the backend has always
+ *      returned `list[str]`. JS `array > 0` is `false`, so the
+ *      `s.failed > 0` partial-success branch never fired either.
+ *
+ * Plus the new structured fields (`failed_groups`, `oda`) so the
+ * partial-success UI renders coalesced rows with remediation rather
+ * than 18 identical "ODA not installed" strings.
  */
 export interface FolderImportJobStatus {
+  job_id: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  total: number;
+  completed: number;
   imported: number;
   deduped: number;
-  failed: number;
-  total: number;
+  /**
+   * DEPRECATED: legacy flat list of "{file}: {message}" strings; the
+   * backend keeps populating this for one release of backward-compat
+   * (alpha-13 removes it). Frontend code should read `failed_groups`
+   * instead.
+   */
+  failed: string[];
+  failed_groups: ImportErrorGroup[];
   current_file: string | null;
-  status: "running" | "done" | "failed";
+  oda: OdaStatus;
 }
 
 /**

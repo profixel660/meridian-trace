@@ -234,37 +234,42 @@ def _validate_anthropic_key() -> tuple[str, str]:
         1. ``anthropic`` SDK — preferred when present (richer error
            reporting via ``models.list``); but it is NOT a hard meridian
            dependency so a wheel install will typically miss it.
-        2. ``litellm`` — hard dependency of meridian, routes to Anthropic
-           via its own transport. Used as the fallback so the wizard's
-           validator does not silently degrade to ``unable_to_verify``
-           (and the user does not see the misleading "couldn't reach
-           Anthropic" warning) on every install that lacks the optional
-           ``anthropic`` SDK.
+        2. Direct httpx call to ``api.anthropic.com/v1/messages`` —
+           replaces the alpha-10 LiteLLM fallback (which leaked a
+           CloseWait socket per validation, observed during an SME
+           triage). Both paths use ``with``-block clients so the
+           underlying TCP connection is released cleanly.
     """
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return "invalid", "ANTHROPIC_API_KEY not set"
     try:
         # Lightweight: list models. Anthropic's SDK exposes ``models.list()``.
-        # We import lazily so a missing dep falls through to litellm rather
+        # We import lazily so a missing dep falls through to httpx rather
         # than crashing the wizard.
         from anthropic import Anthropic  # type: ignore[import-not-found]  # noqa: PLC0415
     except ImportError:
-        return _validate_anthropic_key_via_litellm()
+        return _validate_anthropic_key_via_httpx()
+    # Alpha-11: SDK ``Anthropic()`` is a context manager — the SDK
+    # honours ``with`` and closes the underlying httpx client cleanly.
+    # Without the ``with`` block (alpha-10 behaviour) the client's
+    # connection pool was never closed; Anthropic's keepalive timer
+    # eventually FIN'd the socket and our side stayed in CloseWait
+    # until process exit.
     try:
-        client = Anthropic()
-        # Some SDK versions expose .models.list(); fall back to a tiny
-        # messages.create with max_tokens=1 if not.
-        models = getattr(client, "models", None)
-        if models is not None and hasattr(models, "list"):
-            models.list(limit=1)
-            return "valid", "models.list() succeeded"
-        # Fallback probe.
-        client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1,
-            messages=[{"role": "user", "content": "."}],
-        )
-        return "valid", "messages.create() probe succeeded"
+        with Anthropic() as client:
+            # Some SDK versions expose .models.list(); fall back to a
+            # tiny messages.create with max_tokens=1 if not.
+            models = getattr(client, "models", None)
+            if models is not None and hasattr(models, "list"):
+                models.list(limit=1)
+                return "valid", "models.list() succeeded"
+            # Fallback probe.
+            client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1,
+                messages=[{"role": "user", "content": "."}],
+            )
+            return "valid", "messages.create() probe succeeded"
     except Exception as exc:  # pragma: no cover — env-dependent
         msg = str(exc).lower()
         if any(t in msg for t in ("401", "unauthorized", "invalid_api_key", "authentication")):
@@ -272,55 +277,76 @@ def _validate_anthropic_key() -> tuple[str, str]:
         return "unable_to_verify", str(exc)
 
 
-def _validate_anthropic_key_via_litellm() -> tuple[str, str]:
+def _validate_anthropic_key_via_httpx() -> tuple[str, str]:
     """Fallback validator when the optional ``anthropic`` SDK isn't installed.
 
-    Issues a 1-token completion through litellm (a hard meridian dep) and
-    classifies the result the same way the SDK path does:
+    Alpha-11: this replaces the alpha-10 LiteLLM-based fallback. The
+    LiteLLM path issued a 1-token completion through ``litellm.completion()``
+    which holds an internal connection pool that we have no clean hook
+    to close — observed in an SME triage as a leaked CloseWait socket
+    to ``api.anthropic.com`` after every ``/setup/api-key`` POST.
 
-    * Success      → ``valid``.
-    * ``litellm.exceptions.AuthenticationError`` /
-      ``PermissionDeniedError`` → ``invalid`` (Anthropic rejected the key).
-    * Anything else (network error, rate-limit, server-side, import
-      failure) → ``unable_to_verify``. We deliberately do NOT classify
-      ``BadRequestError`` etc. as ``invalid`` — it is a poor proxy for
-      "key is wrong" and misclassifying a transient as invalid is the
-      worst possible UX (it blocks a user with a perfectly good key).
+    The replacement is a direct ``httpx.Client`` POST against the
+    Anthropic /v1/messages endpoint, scoped inside a ``with`` block so
+    the connection pool is released cleanly when the call returns.
+    Eliminates the socket leak categorically.
+
+    Classification ladder:
+
+    * 200 OK                       → ``valid``.
+    * 401 / 403                    → ``invalid`` (Anthropic rejected
+      the key OR the key has no access to our chosen model — same
+      remediation either way: re-prompt for a working key).
+    * 429                          → ``unable_to_verify`` (rate-limited;
+      the key may be perfectly fine).
+    * Any 5xx / network error      → ``unable_to_verify`` so a flaky
+      network never punishes a user with a valid key.
+
+    Timeout is 10s — generous for first-time DNS resolve + TLS handshake
+    + tiny POST round-trip on a slow connection, but fast enough that a
+    truly hung network surfaces as transient rather than wedging the
+    wizard.
     """
     try:
-        import litellm  # noqa: PLC0415
-        from litellm.exceptions import (  # noqa: PLC0415
-            AuthenticationError,
-            PermissionDeniedError,
-        )
-    except ImportError as exc:  # pragma: no cover — litellm is a hard dep
-        return "unable_to_verify", f"litellm not importable: {exc}"
+        import httpx  # noqa: PLC0415  — hard dep via fastapi/uvicorn stack
+    except ImportError as exc:  # pragma: no cover — httpx is a hard dep
+        return "unable_to_verify", f"httpx not importable: {exc}"
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    body = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
     try:
-        litellm.completion(
-            model="anthropic/claude-haiku-4-5-20251001",
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=1,
-            api_key=api_key,
-        )
-    except AuthenticationError as exc:
-        return "invalid", f"litellm AuthenticationError: {exc}"
-    except PermissionDeniedError as exc:
-        # 403 — typically means the key is valid but lacks model access.
-        # Treat as ``invalid`` for wizard purposes: the user cannot use
-        # this key with Meridian's chosen model and re-prompting is the
-        # right remediation (vs. silently advancing).
-        return "invalid", f"litellm PermissionDeniedError: {exc}"
-    except Exception as exc:  # noqa: BLE001 — surface anything else as transient
-        msg = str(exc).lower()
-        # Belt-and-braces: some litellm versions surface 401 via APIError
-        # rather than AuthenticationError. String-match the canonical
-        # auth markers as a last-resort classification.
-        if any(t in msg for t in ("401", "unauthorized", "invalid_api_key", "authentication")):
-            return "invalid", str(exc)
-        return "unable_to_verify", str(exc)
-    return "valid", "litellm.completion() probe succeeded"
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json=body,
+            )
+    except httpx.RequestError as exc:
+        # Network failure (DNS, TCP, TLS, timeout). Never punish the
+        # user — flaky connections are the canonical "unable_to_verify"
+        # case.
+        return "unable_to_verify", f"httpx RequestError: {exc}"
+
+    if resp.status_code in (401, 403):
+        return "invalid", f"HTTP {resp.status_code}: {resp.text[:300]}"
+    if resp.status_code == 429:
+        return "unable_to_verify", "Anthropic rate-limited the validation probe (HTTP 429)."
+    if resp.is_success:
+        return "valid", "anthropic /v1/messages probe succeeded"
+    return "unable_to_verify", f"HTTP {resp.status_code}: {resp.text[:300]}"
+
+
+# Alias retained for any out-of-tree caller; the new name is canonical.
+_validate_anthropic_key_via_litellm = _validate_anthropic_key_via_httpx
 
 
 def _step_totp_enrol(state: OnboardingState) -> OnboardingState:

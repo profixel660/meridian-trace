@@ -358,14 +358,71 @@ export const FIRST_DOCS_COPY = {
     partial: {
       headline: "Some files imported, some didn't.",
       body:
-        "Failed files are listed below. You can retry each one or move on and deal with the rest from the Sources screen.",
+        "Failed files are grouped by reason below. Each group has a one-line fix you can take to recover those files; the rest of your import is already done.",
     },
     failed: {
       headline: "No files were imported.",
       body:
         "Check the folder path is correct and try again. Most failures are unreadable PDFs or files locked by another program.",
     },
+    succeeded: {
+      headline: "Import complete.",
+      body: (imported: number, deduped: number) => {
+        const dedupeNote =
+          deduped > 0
+            ? ` (${deduped} ${deduped === 1 ? "was" : "were"} already in the project — skipped).`
+            : ".";
+        return `${imported} ${imported === 1 ? "document" : "documents"} added${dedupeNote} Press Continue to confirm your project name.`;
+      },
+    },
   },
+  /**
+   * Pre-import callout when the scan finds DWG files but ODA File
+   * Converter isn't installed on this machine. Surfaced BEFORE the
+   * user presses Import so the partial-success path is informed.
+   * Alpha-11 finding: a real-world SME corpus had 18 of 347 files
+   * silently skipped because ODA isn't bundled with the installer.
+   */
+  odaMissingCallout: {
+    headline: (dwgCount: number) =>
+      `${dwgCount} AutoCAD ${dwgCount === 1 ? "drawing" : "drawings"} won't import — ODA File Converter is not installed.`,
+    body:
+      "Meridian reads .dwg files by routing them through ODA File Converter, a free third-party tool that turns drawings into PDFs. You can still import the rest of your folder — drawings will be skipped and you can add them later after installing the converter.",
+    installLinkLabel: "Install ODA File Converter",
+    skipNote:
+      "Or import without the drawings — your specs, BODs, and emails will still be processed.",
+  },
+  odaMissingPostImport: {
+    headline: (dwgCount: number) =>
+      `${dwgCount} AutoCAD ${dwgCount === 1 ? "drawing" : "drawings"} ${dwgCount === 1 ? "was" : "were"} skipped — install ODA File Converter to add ${dwgCount === 1 ? "it" : "them"}.`,
+    body:
+      "Once ODA is installed, return to this folder from your project's Sources screen and re-scan. Already-imported files won't duplicate — Meridian de-duplicates by content hash.",
+  },
+  /**
+   * Per-error-code remediation copy. Backend tags every per-file
+   * failure with one of these codes; the partial-success panel renders
+   * one row per group with the matching remediation. Adding a new
+   * code is scoped: it must also be added to
+   * `lib/setupClient.ts::ImportErrorCode` and
+   * `meridian.wizard.models.ImportErrorCode` (the backend source of truth).
+   */
+  errorGroupRemediation: {
+    oda_missing:
+      "Install ODA File Converter from opendesign.com and re-scan this folder.",
+    pdf_unreadable:
+      "Open the PDF to confirm it isn't corrupt. If it's a scan with no text, run OCR before re-importing.",
+    file_locked:
+      "Close the file in Word / Excel / AutoCAD / your file manager's preview pane and re-scan.",
+    permission_denied:
+      "Grant read access to this file (right-click → Properties → Security) or move it out of a system-protected folder.",
+    file_missing:
+      "The file moved or was deleted between scan and import. Re-scan and try again.",
+    unsupported_mime:
+      "Meridian doesn't yet handle this file type. Convert to PDF, .docx, or .xlsx and re-scan.",
+    worker_aborted:
+      "The import worker terminated unexpectedly. Capture backend.log and report the issue. Re-running is safe — already-imported files de-duplicate by content hash.",
+    unknown: "",
+  } as const,
 };
 
 /* ----------------------------- step 4 — ready ---------------------------- */

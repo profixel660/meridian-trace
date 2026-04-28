@@ -7,16 +7,22 @@ Run from the repo root:
 Exits 0 only when every step passes. Each step targets a bug class that has
 already been shipped (and embarrassed us) on the v0.2.0-alpha line:
 
-    1. PowerShell parser check on installer/*.ps1 / *.psm1
-    2. ASCII-only check on installer/*.{ps1,psm1,bat,cmd}   (alpha-3 em-dash)
-    3. Wheel build precondition (apps/web/out present) + wheel content check
-    4. Fresh-venv install of the just-built wheel
-    5. Cwd=System32 simulation — backend launched from a System32-like cwd
-       must still write logs to MERIDIAN_HOME, not the cwd                (alpha-2)
-    6. /setup/ wizard URL probe — body contains "Meridian"               (alpha-3)
-    7. Version assertion — /health JSON.version == pyproject version    (alpha-1)
-    8. CLI --help smoke (no browser opens)
-    9. Summary
+    1.  PowerShell parser check on installer/*.ps1 / *.psm1
+    2.  ASCII-only check on installer/*.{ps1,psm1,bat,cmd}   (alpha-3 em-dash)
+    2b. Installer URL constants — never 'http://localhost'   (alpha-5 IPv6/4)
+    3.  Wheel build precondition (apps/web/out present) + wheel content check
+    4.  Fresh-venv install of the just-built wheel
+    5.  Cwd=System32 simulation — backend launched from a System32-like cwd
+        must still write logs to MERIDIAN_HOME, not the cwd               (alpha-2)
+    6.  /setup/ wizard URL probe — body contains "Meridian"               (alpha-3)
+    7.  Version assertion — /health JSON.version == pyproject version    (alpha-1)
+    7b. ODA-detection contract — scan response includes 'oda' object
+        with 'available' (bool) and 'install_url' (str)                  (alpha-11)
+    7c. Import status-pivot smoke — kick a tiny job, poll, confirm
+        status reaches 'succeeded' and 'failed_groups' is a list. Catches
+        the alpha-10 frontend-typed-it-wrong bug class                   (alpha-11)
+    8.  CLI --help smoke (no browser opens)
+    9.  Summary
 
 The script does NOT mutate anything outside ``dist/`` and a tmpdir scratch
 area. It does NOT modify installer files, source files, or apps/web/.
@@ -509,6 +515,150 @@ def _step_backend_lifecycle(
             )
             return False
         _ok("step 7: version assertion", f"version={api_version} matches pyproject")
+
+        # Step 7b — ODA-detection contract (alpha-11). A scan response
+        # must include the new `oda` object with `available` (bool) and
+        # `install_url` (str). Catches frontend-blocking schema drift.
+        scan_target = scratch / "gauntlet_oda_probe"
+        scan_target.mkdir(exist_ok=True)
+        scan_payload = json.dumps({"folder_path": str(scan_target)}).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                f"{base}/setup/import-folder/scan",
+                data=scan_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "release-gauntlet",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — localhost
+                scan_body = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            _fail("step 7b: ODA-detection contract", f"scan POST failed: {exc}")
+            return False
+        oda = scan_body.get("oda")
+        if not isinstance(oda, dict):
+            _fail(
+                "step 7b: ODA-detection contract",
+                "scan response missing the 'oda' object — alpha-11 regression class. "
+                "Frontend cannot render the pre-import 'install ODA File Converter' "
+                f"callout without it. Body keys: {sorted(scan_body)}",
+            )
+            return False
+        for required in ("available", "install_url"):
+            if required not in oda:
+                _fail(
+                    "step 7b: ODA-detection contract",
+                    f"oda object missing required key '{required}'. oda={oda!r}",
+                )
+                return False
+        if not isinstance(oda["available"], bool):
+            _fail(
+                "step 7b: ODA-detection contract",
+                f"oda.available must be bool, got {type(oda['available']).__name__}",
+            )
+            return False
+        if not (isinstance(oda["install_url"], str) and oda["install_url"].startswith("http")):
+            _fail(
+                "step 7b: ODA-detection contract",
+                f"oda.install_url must be an http URL, got {oda['install_url']!r}",
+            )
+            return False
+        _ok(
+            "step 7b: ODA-detection contract",
+            f"oda.available={oda['available']}, install_url present",
+        )
+
+        # Step 7c — folder-import status-pivot smoke (alpha-11). The
+        # alpha-10 frontend pivoted on `status === "done"` while the
+        # backend writes `"succeeded"`. This step kicks a tiny one-file
+        # import and asserts the status terminal value matches the
+        # canonical contract AND `failed_groups` is a list (the new
+        # alpha-11 field). Without this step the frontend ↔ backend
+        # contract drifts silently.
+        import_target = scratch / "gauntlet_import_pivot"
+        import_target.mkdir(exist_ok=True)
+        # Empty folder yields total=0 which still finishes via the
+        # 'succeeded' branch with imported=0. We exploit that — no need
+        # to fabricate a real ingestable doc here.
+        import_payload = json.dumps(
+            {
+                "folder_path": str(import_target),
+                "project_name": "gauntlet-import-pivot",
+            }
+        ).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                f"{base}/setup/import-folder",
+                data=import_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "release-gauntlet",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — localhost
+                kick_body = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            _fail("step 7c: import status-pivot smoke", f"kick POST failed: {exc}")
+            return False
+        job_id = kick_body.get("job_id")
+        if not isinstance(job_id, str):
+            _fail(
+                "step 7c: import status-pivot smoke",
+                f"import-folder response missing job_id; got {kick_body!r}",
+            )
+            return False
+        # Poll until terminal — short deadline, the empty-folder path
+        # finishes in milliseconds.
+        deadline = time.monotonic() + 10.0
+        last_body: dict = {}
+        while time.monotonic() < deadline:
+            poll_status, poll_payload = _probe(
+                f"{base}/setup/import-folder/{job_id}", timeout=2.0
+            )
+            if poll_status == 200:
+                try:
+                    last_body = json.loads(poll_payload.decode("utf-8"))
+                except json.JSONDecodeError:
+                    last_body = {}
+                if last_body.get("status") in ("succeeded", "failed"):
+                    break
+            time.sleep(0.1)
+        terminal = last_body.get("status")
+        if terminal not in ("succeeded", "failed"):
+            _fail(
+                "step 7c: import status-pivot smoke",
+                f"job did not reach terminal status within deadline; last_body={last_body!r}",
+            )
+            return False
+        if terminal != "succeeded":
+            _fail(
+                "step 7c: import status-pivot smoke",
+                f"empty-folder import should yield status='succeeded', got '{terminal}'. "
+                f"failed_groups={last_body.get('failed_groups')!r}",
+            )
+            return False
+        if not isinstance(last_body.get("failed_groups"), list):
+            _fail(
+                "step 7c: import status-pivot smoke",
+                "import-folder status response missing alpha-11 'failed_groups' list. "
+                "Frontend's coalesced-error rendering depends on this field. "
+                f"body keys: {sorted(last_body)}",
+            )
+            return False
+        if not isinstance(last_body.get("oda"), dict):
+            _fail(
+                "step 7c: import status-pivot smoke",
+                "import-folder status response missing alpha-11 'oda' object.",
+            )
+            return False
+        _ok(
+            "step 7c: import status-pivot smoke",
+            f"job reached '{terminal}', failed_groups + oda present",
+        )
+
         return True
     finally:
         # Cleanup — kill the backend so the next run isn't held up by a port collision.
