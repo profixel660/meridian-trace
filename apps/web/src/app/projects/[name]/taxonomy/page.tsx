@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -13,15 +13,12 @@ import {
   type TaxonomyProposal,
 } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { TaxonomyQueue } from "./TaxonomyQueue";
 
-export default function TaxonomyPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function TaxonomyPage() {
+  const name = useRuntimeProjectSlug();
 
   const [proposals, setProposals] = useState<TaxonomyProposal[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -36,6 +33,7 @@ export default function TaxonomyPage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -91,6 +89,18 @@ export default function TaxonomyPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Taxonomy proposals"
+        subtitle="New trade / service / category values the AI proposed. Confirm to add, merge into an existing value, or reject."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ToastHostProvider>

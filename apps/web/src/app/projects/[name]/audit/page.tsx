@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -12,15 +12,12 @@ import {
   type ProjectCoverage,
 } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { AuditQueue } from "./AuditQueue";
 
-export default function AuditPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function AuditPage() {
+  const name = useRuntimeProjectSlug();
 
   const [items, setItems] = useState<AuditItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -28,6 +25,7 @@ export default function AuditPage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -63,6 +61,18 @@ export default function AuditPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Audit (OUTSIDE candidates)"
+        subtitle="Rows the gate ruled OUTSIDE the deliverable definition. Promote any that should actually be on the master register."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ToastHostProvider>

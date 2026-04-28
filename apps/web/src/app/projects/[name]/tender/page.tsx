@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -14,15 +14,12 @@ import {
   type TenderOutputDirResponse,
 } from "@/lib/apiClient/tender";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { TenderBuilder } from "./TenderBuilder";
 
-export default function TenderPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function TenderPage() {
+  const name = useRuntimeProjectSlug();
 
   const [trades, setTrades] = useState<TradeListResponse | null>(null);
   const [outputDir, setOutputDir] = useState<TenderOutputDirResponse | null>(
@@ -33,6 +30,7 @@ export default function TenderPage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -70,6 +68,18 @@ export default function TenderPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Tender Package Builder"
+        subtitle="Generate per-trade subcontractor packages from the accepted-deliverables register."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ToastHostProvider>

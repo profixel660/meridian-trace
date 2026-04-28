@@ -42,9 +42,12 @@ echo [RUNTIME]
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri '%MERIDIAN_RUNTIME_URL%' -UseBasicParsing -TimeoutSec 2; $j = $r.Content | ConvertFrom-Json; Write-Host ('         pid             : ' + $j.pid); Write-Host ('         version         : ' + $j.version); Write-Host ('         python_version  : ' + $j.python_version); Write-Host ('         platform        : ' + $j.platform); Write-Host ('         started_at      : ' + $j.started_at); Write-Host ('         uptime_seconds  : ' + [math]::Round($j.uptime_seconds, 1)); Write-Host ('         backend_log     : ' + $j.backend_log_path); Write-Host ('         structlog_dir   : ' + $j.structlog_dir); if ($j.last_import_job) { Write-Host ''; Write-Host '         last import job:'; Write-Host ('           job_id       : ' + $j.last_import_job.job_id); Write-Host ('           status       : ' + $j.last_import_job.status); Write-Host ('           progress     : ' + $j.last_import_job.completed + '/' + $j.last_import_job.total); Write-Host ('           imported     : ' + $j.last_import_job.imported); Write-Host ('           deduped      : ' + $j.last_import_job.deduped); Write-Host ('           failed_count : ' + $j.last_import_job.failed_count); if ($j.last_import_job.current_file) { Write-Host ('           current_file : ' + $j.last_import_job.current_file) } } else { Write-Host ''; Write-Host '         last import job: <none this process>' } } catch { Write-Host ('         <runtime endpoint unavailable -- ' + $_.Exception.Message + '>') }"
 echo.
 
-REM --- 3. [AUTH] -- surface auth_disabled flag from /setup/runtime (alpha-13)
+REM --- 3. [AUTH] -- alpha-15 stripped TOTP wholesale; the auth_disabled
+REM     env var is now a no-op. The runtime endpoint may still report it for
+REM     legacy callers, but the runtime has no Depends(require_session) gates.
 echo [AUTH]
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri '%MERIDIAN_RUNTIME_URL%' -UseBasicParsing -TimeoutSec 2; $j = $r.Content | ConvertFrom-Json; if ($j.PSObject.Properties.Name -contains 'auth_disabled') { if ($j.auth_disabled) { Write-Host '         auth_disabled=true   --> AUTH BYPASS ACTIVE (debug only)' } else { Write-Host '         auth_disabled=false  --> normal TOTP enforcement' } } else { Write-Host '         <auth_disabled field not present -- backend pre-alpha-13?>' } } catch { Write-Host '         <runtime endpoint unavailable -- cannot read auth_disabled>' }"
+echo          TOTP enforcement: removed in alpha-15 (no auth on the runtime)
+echo          auth_disabled env var: no-op (kept for backward-compat only)
 echo.
 
 REM --- 4. [ENVIRONMENT] -- show MERIDIAN_* env vars seen by the backend

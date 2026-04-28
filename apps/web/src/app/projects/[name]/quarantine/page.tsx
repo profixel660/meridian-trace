@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -12,15 +12,12 @@ import {
   type QuarantinedItem,
 } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { QuarantineQueue } from "./QuarantineQueue";
 
-export default function QuarantinePage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function QuarantinePage() {
+  const name = useRuntimeProjectSlug();
 
   const [items, setItems] = useState<QuarantinedItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -28,6 +25,7 @@ export default function QuarantinePage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -65,6 +63,18 @@ export default function QuarantinePage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Quarantine"
+        subtitle="Deliverables held back from the master register pending your decision."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ToastHostProvider>

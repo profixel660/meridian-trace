@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -11,6 +11,7 @@ import {
   type SourceItem,
 } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -18,12 +19,8 @@ function bytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function SourcesPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function SourcesPage() {
+  const name = useRuntimeProjectSlug();
 
   const [items, setItems] = useState<SourceItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -31,6 +28,7 @@ export default function SourcesPage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -68,6 +66,18 @@ export default function SourcesPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Sources"
+        subtitle="Source documents imported into this project, with extraction status."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ReviewLayout

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AuthGate } from "@/components/AuthGate";
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
@@ -10,18 +10,16 @@ import { StatusBadge } from "@/components/review/StatusBadge";
 import { Tooltip, TooltipMore } from "@/components/review/Tooltip";
 import { type ProjectCoverage } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
-export default function ProjectDashboardPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function ProjectDashboardPage() {
+  const name = useRuntimeProjectSlug();
   const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
   const [coverageError, setCoverageError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setCoverageError(null);
@@ -51,6 +49,18 @@ export default function ProjectDashboardPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Loading…"
+        subtitle="Project dashboard — coverage at a glance, plus quick access to every review queue."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ReviewLayout

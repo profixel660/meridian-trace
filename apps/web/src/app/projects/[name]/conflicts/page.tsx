@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -12,15 +12,12 @@ import {
   type ProjectCoverage,
 } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { ConflictsQueue } from "./ConflictsQueue";
 
-export default function ConflictsPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function ConflictsPage() {
+  const name = useRuntimeProjectSlug();
 
   const [items, setItems] = useState<ConflictItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -28,6 +25,7 @@ export default function ConflictsPage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -65,6 +63,18 @@ export default function ConflictsPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Conflicts"
+        subtitle="Two or more sources disagree about the same item. Pick the winning side, accept a hybrid, or reject both."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ToastHostProvider>

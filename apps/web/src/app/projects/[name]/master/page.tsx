@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { EmptyState } from "@/components/review/EmptyState";
@@ -10,15 +10,12 @@ import {
   type ProjectCoverage,
 } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { MasterTable } from "./MasterTable";
 
-export default function MasterPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function MasterPage() {
+  const name = useRuntimeProjectSlug();
 
   const [rows, setRows] = useState<MasterRow[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -26,6 +23,7 @@ export default function MasterPage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -63,6 +61,18 @@ export default function MasterPage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Master register"
+        subtitle="Read-only view of every deliverable currently on the master register. Filter by trade / service / category."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ReviewLayout

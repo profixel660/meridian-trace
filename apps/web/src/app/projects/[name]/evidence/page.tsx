@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { FirstUseCallout } from "@/components/review/FirstUseCallout";
@@ -12,15 +12,12 @@ import {
   type EvidencePackListItem,
 } from "@/lib/apiClient/evidence";
 import { apiFetch } from "@/lib/fetcher";
+import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 import { EvidencePanel } from "./EvidencePanel";
 
-export default function EvidencePage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
-  const { name } = use(params);
+export default function EvidencePage() {
+  const name = useRuntimeProjectSlug();
 
   const [packs, setPacks] = useState<EvidencePackListItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -28,6 +25,7 @@ export default function EvidencePage({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!name) return;
     let cancelled = false;
     setLoading(true);
     setListError(null);
@@ -63,6 +61,18 @@ export default function EvidencePage({
         taxonomy: coverage.taxonomy.pending_proposals,
       }
     : undefined;
+
+  if (!name) {
+    return (
+      <ReviewLayout
+        projectName=""
+        title="Legal Evidence Pack"
+        subtitle="Assemble a defensible audit-trail bundle suitable for hand-off to construction lawyers, claims teams, or opposing counsel."
+      >
+        <div className="text-text-muted text-sm">Loading…</div>
+      </ReviewLayout>
+    );
+  }
 
   return (
     <ToastHostProvider>
