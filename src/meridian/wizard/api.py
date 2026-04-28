@@ -974,6 +974,12 @@ def setup_import(req: ImportRequest) -> ImportJobResponse:
             detail=f"Project not found: {req.project_slug}",
         )
 
+    # Intentionally leaves job.db_path as None: /setup/import operates on
+    # an already-confirmed project (post-/setup/projects), not on a wizard
+    # staging DB. setup_suggest_project_name's exclusion logic uses
+    # job.db_path as the staging-vs-confirmed discriminator — only
+    # folder-import jobs (which write a fresh staging DB) should bypass
+    # collision detection.
     job = _ImportJob(total=len(req.paths))
     with _jobs_lock:
         _jobs[job.id] = job
@@ -1232,6 +1238,8 @@ def setup_import_folder(req: FolderImportRequest) -> ImportJobResponse:
         paths.extend(kind_paths)
 
     job = _ImportJob(total=len(paths))
+    # Stamp db_path so suggest-name + setup_create_project can identify
+    # this as wizard-owned staging — see _ImportJob.db_path docstring.
     job.db_path = db_path
     with _jobs_lock:
         _jobs[job.id] = job
@@ -1333,11 +1341,16 @@ def setup_suggest_project_name(req: SuggestNameRequest) -> SuggestNameResponse:
     # _staging_created_by_import guard) rather than state.cli.first_project_slug
     # alone, because that field is also stamped by setup_create_project for
     # CONFIRMED projects and must not be exempted from collision detection.
+    #
+    # Build the resolved set ONCE under the lock (not inside the closure) to
+    # avoid k×10000 Path.resolve() filesystem stats in the worst-case
+    # suffix-bump loop.  db_path is declared in _ImportJob.__slots__ and set
+    # in __init__, so direct attribute access is always safe.
     with _jobs_lock:
-        staging_db_paths: frozenset[Path] = frozenset(
-            getattr(j, "db_path", None)
+        staging_db_paths_resolved: frozenset[Path] = frozenset(
+            j.db_path.resolve()
             for j in _jobs.values()
-            if getattr(j, "db_path", None) is not None
+            if j.db_path is not None
         )
 
     def _slug_taken(slug: str) -> bool:
@@ -1347,7 +1360,7 @@ def setup_suggest_project_name(req: SuggestNameRequest) -> SuggestNameResponse:
         # If this DB was created by import-folder and is tracked in _jobs,
         # it's the wizard's own staging file — not a real collision from the
         # user's perspective (it'll be adopted into whatever name they pick).
-        if db.resolve() in {p.resolve() for p in staging_db_paths}:
+        if db.resolve() in staging_db_paths_resolved:
             return False
         return True
 
