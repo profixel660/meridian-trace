@@ -7,11 +7,55 @@ import { Suspense, useEffect, useState } from "react";
 import { AuthGate } from "@/components/AuthGate";
 import { SetupShell } from "@/components/setup/SetupShell";
 import { READY_COPY } from "@/components/setup/copy";
+import { MeridianApiError } from "@/lib/api";
 import {
   DEFAULT_SETUP_STATE,
   type SetupState,
   setupApi,
 } from "@/lib/setupClient";
+
+/**
+ * Shape of the structured 400 detail the backend returns when gates are unmet.
+ * Contract pinned by test_complete_returns_400_with_next_step_when_gates_unmet.
+ */
+interface SetupIncompleteDetail {
+  error: "setup_incomplete";
+  next_step: string;
+  message: string;
+}
+
+/**
+ * Extract the structured 400 detail from a MeridianApiError thrown by
+ * setupApi.complete(). Returns null for any other error shape.
+ *
+ * The body is a raw JSON string of the form:
+ *   {"detail": {"error": "setup_incomplete", "next_step": "...", "message": "..."}}
+ */
+function extractSetupErrorDetail(
+  err: unknown,
+): SetupIncompleteDetail | null {
+  if (!(err instanceof MeridianApiError) || err.status !== 400) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(err.body) as {
+      detail?: SetupIncompleteDetail | string;
+    };
+    const detail = parsed?.detail;
+    if (
+      detail &&
+      typeof detail === "object" &&
+      detail.error === "setup_incomplete" &&
+      typeof detail.next_step === "string" &&
+      typeof detail.message === "string"
+    ) {
+      return detail;
+    }
+  } catch {
+    // Body wasn't valid JSON — not a structured error.
+  }
+  return null;
+}
 
 /**
  * Step 4 — Ready.
@@ -47,6 +91,10 @@ function ReadyPageInner() {
 
   const [state, setState] = useState<SetupState>(DEFAULT_SETUP_STATE);
   const [stateLoaded, setStateLoaded] = useState(false);
+  const [completeError, setCompleteError] = useState<{
+    message: string;
+    next_step: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,15 +120,27 @@ function ReadyPageInner() {
     };
   }, [skippedHint]);
 
-  // Idempotent — safe to call on every mount.
+  // Idempotent — safe to call on every mount. If the backend returns 400
+  // (gates unmet) we surface the reason instead of silently swallowing it.
   useEffect(() => {
     if (!stateLoaded) return;
-    void setupApi.complete().catch(() => {
-      // Silent — this is a fire-and-forget marker. The user already
-      // sees the "you're ready" state; if the marker fails to land the
-      // worst case is the wizard offers itself again next launch, which
-      // is fine.
-    });
+    void setupApi.complete().then(
+      () => setCompleteError(null),
+      (err: unknown) => {
+        const detail = extractSetupErrorDetail(err);
+        if (detail !== null) {
+          setCompleteError({
+            message: detail.message,
+            next_step: detail.next_step,
+          });
+        } else {
+          setCompleteError({
+            message: "Could not finish setup. Please try again.",
+            next_step: "api_key",
+          });
+        }
+      },
+    );
   }, [stateLoaded]);
 
   const skipped = state.documents_skipped || skippedHint;
@@ -116,6 +176,22 @@ function ReadyPageInner() {
         ]}
       >
         <div className="space-y-8">
+          {completeError ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-200"
+            >
+              <p className="font-semibold">Setup did not complete</p>
+              <p className="mt-1">{completeError.message}</p>
+              <Link
+                href={`/setup/${completeError.next_step.replace(/_/g, "-")}`}
+                className="mt-3 inline-block rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-white"
+              >
+                Continue: {completeError.next_step.replace(/_/g, " ")} →
+              </Link>
+            </div>
+          ) : null}
+
           <header className="space-y-3">
             <p className="text-xs uppercase tracking-wide text-emerald-300">
               ✓ Setup complete
@@ -154,12 +230,23 @@ function ReadyPageInner() {
           </dl>
 
           <div className="flex flex-wrap gap-3 pt-2">
-            <Link
-              href={openHref}
-              className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white hover:opacity-90"
-            >
-              {READY_COPY.ctas.open} →
-            </Link>
+            {completeError ? (
+              <button
+                type="button"
+                disabled
+                className="cursor-not-allowed rounded-full bg-text-muted/20 px-5 py-2.5 text-sm font-medium text-text-muted"
+                title="Finish setup before opening the project"
+              >
+                {READY_COPY.ctas.open} →
+              </button>
+            ) : (
+              <Link
+                href={openHref}
+                className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white hover:opacity-90"
+              >
+                {READY_COPY.ctas.open} →
+              </Link>
+            )}
             <Link
               href="/onboarding"
               className="rounded-full border border-border px-5 py-2.5 text-sm text-text-primary hover:border-accent"

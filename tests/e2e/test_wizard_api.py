@@ -1919,6 +1919,43 @@ def test_alpha12_runtime_endpoint_returns_required_shape(
         )
 
 
+# ==========================================================================
+# Alpha-22 task 6 — /setup/complete 400 contract (frontend regression pin)
+# ==========================================================================
+#
+# The ready-page now renders the 400 body into a user-visible error panel
+# and disables the "Open project" button when gates are unmet. This test
+# pins the exact JSON shape the frontend depends on so a backend refactor
+# that renames a field is caught immediately.
+
+
+def test_complete_returns_400_with_next_step_when_gates_unmet(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When _has_required_gates fails, /api/setup/complete returns
+    400 with a JSON body the frontend can render: detail.error,
+    detail.next_step, detail.message.
+
+    This is the contract the alpha-22 ready-page error UI depends on.
+    """
+    monkeypatch.setenv("MERIDIAN_WIZARD_STATE_DIR", str(tmp_path / "wizard_state"))
+    # Don't configure api-key — gates will fail.
+
+    r = fastapi_client.post("/setup/complete")
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "detail" in body, body
+    detail = body["detail"]
+    assert detail["error"] == "setup_incomplete", detail
+    assert "next_step" in detail, detail
+    assert detail["next_step"] in (
+        "api_key", "first_documents", "first_project", "ready",
+    ), detail["next_step"]
+    assert "message" in detail, detail
+
+
 def test_alpha12_runtime_endpoint_reports_last_import_job(
     fastapi_client: TestClient,
     tmp_projects_dir: Path,
