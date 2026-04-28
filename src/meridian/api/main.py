@@ -1379,6 +1379,21 @@ from meridian.wizard import wizard_router  # noqa: E402
 
 app.include_router(wizard_router)
 
+# Alpha-21: dual-mount the wizard router under /api as well. Reason:
+# alpha-20 set the frontend's API_BASE = "/api", so apiFetch sends the
+# wizard's /setup/* calls to /api/setup/*. The wizard router was only
+# mounted at the bare /setup prefix, so every GUI wizard call landed
+# at no FastAPI route, fell through to StaticFiles, and Starlette
+# returned 405 Method Not Allowed (StaticFiles only handles GET/HEAD).
+# Symptoms: every wizard step from "Connect your AI key" onward was
+# unreachable.
+#
+# Why dual-mount instead of moving entirely to /api: Status-Meridian.bat
+# probes /setup/runtime as its operator-visible health endpoint, and
+# the release gauntlet probes /setup/. Keeping the legacy /setup/* path
+# alive avoids changing those external contracts.
+app.include_router(wizard_router, prefix="/api")
+
 # ── Alpha-20: project JSON endpoints under /api ──────────────────────────
 # Every /projects/{name}/<verb> route registered above on _projects_api
 # now mounts at /api/projects/{name}/<verb>. The bare /projects/<slug>
