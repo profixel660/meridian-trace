@@ -14,7 +14,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
 from docx import Document
 from fastapi.testclient import TestClient
 
@@ -127,8 +126,8 @@ def test_full_wizard_with_projects_dir_override_completes_successfully(
 
     with sqlite3.connect(final_db) as conn:
         sources = list(conn.execute("SELECT * FROM source_document"))
-        assert len(sources) >= 1, (
-            f"final DB has 0 sources — staging DB was not adopted. "
+        assert len(sources) == 1, (
+            f"final DB has unexpected source count — staging DB was not adopted correctly. "
             f"sources={sources}"
         )
 
@@ -138,3 +137,136 @@ def test_full_wizard_with_projects_dir_override_completes_successfully(
         f"setup/complete returned {r.status_code}: {r.text} — "
         "wizard state is inconsistent across projects_dir change."
     )
+
+
+def test_setup_create_project_case_2_same_path_same_slug(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Case 2: user accepts the auto-derived slug AND the default
+    projects_dir. Should run an in-place UPDATE of project.name without
+    moving the file or minting a fresh DB."""
+    monkeypatch.setenv("MERIDIAN_WIZARD_STATE_DIR", str(tmp_path / "wizard_state"))
+    from meridian.config import settings
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "projects_dir")
+    (tmp_path / "projects_dir").mkdir()
+
+    from meridian.wizard import api as wizard_api
+    monkeypatch.setattr(
+        wizard_api, "validate_anthropic_key_str", lambda key: ("valid", "stubbed")
+    )
+
+    r = fastapi_client.post(
+        "/api/setup/api-key",
+        json={"key": "sk-ant-fake-key-not-real-just-for-test"},
+    )
+    assert r.status_code == 200, r.text
+
+    import_src = tmp_path / "BOD"
+    import_src.mkdir()
+    _make_synthetic_docx(import_src / "sample.docx")
+
+    r = fastapi_client.post(
+        "/api/setup/import-folder",
+        json={"folder_path": str(import_src), "project_name": "BOD"},
+    )
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        r = fastapi_client.get(f"/api/setup/import-folder/{job_id}")
+        if r.json()["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.1)
+    assert r.json()["status"] == "succeeded", r.json()
+
+    # Now post /api/setup/projects with SAME slug AND SAME projects_dir.
+    # This exercises case 2.
+    r = fastapi_client.post(
+        "/api/setup/projects",
+        json={
+            "name": "Building of Dreams",  # different display name
+            "slug": "bod",  # same slug as auto-derived from "BOD" folder
+            "projects_dir": str(tmp_path / "projects_dir"),
+            "notes": None,
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # The staging DB should still be at the SAME path (no move happened).
+    db_at_default = (tmp_path / "projects_dir") / "bod.sqlite"
+    assert db_at_default.exists()
+
+    # And its project.name should be "Building of Dreams" (the in-place UPDATE).
+    with sqlite3.connect(db_at_default) as conn:
+        rows = list(conn.execute("SELECT name FROM project"))
+        assert rows == [("Building of Dreams",)], rows
+
+
+def test_setup_create_project_case_3_same_path_different_slug(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Case 3: user keeps the default projects_dir but RENAMES the project
+    to a different slug. Should adopt_project (rename + name update) within
+    the same dir."""
+    monkeypatch.setenv("MERIDIAN_WIZARD_STATE_DIR", str(tmp_path / "wizard_state"))
+    from meridian.config import settings
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "projects_dir")
+    (tmp_path / "projects_dir").mkdir()
+
+    from meridian.wizard import api as wizard_api
+    monkeypatch.setattr(
+        wizard_api, "validate_anthropic_key_str", lambda key: ("valid", "stubbed")
+    )
+
+    r = fastapi_client.post(
+        "/api/setup/api-key",
+        json={"key": "sk-ant-fake-key-not-real-just-for-test"},
+    )
+    assert r.status_code == 200, r.text
+
+    import_src = tmp_path / "BOD"
+    import_src.mkdir()
+    _make_synthetic_docx(import_src / "sample.docx")
+
+    r = fastapi_client.post(
+        "/api/setup/import-folder",
+        json={"folder_path": str(import_src), "project_name": "BOD"},
+    )
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        r = fastapi_client.get(f"/api/setup/import-folder/{job_id}")
+        if r.json()["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.1)
+    assert r.json()["status"] == "succeeded", r.json()
+
+    # Now post /api/setup/projects with SAME projects_dir but DIFFERENT slug.
+    r = fastapi_client.post(
+        "/api/setup/projects",
+        json={
+            "name": "MyProject",
+            "slug": "my-project",
+            "projects_dir": str(tmp_path / "projects_dir"),
+            "notes": None,
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # The staging DB at "bod.sqlite" should be GONE — moved to "my-project.sqlite".
+    old_db = (tmp_path / "projects_dir") / "bod.sqlite"
+    new_db = (tmp_path / "projects_dir") / "my-project.sqlite"
+    assert not old_db.exists(), "staging bod.sqlite should have been moved"
+    assert new_db.exists(), "new my-project.sqlite should exist"
+
+    # And the source rows should be in the new DB.
+    with sqlite3.connect(new_db) as conn:
+        sources = list(conn.execute("SELECT * FROM source_document"))
+        assert len(sources) == 1, sources

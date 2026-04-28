@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 import sys
 import threading
 import time
@@ -178,6 +177,7 @@ class _ImportJob:
         "_persisted",
         "completed",
         "current_file",
+        "db_path",
         "deduped",
         "errors",
         "id",
@@ -199,6 +199,7 @@ class _ImportJob:
         # duplicate state here.
         self.errors: list[ImportErrorEntry] = []
         self.current_file: str | None = None
+        self.db_path: Path | None = None
         self._persisted = False
 
 
@@ -820,12 +821,15 @@ def setup_create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
     If no staging exists (user skipped import), falls back to minting a
     fresh DB via ``create_project``.
 
-    Four cases handled:
-        1. No staging DB (user skipped import) → create fresh.
-        2. Staging exists at same path AND same slug → just rename in-DB.
-        3. Staging exists at same path BUT different slug → adopt
-           (rename file + rewrite name).
-        4. Staging exists at different path → adopt across dirs.
+    Three branches:
+        1. No staging DB → ``create_project`` fresh.
+        2. Staging at the same path AND same slug → in-place name update.
+        3. Staging at a different path or different slug → ``adopt_project``
+           (file move + name rewrite).
+
+    Refuses to overwrite a pre-existing project at the target path
+    (409). Refuses to run if a folder-import job is still writing to
+    the staging DB (409 with ``error: import_in_progress``).
     """
     target_dir = Path(req.projects_dir).expanduser()
     _ensure_writeable(target_dir)
@@ -839,12 +843,60 @@ def setup_create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
         if candidate.exists():
             staging_db = candidate
 
+    # I1: Guard against the folder-import / projects-POST race.
+    # If a background import job is still writing to the staging DB, refuse
+    # the projects step — moving an open SQLite file raises PermissionError
+    # on Windows or causes silent WAL corruption on POSIX.
+    if staging_db is not None:
+        with _jobs_lock:
+            for job in _jobs.values():
+                if (
+                    getattr(job, "db_path", None) == staging_db
+                    and job.status in {"pending", "running"}
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "error": "import_in_progress",
+                            "message": (
+                                f"An import job ({job.id[:8]}) is still "
+                                f"writing to the staging project database. "
+                                "Wait for it to finish before creating the project."
+                            ),
+                            "job_id": job.id,
+                        },
+                    )
+
     # Now mutate process-wide projects_dir to the user's choice.
     settings.data_dir = target_dir
 
     final_db_path = project_db_path(req.slug)
-    if final_db_path.exists():
-        # Pre-existing project at the target slug — refuse to overwrite.
+    # Case 2 is the scenario where the staging DB and the final DB are the
+    # same file — the user accepted the auto-derived slug and the default
+    # projects_dir. We must NOT treat this as a collision and refuse; instead
+    # we fall through to the in-place name UPDATE below.
+    #
+    # However we must refuse a DUPLICATE POST (no import-folder step,
+    # setup_create_project called twice with same slug). The distinguishing
+    # signal: if the DB was created by setup_import_folder, there will be at
+    # least one job in _jobs whose db_path matches the staging DB. If the DB
+    # was created by a prior setup_create_project (branch 1), no such job
+    # exists.
+    _staging_created_by_import = False
+    if staging_db is not None and staging_db.resolve() == final_db_path.resolve():
+        with _jobs_lock:
+            _staging_created_by_import = any(
+                getattr(j, "db_path", None) == staging_db for j in _jobs.values()
+            )
+    _is_staging_at_final = (
+        staging_db is not None
+        and staging_db.resolve() == final_db_path.resolve()
+        and _staging_created_by_import
+    )
+    if final_db_path.exists() and not _is_staging_at_final:
+        # Pre-existing project at the target slug that is either unrelated
+        # (not our staging DB) or was created by a prior setup_create_project
+        # call — refuse to overwrite.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -854,22 +906,42 @@ def setup_create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
         )
 
     if staging_db is not None and staging_db.resolve() != final_db_path.resolve():
-        # Cases 3 & 4: adopt the staging DB into the user's chosen
+        # Branch 3: adopt the staging DB into the user's chosen
         # location and/or new slug, rewriting project.name.
         from meridian.projects import adopt_project as _adopt  # noqa: PLC0415
-        _adopt(
-            old_db_path=staging_db,
-            new_db_path=final_db_path,
-            new_name=req.name,
-        )
+        try:
+            _adopt(
+                old_db_path=staging_db,
+                new_db_path=final_db_path,
+                new_name=req.name,
+            )
+        except FileExistsError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "slug_exists", "existing_db_path": str(final_db_path)},
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "staging_db_locked",
+                    "message": (
+                        f"Could not move the staging project database — "
+                        f"it may still be in use. ({exc})"
+                    ),
+                },
+            ) from exc
     elif staging_db is not None and staging_db.resolve() == final_db_path.resolve():
-        # Case 2: same path AND same slug — just update the name in place.
-        from contextlib import closing  # noqa: PLC0415
-        with closing(sqlite3.connect(final_db_path)) as conn:
-            conn.execute("UPDATE project SET name = ?", (req.name,))
-            conn.commit()
+        # Branch 2: same path AND same slug — just update the name in place.
+        from meridian.db.connection import connect as _connect, transaction as _txn  # noqa: PLC0415
+        conn = _connect(final_db_path, busy_timeout_ms=5000)
+        try:
+            with _txn(conn):
+                conn.execute("UPDATE project SET name = ?", (req.name,))
+        finally:
+            conn.close()
     else:
-        # Case 1: no staging — user skipped import. Mint fresh.
+        # Branch 1: no staging — user skipped import. Mint fresh.
         try:
             _project_id, final_db_path = create_project(name=req.name)
         except FileExistsError as exc:
@@ -878,7 +950,6 @@ def setup_create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
                 detail={"error": "slug_exists", "existing_db_path": str(final_db_path)},
             ) from exc
 
-    state = load_wizard_state()
     mark_first_project(
         state,
         slug=req.slug,
@@ -1161,6 +1232,7 @@ def setup_import_folder(req: FolderImportRequest) -> ImportJobResponse:
         paths.extend(kind_paths)
 
     job = _ImportJob(total=len(paths))
+    job.db_path = db_path
     with _jobs_lock:
         _jobs[job.id] = job
 
