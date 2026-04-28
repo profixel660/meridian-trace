@@ -20,6 +20,8 @@ type Outcome =
   | { kind: "creating" }
   | { kind: "created"; slug: string }
   | { kind: "conflict"; slug: string; message: string }
+  | { kind: "import_in_progress"; message: string }
+  | { kind: "staging_db_locked"; message: string }
   | { kind: "invalid"; message: string; osError?: string | null }
   | { kind: "error"; message: string };
 
@@ -235,6 +237,18 @@ function SetupFirstProjectPageInner() {
           setOutcome({
             kind: "conflict",
             slug: res.slug ?? slug,
+            message: res.message,
+          });
+          break;
+        case "import_in_progress":
+          setOutcome({
+            kind: "import_in_progress",
+            message: res.message,
+          });
+          break;
+        case "staging_db_locked":
+          setOutcome({
+            kind: "staging_db_locked",
             message: res.message,
           });
           break;
@@ -473,6 +487,38 @@ function SetupFirstProjectPageInner() {
                 {FIRST_PROJECT_COPY.outcomes.conflict.changeLabel}
               </button>
             </div>
+          </div>
+        ) : null}
+
+        {outcome.kind === "import_in_progress" ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+            <p className="text-sm font-medium text-amber-300">
+              ⚠ Import still in progress
+            </p>
+            <p className="mt-1 text-sm text-text-muted">{outcome.message}</p>
+            <button
+              type="button"
+              onClick={() => setOutcome({ kind: "idle" })}
+              className="mt-3 rounded-full border border-border px-3 py-1.5 text-xs text-text-muted hover:border-text-muted hover:text-text-primary"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+
+        {outcome.kind === "staging_db_locked" ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+            <p className="text-sm font-medium text-amber-300">
+              ⚠ Project database busy
+            </p>
+            <p className="mt-1 text-sm text-text-muted">{outcome.message}</p>
+            <button
+              type="button"
+              onClick={() => setOutcome({ kind: "idle" })}
+              className="mt-3 rounded-full border border-border px-3 py-1.5 text-xs text-text-muted hover:border-text-muted hover:text-text-primary"
+            >
+              Try again
+            </button>
           </div>
         ) : null}
 

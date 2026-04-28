@@ -78,11 +78,26 @@ export interface ApiKeyValidationResponse {
 }
 
 /**
- * Three-outcome create-project shape the wizard page renders. Adapter
+ * Five-outcome create-project shape the wizard page renders. Adapter
  * translates from the raw HTTP shape (200 / 409 / 400) Stream C ships.
+ *
+ * "created"           — happy path; project exists on disk.
+ * "conflict"          — 409 slug_exists; a project with this slug already
+ *                       lives in the projects folder.
+ * "import_in_progress" — 409 import_in_progress; a folder-import job is
+ *                        still writing to the staging DB; the user should
+ *                        wait and retry.
+ * "staging_db_locked" — 409 staging_db_locked; the adopt_project move
+ *                       raised OSError (file in use); wait and retry.
+ * "invalid"           — 400; directory not writeable / slug invalid / etc.
  */
 export interface CreateProjectResponse {
-  outcome: "created" | "conflict" | "invalid";
+  outcome:
+    | "created"
+    | "conflict"
+    | "import_in_progress"
+    | "staging_db_locked"
+    | "invalid";
   /** Human-readable message safe to render verbatim. */
   message: string;
   /** Slug of the created or conflicting project. */
@@ -91,6 +106,8 @@ export interface CreateProjectResponse {
   project_path: string | null;
   /** OS error string when outcome === "invalid". */
   os_error?: string | null;
+  /** Backend job_id when outcome === "import_in_progress". */
+  job_id?: string | null;
 }
 
 export interface ImportRequest {
@@ -155,6 +172,15 @@ interface RawConflictDetail {
   existing_db_path: string;
 }
 
+interface RawImportInProgressDetail {
+  error: "import_in_progress";
+  job_id?: string;
+}
+
+interface RawStagingDbLockedDetail {
+  error: "staging_db_locked";
+}
+
 interface RawInvalidDetail {
   error:
     | "projects_dir_not_writeable"
@@ -208,24 +234,48 @@ export const setupApi = {
     } catch (err) {
       if (err instanceof MeridianApiError) {
         const parsed = safeJsonParse<{
-          detail?: RawConflictDetail | RawInvalidDetail | string;
+          detail?:
+            | RawConflictDetail
+            | RawImportInProgressDetail
+            | RawStagingDbLockedDetail
+            | RawInvalidDetail
+            | string;
         }>(err.body);
         const detail = parsed?.detail;
 
-        if (
-          err.status === 409 &&
-          detail &&
-          typeof detail === "object" &&
-          detail.error === "slug_exists"
-        ) {
-          const conflict = detail as RawConflictDetail;
-          return {
-            outcome: "conflict",
-            message:
-              "A project with this slug already exists in that folder. Open it, or pick a different slug.",
-            slug,
-            project_path: conflict.existing_db_path,
-          };
+        if (err.status === 409 && detail && typeof detail === "object") {
+          if (detail.error === "slug_exists") {
+            const conflict = detail as RawConflictDetail;
+            return {
+              outcome: "conflict",
+              message:
+                "A project with this slug already exists in that folder. Open it, or pick a different slug.",
+              slug,
+              project_path: conflict.existing_db_path,
+            };
+          }
+
+          if (detail.error === "import_in_progress") {
+            const inProgress = detail as RawImportInProgressDetail;
+            return {
+              outcome: "import_in_progress",
+              message:
+                "We're still importing your documents. Wait a moment and try again.",
+              slug,
+              project_path: null,
+              job_id: inProgress.job_id ?? null,
+            };
+          }
+
+          if (detail.error === "staging_db_locked") {
+            return {
+              outcome: "staging_db_locked",
+              message:
+                "Could not move the project database — it may still be in use. Wait a few seconds and try again.",
+              slug,
+              project_path: null,
+            };
+          }
         }
 
         if (
