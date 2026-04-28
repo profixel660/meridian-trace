@@ -62,8 +62,15 @@ echo.
 
 REM Start detached. /B = no new window inherits parent. We pass MERIDIAN_BACKEND_LOG
 REM via the env so meridian.api.main's startup-time redirect captures stdout/stderr.
+REM Alpha-14: load %MERIDIAN_ROOT%\.env into the PowerShell process
+REM environment BEFORE Start-Process, so any vars added there
+REM (e.g. MERIDIAN_AUTH_DISABLED=1 for the alpha-13 debug bypass)
+REM actually reach pythonw.exe. Alpha-13 shipped without this and
+REM the bypass silently failed -- the bug class this fixes.
+set "MERIDIAN_ENV_FILE=%MERIDIAN_ROOT%\.env"
 set "MERIDIAN_BACKEND_LOG=%MERIDIAN_BACKEND_LOG%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MERIDIAN_BACKEND_LOG = '%MERIDIAN_BACKEND_LOG%'; $p = Start-Process -FilePath '%MERIDIAN_PYBIN%' -ArgumentList @('-m','meridian.api.main') -WorkingDirectory '%MERIDIAN_ROOT%' -WindowStyle Hidden -PassThru; Set-Content -LiteralPath '%MERIDIAN_PID_FILE%' -Value $p.Id -Encoding ASCII; Write-Host ('       PID: ' + $p.Id)"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "if (Test-Path -LiteralPath '%MERIDIAN_ENV_FILE%') { Get-Content -LiteralPath '%MERIDIAN_ENV_FILE%' | ForEach-Object { if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') { $k = $Matches[1]; $v = $Matches[2]; if ($v -match '^\"(.*)\"$' -or $v -match \"^'(.*)'$\") { $v = $Matches[1] } ; Set-Item -Path \"Env:$k\" -Value $v } } } ; $env:MERIDIAN_BACKEND_LOG = '%MERIDIAN_BACKEND_LOG%' ; $p = Start-Process -FilePath '%MERIDIAN_PYBIN%' -ArgumentList @('-m','meridian.api.main') -WorkingDirectory '%MERIDIAN_ROOT%' -WindowStyle Hidden -PassThru ; Set-Content -LiteralPath '%MERIDIAN_PID_FILE%' -Value $p.Id -Encoding ASCII ; Write-Host ('       PID: ' + $p.Id)"
 if errorlevel 1 (
     echo [ERROR] Could not spawn the backend. See %MERIDIAN_BACKEND_LOG% for details.
     pause

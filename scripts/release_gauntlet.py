@@ -21,10 +21,14 @@ already been shipped (and embarrassed us) on the v0.2.0-alpha line:
     7c. Import status-pivot smoke — kick a tiny job, poll, confirm
         status reaches 'succeeded' and 'failed_groups' is a list. Catches
         the alpha-10 frontend-typed-it-wrong bug class                   (alpha-11)
-    2c. Detach-pattern static check — installer/Start-Meridian.bat AND
-        the Install-Meridian.ps1 backend launch use pythonw.exe AND
-        WindowStyle Hidden. Catches a regression that re-introduces the
-        alpha-11 "close terminal kills backend" bug class.               (alpha-12)
+    2c. Detach-pattern + .env-loader static check — installer/Start-
+        Meridian.bat AND the Install-Meridian.ps1 inline copy contain
+        pythonw.exe + WindowStyle Hidden (alpha-12 detach contract) AND
+        MERIDIAN_ENV_FILE + Set-Item -Path "Env: (alpha-14 .env-loader
+        contract). Statically guards the alpha-13 documentation-vs-
+        reality gap that step 7h's subprocess-level test alone cannot
+        catch -- a future commit that drops the .env loader from the
+        .bat would pass 7h but ship the broken launcher.       (alpha-12 + alpha-14)
     2d. Launcher .bat exec-policy check — installer/Meridian-Console.bat
         invokes powershell.exe with -ExecutionPolicy Bypass. Catches
         regressions that re-expose the alpha-11 ExecutionPolicy block.   (alpha-12)
@@ -35,6 +39,13 @@ already been shipped (and embarrassed us) on the v0.2.0-alpha line:
         false on a fresh install with no env var set. Catches a
         regression that defaults the alpha-13 MERIDIAN_AUTH_DISABLED
         bypass on.                                                       (alpha-13)
+    7h. .env-loaded env-var contract — write MERIDIAN_AUTH_DISABLED=1
+        into a temp .env, spawn the backend with the launcher's .env-
+        loading semantics, and confirm /setup/runtime reports
+        auth_disabled=true. Locks the contract ".env in the install
+        dir -> env-var in the running backend -> /setup/runtime
+        reflects it." Catches the alpha-13 documentation-vs-reality
+        gap where Start-Meridian.bat never loaded .env.                  (alpha-14)
     8.  CLI --help smoke (no browser opens)
     9.  Summary
 
@@ -770,6 +781,171 @@ def _step_backend_lifecycle(
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Step 7h — .env-loaded env-var contract (alpha-14)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _parse_dotenv(text: str) -> dict[str, str]:
+    """Parse a minimal KEY=VALUE .env file. Mirrors the simple semantics
+    Start-Meridian.bat (alpha-14) uses: ignore blank lines and lines
+    starting with '#'; split on the first '='; strip surrounding quotes.
+    """
+    out: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        if key:
+            out[key] = value
+    return out
+
+
+def _step_env_var_via_dotenv(scratch: Path, venv_dir: Path, repo: Path) -> bool:
+    """Step 7h (alpha-14): end-to-end verification that a `.env` file in
+    MERIDIAN_HOME results in env vars reaching the running backend.
+
+    Why this step exists: alpha-13 shipped MERIDIAN_AUTH_DISABLED=1 as an
+    auth-bypass env var. The Python-side contract was tested. But the
+    user-facing instructions ("Add MERIDIAN_AUTH_DISABLED=1 to
+    C:\\Meridian\\.env, restart the backend") didn't actually work
+    because Start-Meridian.bat never loaded .env. Alpha-14 fixed the
+    launcher AND added this gauntlet step so the bug class never recurs.
+
+    Simplification: we test the contract, NOT the .bat plumbing. The
+    .bat plumbing is covered by the existing static checks (steps 2c/2d)
+    plus alpha-14's e2e tests. Here we parse the .env in Python and
+    pass the merged dict as `env=` to subprocess.Popen. That exercises
+    the same OS-level "env reaches process -> /setup/runtime reports
+    it" path from the perspective of contract correctness.
+    """
+    if os.name == "nt":
+        py = venv_dir / "Scripts" / "python.exe"
+    else:
+        py = venv_dir / "bin" / "python"
+
+    home_7h = scratch / "meridian_home_7h"
+    home_7h.mkdir(exist_ok=True)
+    spawn_cwd = scratch / "spawn_cwd_7h"
+    spawn_cwd.mkdir(exist_ok=True)
+    dotenv_path = home_7h / ".env"
+    dotenv_path.write_text("MERIDIAN_AUTH_DISABLED=1\n", encoding="utf-8")
+
+    parsed = _parse_dotenv(dotenv_path.read_text(encoding="utf-8"))
+    if parsed.get("MERIDIAN_AUTH_DISABLED") != "1":
+        _fail(
+            "step 7h: env-var via .env contract",
+            f".env parser failed to extract MERIDIAN_AUTH_DISABLED=1; got {parsed!r}",
+        )
+        return False
+
+    port = 8001
+    base = f"http://127.0.0.1:{port}"
+    log_path = scratch / "backend_7h.log"
+
+    env = {
+        **os.environ,
+        **parsed,
+        "MERIDIAN_HOME": str(home_7h),
+        "MERIDIAN_PORT": str(port),
+        "MERIDIAN_HOST": "127.0.0.1",
+        "MERIDIAN_BACKEND_LOG": str(log_path),
+    }
+    env.pop("PYTHONPATH", None)
+
+    _info(
+        f"step 7h: spawning backend on :{port} with .env-derived "
+        f"MERIDIAN_AUTH_DISABLED={parsed.get('MERIDIAN_AUTH_DISABLED')!r}"
+    )
+    with log_path.open("wb") as logf:
+        proc = subprocess.Popen(
+            [str(py), "-m", "meridian.api.main"],
+            cwd=str(spawn_cwd),
+            env=env,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+        )
+    try:
+        # 60s deadline @ 250ms intervals, per the brief.
+        deadline = time.monotonic() + 60.0
+        healthy = False
+        while time.monotonic() < deadline:
+            status, _body = _probe(f"{base}/health", timeout=0.5)
+            if status == 200:
+                healthy = True
+                break
+            time.sleep(0.25)
+        if not healthy:
+            try:
+                tail = log_path.read_text(errors="replace").splitlines()[-30:]
+            except OSError:
+                tail = []
+            _fail(
+                "step 7h: env-var via .env contract",
+                f"backend on :{port} never reported /health 200 within 60s. "
+                "backend.log tail:\n" + "\n".join(tail),
+            )
+            return False
+
+        rt_status, rt_payload = _probe(f"{base}/setup/runtime", timeout=5.0)
+        if rt_status != 200:
+            _fail(
+                "step 7h: env-var via .env contract",
+                f"GET /setup/runtime returned {rt_status} (expected 200)",
+            )
+            return False
+        try:
+            rt_body = json.loads(rt_payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            _fail(
+                "step 7h: env-var via .env contract",
+                f"non-JSON body from /setup/runtime: {exc}",
+            )
+            return False
+        auth_disabled = rt_body.get("auth_disabled")
+        if not isinstance(auth_disabled, bool):
+            _fail(
+                "step 7h: env-var via .env contract",
+                f"auth_disabled must be bool, got {type(auth_disabled).__name__}",
+            )
+            return False
+        if auth_disabled is not True:
+            _fail(
+                "step 7h: env-var via .env contract",
+                "auth_disabled=false on a backend spawned with "
+                "MERIDIAN_AUTH_DISABLED=1 derived from .env. The .env -> env-var "
+                "-> /setup/runtime contract is broken. This is the alpha-13 "
+                "bug class -- the documentation said 'put it in .env' but "
+                "the env var never reached the process. "
+                f"rt_body keys: {sorted(rt_body)}",
+            )
+            return False
+        _ok(
+            "step 7h: env-var via .env contract",
+            "auth_disabled=true after .env load",
+        )
+        return True
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5.0)
+        try:
+            dotenv_path.unlink()
+        except OSError:
+            pass
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Step 8 — CLI --help smoke
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -833,35 +1009,49 @@ def _step_detach_pattern(installer_dir: Path) -> bool:
     install_ps1 = installer_dir / "Install-Meridian.ps1"
 
     failures: list[str] = []
+    # Alpha-14 reviewer-pull-forward: the alpha-13 documentation-vs-reality
+    # gap (Start-Meridian.bat didn't load .env, so MERIDIAN_AUTH_DISABLED
+    # in .env was orphaned) MUST be statically guarded. Without these
+    # tokens, a regression that deletes the .env loader would pass step
+    # 7h (subprocess-level) but ship a broken .bat. This closes the
+    # alpha-13-class miss the rest of alpha-14 exists to prevent.
+    required_tokens = (
+        ("pythonw.exe",            "alpha-12 detach pattern (visible-cmd regression)"),
+        ("WindowStyle Hidden",     "alpha-12 detach pattern (visible-cmd regression)"),
+        ("MERIDIAN_ENV_FILE",      "alpha-14 .env loader (alpha-13 documentation-vs-reality regression)"),
+        # Inside cmd.exe's outer "..." quoting the powershell `Set-Item
+        # -Path "Env:$k"` becomes literal `Set-Item -Path \"Env:`. Match
+        # the on-disk escaped form, not the conceptual string.
+        (r'Set-Item -Path \"Env:', "alpha-14 .env loader (alpha-13 documentation-vs-reality regression)"),
+    )
+
     if not start_bat.exists():
         failures.append(f"missing: {start_bat}")
     else:
         text = start_bat.read_text(encoding="utf-8", errors="replace")
-        if "pythonw.exe" not in text:
-            failures.append(f"{start_bat.name}: 'pythonw.exe' not found in launcher body")
-        if "WindowStyle Hidden" not in text:
-            failures.append(f"{start_bat.name}: '-WindowStyle Hidden' missing")
+        for token, why in required_tokens:
+            if token not in text:
+                failures.append(f"{start_bat.name}: missing {token!r} -- {why}")
 
     if not install_ps1.exists():
         failures.append(f"missing: {install_ps1}")
     else:
         ps_text = install_ps1.read_text(encoding="utf-8", errors="replace")
-        if "pythonw.exe" not in ps_text:
-            failures.append(f"{install_ps1.name}: 'pythonw.exe' not in installer (alpha-12 detach regression)")
-        if "WindowStyle Hidden" not in ps_text:
-            failures.append(f"{install_ps1.name}: '-WindowStyle Hidden' not in installer (alpha-12 detach regression)")
+        for token, why in required_tokens:
+            if token not in ps_text:
+                failures.append(f"{install_ps1.name}: missing {token!r} -- {why}")
 
     if failures:
         _fail(
-            "step 2c: detach-pattern static check",
-            "alpha-11 SME hit 'close terminal kills backend'. Alpha-12 fixed it via "
-            "pythonw.exe + WindowStyle Hidden. The following surfaces no longer match:\n  - "
+            "step 2c: detach-pattern + .env-loader static check",
+            "alpha-12 + alpha-14 user-facing contracts. Each token must appear in "
+            "BOTH Start-Meridian.bat and the Install-Meridian.ps1 inline copy:\n  - "
             + "\n  - ".join(failures),
         )
         return False
     _ok(
-        "step 2c: detach-pattern static check",
-        "Start-Meridian.bat + Install-Meridian.ps1 both use pythonw.exe + WindowStyle Hidden",
+        "step 2c: detach-pattern + .env-loader static check",
+        "pythonw.exe + WindowStyle Hidden + MERIDIAN_ENV_FILE + Set-Item Env: all present in both surfaces",
     )
     return True
 
@@ -1003,6 +1193,9 @@ def main() -> int:
             return 1
 
         if not _step_backend_lifecycle(venv_dir, scratch, repo):
+            return 1
+
+        if not _step_env_var_via_dotenv(scratch, venv_dir, repo):
             return 1
 
         if not _step_cli_help_smoke(venv_dir):

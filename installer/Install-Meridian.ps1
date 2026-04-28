@@ -843,8 +843,14 @@ echo [...] Starting Meridian backend (this can take ~30 seconds on first run).
 echo       Log file: %MERIDIAN_BACKEND_LOG%
 echo.
 
+REM Alpha-14: load %MERIDIAN_ROOT%\.env into the PowerShell process
+REM environment BEFORE Start-Process so vars added there (e.g.
+REM MERIDIAN_AUTH_DISABLED=1) actually reach pythonw.exe. Alpha-13
+REM shipped without this and the bypass silently failed.
+set "MERIDIAN_ENV_FILE=%MERIDIAN_ROOT%\.env"
 set "MERIDIAN_BACKEND_LOG=%MERIDIAN_BACKEND_LOG%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MERIDIAN_BACKEND_LOG = '%MERIDIAN_BACKEND_LOG%'; $p = Start-Process -FilePath '%MERIDIAN_PYBIN%' -ArgumentList @('-m','meridian.api.main') -WorkingDirectory '%MERIDIAN_ROOT%' -WindowStyle Hidden -PassThru; Set-Content -LiteralPath '%MERIDIAN_PID_FILE%' -Value $p.Id -Encoding ASCII; Write-Host ('       PID: ' + $p.Id)"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "if (Test-Path -LiteralPath '%MERIDIAN_ENV_FILE%') { Get-Content -LiteralPath '%MERIDIAN_ENV_FILE%' | ForEach-Object { if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') { $k = $Matches[1]; $v = $Matches[2]; if ($v -match '^\"(.*)\"$' -or $v -match \"^'(.*)'$\") { $v = $Matches[1] } ; Set-Item -Path \"Env:$k\" -Value $v } } } ; $env:MERIDIAN_BACKEND_LOG = '%MERIDIAN_BACKEND_LOG%' ; $p = Start-Process -FilePath '%MERIDIAN_PYBIN%' -ArgumentList @('-m','meridian.api.main') -WorkingDirectory '%MERIDIAN_ROOT%' -WindowStyle Hidden -PassThru ; Set-Content -LiteralPath '%MERIDIAN_PID_FILE%' -Value $p.Id -Encoding ASCII ; Write-Host ('       PID: ' + $p.Id)"
 if errorlevel 1 (
     echo [ERROR] Could not spawn the backend. See %MERIDIAN_BACKEND_LOG% for details.
     pause
@@ -957,6 +963,25 @@ echo.
 
 echo [RUNTIME]
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri '%MERIDIAN_RUNTIME_URL%' -UseBasicParsing -TimeoutSec 2; $j = $r.Content | ConvertFrom-Json; Write-Host ('         pid             : ' + $j.pid); Write-Host ('         version         : ' + $j.version); Write-Host ('         python_version  : ' + $j.python_version); Write-Host ('         platform        : ' + $j.platform); Write-Host ('         started_at      : ' + $j.started_at); Write-Host ('         uptime_seconds  : ' + [math]::Round($j.uptime_seconds, 1)); Write-Host ('         backend_log     : ' + $j.backend_log_path); Write-Host ('         structlog_dir   : ' + $j.structlog_dir); if ($j.last_import_job) { Write-Host ''; Write-Host '         last import job:'; Write-Host ('           job_id       : ' + $j.last_import_job.job_id); Write-Host ('           status       : ' + $j.last_import_job.status); Write-Host ('           progress     : ' + $j.last_import_job.completed + '/' + $j.last_import_job.total); Write-Host ('           imported     : ' + $j.last_import_job.imported); Write-Host ('           deduped      : ' + $j.last_import_job.deduped); Write-Host ('           failed_count : ' + $j.last_import_job.failed_count); if ($j.last_import_job.current_file) { Write-Host ('           current_file : ' + $j.last_import_job.current_file) } } else { Write-Host ''; Write-Host '         last import job: <none this process>' } } catch { Write-Host ('         <runtime endpoint unavailable -- ' + $_.Exception.Message + '>') }"
+echo.
+
+REM --- 3. [AUTH] -- surface auth_disabled flag from /setup/runtime (alpha-13)
+echo [AUTH]
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri '%MERIDIAN_RUNTIME_URL%' -UseBasicParsing -TimeoutSec 2; $j = $r.Content | ConvertFrom-Json; if ($j.PSObject.Properties.Name -contains 'auth_disabled') { if ($j.auth_disabled) { Write-Host '         auth_disabled=true   --> AUTH BYPASS ACTIVE (debug only)' } else { Write-Host '         auth_disabled=false  --> normal TOTP enforcement' } } else { Write-Host '         <auth_disabled field not present -- backend pre-alpha-13?>' } } catch { Write-Host '         <runtime endpoint unavailable -- cannot read auth_disabled>' }"
+echo.
+
+REM --- 4. [ENVIRONMENT] -- show MERIDIAN_* env vars from .env (alpha-14)
+REM Windows does not expose another process's environment block via WMI;
+REM reporting the source of truth the launcher reads at startup. Restart
+REM the backend after editing .env to refresh.
+echo [ENVIRONMENT]
+echo          (source: C:\Meridian\.env -- restart backend if you edited it)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$envFile = 'C:\Meridian\.env'; if (Test-Path $envFile) { $found = $false; foreach ($line in Get-Content $envFile) { $t = $line.Trim(); if (-not $t) { continue }; if ($t.StartsWith('#')) { continue }; if ($t -match '^(MERIDIAN_[A-Z0-9_]+)\s*=\s*(.*)$') { $name = $matches[1]; $val = $matches[2].Trim().Trim([char]34).Trim([char]39); $upper = $name.ToUpper(); $sensitive = $false; foreach ($needle in @('SECRET','TOKEN','PASSWORD','APIKEY')) { if ($upper.Contains($needle)) { $sensitive = $true } }; if ($sensitive -and $val.Length -gt 0) { $val = '<redacted ' + $val.Length + ' chars>' }; Write-Host ('         ' + $name + '=' + $val); $found = $true } }; if (-not $found) { Write-Host '         (no MERIDIAN_* entries found in .env)' } } else { Write-Host ('         (.env not found at ' + $envFile + ')') }"
+echo.
+
+REM --- 5. [PROCESS] -- listening PID on :8000 (informational)
+echo [PROCESS]
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $c = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Stop | Select-Object -First 1; if ($c) { $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue; if ($p) { Write-Host ('         listener_pid    : ' + $p.Id); Write-Host ('         process_name    : ' + $p.ProcessName); Write-Host ('         path            : ' + $p.Path) } else { Write-Host ('         listener_pid    : ' + $c.OwningProcess + ' (process info unavailable)') } } else { Write-Host '         (nothing listening on :8000)' } } catch { Write-Host '         (could not enumerate :8000 listener)' }"
 echo.
 exit /b 0
 '@

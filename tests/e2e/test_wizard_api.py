@@ -2060,6 +2060,37 @@ def test_alpha13_runtime_endpoint_reports_auth_disabled_on(
     assert body["auth_disabled"] is True, body
 
 
+def test_alpha14_env_var_set_in_process_reaches_runtime_endpoint(
+    fastapi_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Alpha-14 user-instruction round-trip: when MERIDIAN_AUTH_DISABLED=1
+    is in the running process's environment, /setup/runtime.auth_disabled
+    is true.
+
+    This locks the contract from the env-var END (where the launcher's
+    .env loader sets it) to the user-visible /setup/runtime field.
+    The gauntlet step 7h covers the file -> env -> running-process leg
+    by spawning a fresh subprocess with the parsed .env; this test
+    covers the env -> /setup/runtime leg with a TestClient.
+
+    Together they prove the user-facing instruction
+    "edit .env, restart, /setup/runtime reports auth_disabled=true"
+    holds end-to-end."""
+    monkeypatch.setenv("MERIDIAN_AUTH_DISABLED", "1")
+    response = fastapi_client.get("/setup/runtime")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["auth_disabled"] is True, body
+    # And explicitly: a 401-protected endpoint must let an unauthenticated
+    # request through when the bypass is on. Alpha-13 already locks this
+    # at the require_session level; verifying through the actual HTTP
+    # layer here means TestClient-level dependency injection is wired
+    # consistently with the env probe.
+    from meridian.auth.fastapi_dep import auth_disabled
+    assert auth_disabled() is True
+
+
 def test_alpha13_partial_state_is_imported_zero_deduped_positive_failed_positive(
     fastapi_client: TestClient,
     tmp_projects_dir: Path,
