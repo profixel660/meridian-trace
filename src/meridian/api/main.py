@@ -1386,6 +1386,48 @@ from starlette.staticfiles import StaticFiles  # noqa: E402
 
 _web_dir = settings.web_dir
 if _web_dir is not None:
+    # Alpha-18: SPA fallback for /projects/<slug> URLs.
+    #
+    # The Next.js shell is built with `output: "export"` and
+    # `generateStaticParams` returns a single placeholder
+    # ``[{ name: "_" }]`` (see apps/web/src/app/projects/[name]/layout.tsx),
+    # so only ``/projects/_/index.html`` exists on disk. Inside Tauri
+    # this is fine -- the SPA loads at "/" and React's client-side
+    # router handles all subsequent navigation, never reloading the
+    # page. In a plain browser, hitting ``/projects/bod-2`` directly
+    # 404s because there is no ``/projects/bod-2/index.html``.
+    #
+    # Fix: serve the placeholder ``/projects/_/index.html`` for ANY
+    # ``/projects/<slug>`` URL. The SPA's client-side router reads the
+    # actual slug from ``window.location`` and renders the right
+    # project. The same trick covers the nested review subroutes
+    # (``/projects/<slug>/sources``, ``.../master``, ``.../quarantine``)
+    # whose static files only exist under ``/projects/_/...``.
+    _projects_placeholder_dir = Path(_web_dir) / "projects" / "_"
+    _projects_placeholder_html = _projects_placeholder_dir / "index.html"
+
+    if _projects_placeholder_html.exists():
+        @app.get("/projects/{slug}", include_in_schema=False)
+        @app.get("/projects/{slug}/", include_in_schema=False)
+        def _spa_project_root(slug: str):  # noqa: ARG001 — slug is read by the SPA from window.location
+            return FileResponse(str(_projects_placeholder_html))
+
+        # Nested routes: /projects/<slug>/<page> e.g. /sources, /master,
+        # /quarantine. Each has a corresponding placeholder under
+        # /projects/_/<page>/index.html in the static export. Serve the
+        # placeholder; SPA router takes over.
+        @app.get("/projects/{slug}/{page}", include_in_schema=False)
+        @app.get("/projects/{slug}/{page}/", include_in_schema=False)
+        def _spa_project_page(slug: str, page: str):  # noqa: ARG001
+            nested = _projects_placeholder_dir / page / "index.html"
+            if nested.exists():
+                return FileResponse(str(nested))
+            # Fall back to the project root placeholder if the nested
+            # page wasn't pre-rendered (e.g. someone added a new
+            # /projects/<name>/<newpage> client-side route without
+            # updating generateStaticParams).
+            return FileResponse(str(_projects_placeholder_html))
+
     app.mount(
         "/",
         StaticFiles(directory=str(_web_dir), html=True),
