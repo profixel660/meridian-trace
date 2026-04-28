@@ -97,9 +97,41 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _stable_user_state_dir() -> Path:
+    """Return a fixed user-profile path that survives projects_dir changes.
+
+    Resolution order:
+    1. ``MERIDIAN_WIZARD_STATE_DIR`` env var (override; tests use this).
+    2. ``%USERPROFILE%\\.meridian`` on Windows / ``~/.meridian`` on POSIX.
+    """
+    override = os.environ.get("MERIDIAN_WIZARD_STATE_DIR")
+    if override:
+        return Path(override).expanduser()
+    if os.name == "nt":
+        profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        return Path(profile) / ".meridian"
+    return Path.home() / ".meridian"
+
+
 def state_path() -> Path:
-    """Where the JSON state file lives — under ``<projects_dir>/_meridian/``."""
-    return settings.projects_dir / _STATE_DIR_NAME / _STATE_FILE_NAME
+    """Where the wizard JSON state file lives — at a stable user-profile path,
+    NOT under settings.projects_dir.
+
+    Backwards-compat: if the new path doesn't exist but an alpha-19..21-era
+    state file lives under ``<settings.projects_dir>/_meridian/onboarding_state.json``,
+    this returns the legacy path so a one-time migration can pick it up on
+    the next save.
+    """
+    new_path = _stable_user_state_dir() / _STATE_FILE_NAME
+    if new_path.exists():
+        return new_path
+
+    # Legacy lookup — only used until the next save, which writes to new_path.
+    from meridian.config import settings as _settings  # late import: avoid cycle
+    legacy = _settings.projects_dir / _STATE_DIR_NAME / _STATE_FILE_NAME
+    if legacy.exists():
+        return legacy
+    return new_path
 
 
 def load_state() -> OnboardingState | None:

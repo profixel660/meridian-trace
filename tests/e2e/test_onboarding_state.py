@@ -63,21 +63,41 @@ def test_onboarding_non_tty_refuses(
     )
 
 
-def test_onboarding_state_path_under_underscore_meridian(
+def test_onboarding_state_path_is_stable_across_projects_dir_changes(
     tmp_projects_dir: Path,
 ) -> None:
-    """The state file must live at ``<projects_dir>/_meridian/onboarding_state.json``."""
-    expected = tmp_projects_dir / "_meridian" / "onboarding_state.json"
-    assert state_path() == expected, (
-        f"state_path() should resolve under _meridian/, got {state_path()!r}"
+    """Alpha-22: state_path() must be stable regardless of settings.data_dir.
+
+    Pre-alpha-22 the state file lived at
+    ``<projects_dir>/_meridian/onboarding_state.json``, so changing
+    ``settings.data_dir`` mid-wizard (which ``setup_create_project`` does)
+    would relocate the file and orphan prior progress.
+
+    Post-alpha-22 the file lives at a stable user-profile path independent
+    of ``settings.projects_dir``.  The ``tmp_projects_dir`` fixture
+    redirects that stable path via ``MERIDIAN_WIZARD_STATE_DIR`` so tests
+    stay hermetic.
+    """
+    path1 = state_path()
+    # Mutate data_dir — must NOT move the state file.
+    from meridian.config import settings
+    original_data_dir = settings.data_dir
+    settings.data_dir = tmp_projects_dir / "mutated"
+    try:
+        path2 = state_path()
+    finally:
+        settings.data_dir = original_data_dir
+
+    assert path1 == path2, (
+        f"state_path() relocated when settings.data_dir changed: "
+        f"{path1} != {path2}"
+    )
+    assert path1.name == "onboarding_state.json", (
+        f"state file must be named onboarding_state.json, got {path1.name!r}"
     )
 
-    # Until save_state() is called, the parent dir need not exist.
+    # Until save_state() is called, the file need not exist.
     assert load_state() is None, "load_state on a virgin tmp dir must return None"
 
     save_state(OnboardingState())
-    assert expected.exists(), "save_state must materialise the state file at the expected path"
-    assert expected.parent.name == "_meridian", (
-        "the parent directory must be the underscored meridian state dir, "
-        "so it stays out of the project listing UI"
-    )
+    assert path1.exists(), "save_state must materialise the state file at the expected path"

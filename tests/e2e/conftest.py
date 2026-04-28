@@ -45,11 +45,22 @@ def tmp_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     The Meridian config exposes ``settings.projects_dir`` as a derived
     property of ``settings.data_dir``; overriding the latter in-place gives
     us full filesystem isolation without re-importing the settings module.
+
+    Alpha-22: also redirect the wizard state file via ``MERIDIAN_WIZARD_STATE_DIR``
+    so the new stable ``state_path()`` (which resolves to ``~/.meridian/``
+    rather than ``<projects_dir>/_meridian/``) stays isolated per test.
+    Without this, tests share the developer's real ``~/.meridian/onboarding_state.json``
+    and get contaminated state.
     """
     target = tmp_path / "projects"
     target.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(settings, "data_dir", target)
     monkeypatch.setenv("MERIDIAN_DATA_DIR", str(target))
+    # Redirect the wizard state file to a per-test directory so tests do
+    # not share (or corrupt) the developer's real ~/.meridian/ state.
+    wizard_state_dir = tmp_path / "wizard_state"
+    wizard_state_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("MERIDIAN_WIZARD_STATE_DIR", str(wizard_state_dir))
     # Belt-and-braces: clear any cloud creds so any accidental real call
     # would fail loudly rather than silently spend money.
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
