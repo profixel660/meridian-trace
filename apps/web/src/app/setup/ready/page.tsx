@@ -91,10 +91,20 @@ function ReadyPageInner() {
 
   const [state, setState] = useState<SetupState>(DEFAULT_SETUP_STATE);
   const [stateLoaded, setStateLoaded] = useState(false);
-  const [completeError, setCompleteError] = useState<{
-    message: string;
-    next_step: string;
-  } | null>(null);
+
+  type CompleteError =
+    | { kind: "incomplete"; message: string; next_step: string }
+    | { kind: "generic"; message: string };
+
+  const [completeError, setCompleteError] = useState<CompleteError | null>(
+    null,
+  );
+  // true from the moment stateLoaded fires (useEffect below) until the POST
+  // resolves either way.  Initialised to true so the Open Project button is
+  // disabled before the first render that kicks off the POST.
+  const [completeInFlight, setCompleteInFlight] = useState(true);
+  // Bumping this re-runs the complete() effect — used by the "Try again" button.
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,28 +130,41 @@ function ReadyPageInner() {
     };
   }, [skippedHint]);
 
-  // Idempotent — safe to call on every mount. If the backend returns 400
-  // (gates unmet) we surface the reason instead of silently swallowing it.
+  // Idempotent — safe to call on every mount (and on retry). If the backend
+  // returns 400 (gates unmet) we surface the reason instead of silently
+  // swallowing it.  retryNonce allows the "Try again" button to re-trigger.
   useEffect(() => {
     if (!stateLoaded) return;
+    let cancelled = false;
+    setCompleteInFlight(true);
     void setupApi.complete().then(
-      () => setCompleteError(null),
+      () => {
+        if (cancelled) return;
+        setCompleteError(null);
+        setCompleteInFlight(false);
+      },
       (err: unknown) => {
+        if (cancelled) return;
         const detail = extractSetupErrorDetail(err);
         if (detail !== null) {
           setCompleteError({
+            kind: "incomplete",
             message: detail.message,
             next_step: detail.next_step,
           });
         } else {
           setCompleteError({
+            kind: "generic",
             message: "Could not finish setup. Please try again.",
-            next_step: "api_key",
           });
         }
+        setCompleteInFlight(false);
       },
     );
-  }, [stateLoaded]);
+    return () => {
+      cancelled = true;
+    };
+  }, [stateLoaded, retryNonce]);
 
   const skipped = state.documents_skipped || skippedHint;
   const docCount = state.documents_imported;
@@ -178,17 +201,28 @@ function ReadyPageInner() {
         <div className="space-y-8">
           {completeError ? (
             <div
+              id="setup-incomplete-alert"
               role="alert"
               className="rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-200"
             >
               <p className="font-semibold">Setup did not complete</p>
               <p className="mt-1">{completeError.message}</p>
-              <Link
-                href={`/setup/${completeError.next_step.replace(/_/g, "-")}`}
-                className="mt-3 inline-block rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-white"
-              >
-                Continue: {completeError.next_step.replace(/_/g, " ")} →
-              </Link>
+              {completeError.kind === "incomplete" ? (
+                <Link
+                  href={`/setup/${completeError.next_step.replace(/_/g, "-")}`}
+                  className="mt-3 inline-block rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-white"
+                >
+                  Continue: {completeError.next_step.replace(/_/g, " ")} →
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRetryNonce((n) => n + 1)}
+                  className="mt-3 inline-block rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-white"
+                >
+                  Try again
+                </button>
+              )}
             </div>
           ) : null}
 
@@ -230,12 +264,19 @@ function ReadyPageInner() {
           </dl>
 
           <div className="flex flex-wrap gap-3 pt-2">
-            {completeError ? (
+            {completeInFlight || completeError ? (
               <button
                 type="button"
                 disabled
+                aria-describedby={
+                  completeError ? "setup-incomplete-alert" : undefined
+                }
                 className="cursor-not-allowed rounded-full bg-text-muted/20 px-5 py-2.5 text-sm font-medium text-text-muted"
-                title="Finish setup before opening the project"
+                title={
+                  completeInFlight
+                    ? "Verifying setup…"
+                    : "Finish setup before opening the project"
+                }
               >
                 {READY_COPY.ctas.open} →
               </button>
