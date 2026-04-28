@@ -83,7 +83,6 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from meridian import __version__
-from meridian.auth.fastapi_dep import AUTH_DISABLED_ENV_VAR, auth_disabled, require_session
 from meridian.config import settings
 from meridian.db.connection import connect
 from meridian.export.excel import export_to_xlsx
@@ -98,21 +97,14 @@ from meridian.projects import ProjectBusy, create_project, project_db_path
 # path includes a project name.
 configure_logging(console=False)
 
-# Alpha-13: loud startup warning when the auth bypass is active so an
-# operator who accidentally ships a production build with
-# MERIDIAN_AUTH_DISABLED=1 cannot miss the leak. We emit at WARNING level
-# (uvicorn's stderr) AND through structlog (per-project file) so neither
-# surface can hide it. The banner is also re-emitted on every /health
-# probe response so a drifted prod check catches it.
-if auth_disabled():
-    _bypass_msg = (
-        f"!!! {AUTH_DISABLED_ENV_VAR}=1 -- AUTH BYPASS ACTIVE. "
-        "All require_session-protected routes are open. "
-        "DEBUG ONLY -- never deploy with this set in production. !!!"
-    )
-    import logging as _stdlib_logging
-    _stdlib_logging.warning(_bypass_msg)
-    get_logger("meridian.auth").warning("auth.bypass_active", env_var=AUTH_DISABLED_ENV_VAR)
+# Alpha-15: TOTP enforcement on mutating endpoints removed. The TOTP
+# infrastructure (login, totp, recovery, session) is preserved in the
+# meridian.auth package for re-enabling later, but no route currently
+# uses Depends(require_session). Rationale: shipping TOTP enforcement
+# before the product itself was validated end-to-end created two alpha
+# cycles of debug-bypass churn (alpha-13 / alpha-14) that delivered no
+# product progress. Validate the product flow first; re-add auth gates
+# at the v0.3 readiness checkpoint.
 
 _log = get_logger("meridian.api")
 
@@ -422,7 +414,6 @@ def projects_status(name: str) -> dict[str, Any]:
 @app.post(
     "/projects/{name}/sources",
     response_model=ImportResponse,
-    dependencies=[Depends(require_session)],
 )
 async def projects_import_source(name: str, file: UploadFile) -> ImportResponse:
     db_path = _ensure_project(name)
@@ -495,7 +486,6 @@ def projects_list_sources(name: str) -> list[SourceItem]:
 @app.post(
     "/projects/{name}/extract",
     response_model=ExtractResponse,
-    dependencies=[Depends(require_session)],
 )
 def projects_extract(name: str, req: ExtractRequest) -> ExtractResponse:
     db_path = _ensure_project(name)
@@ -878,7 +868,6 @@ def projects_job_status(name: str, job_id: str) -> JobStatusResponse:
 
 @app.post(
     "/projects/{name}/export",
-    dependencies=[Depends(require_session)],
 )
 def projects_export(name: str, output_path: str) -> dict[str, str]:
     """Legacy: write the workbook server-side and return the path.
@@ -1073,7 +1062,6 @@ def projects_coverage(name: str) -> dict[str, Any]:
 
 @app.post(
     "/projects/{name}/deliverables/{deliverable_id}/accept",
-    dependencies=[Depends(require_session)],
 )
 def deliverable_accept(name: str, deliverable_id: str, req: _AcceptRequest) -> dict[str, Any]:
     from meridian.review.deliverables import accept_deliverable
@@ -1092,7 +1080,6 @@ def deliverable_accept(name: str, deliverable_id: str, req: _AcceptRequest) -> d
 
 @app.post(
     "/projects/{name}/deliverables/{deliverable_id}/reject",
-    dependencies=[Depends(require_session)],
 )
 def deliverable_reject(name: str, deliverable_id: str, req: _RejectRequest) -> dict[str, Any]:
     from meridian.review.deliverables import reject_deliverable
@@ -1107,7 +1094,6 @@ def deliverable_reject(name: str, deliverable_id: str, req: _RejectRequest) -> d
 
 @app.post(
     "/projects/{name}/deliverables/{deliverable_id}/edit",
-    dependencies=[Depends(require_session)],
 )
 def deliverable_edit(name: str, deliverable_id: str, req: _EditRequest) -> dict[str, Any]:
     from meridian.review.deliverables import edit_deliverable
@@ -1132,7 +1118,6 @@ def deliverable_edit(name: str, deliverable_id: str, req: _EditRequest) -> dict[
 
 @app.post(
     "/projects/{name}/audit/{audit_id}/promote",
-    dependencies=[Depends(require_session)],
 )
 def audit_promote(name: str, audit_id: str, req: _PromoteAuditRequest) -> dict[str, Any]:
     from meridian.review.audit import promote_audit_to_deliverable
@@ -1156,7 +1141,6 @@ def audit_promote(name: str, audit_id: str, req: _PromoteAuditRequest) -> dict[s
 
 @app.post(
     "/projects/{name}/questions/{question_id}/resolve",
-    dependencies=[Depends(require_session)],
 )
 def question_resolve(name: str, question_id: str, req: _QuestionResolveRequest) -> dict[str, Any]:
     from meridian.review.questions import resolve_question
@@ -1176,7 +1160,6 @@ def question_resolve(name: str, question_id: str, req: _QuestionResolveRequest) 
 
 @app.post(
     "/projects/{name}/questions/{question_id}/dismiss",
-    dependencies=[Depends(require_session)],
 )
 def question_dismiss(name: str, question_id: str, req: _QuestionDismissRequest) -> dict[str, Any]:
     from meridian.review.questions import dismiss_question
@@ -1191,7 +1174,6 @@ def question_dismiss(name: str, question_id: str, req: _QuestionDismissRequest) 
 
 @app.post(
     "/projects/{name}/conflicts/{conflict_id}/resolve",
-    dependencies=[Depends(require_session)],
 )
 def conflict_resolve(name: str, conflict_id: str, req: _ConflictResolveRequest) -> dict[str, Any]:
     from meridian.review.conflicts import resolve_conflict
@@ -1237,7 +1219,6 @@ def taxonomy_list_pending(name: str) -> list[dict[str, Any]]:
 
 @app.post(
     "/projects/{name}/taxonomy/confirm",
-    dependencies=[Depends(require_session)],
 )
 def taxonomy_confirm(name: str, req: _TaxonomyConfirmRequest) -> dict[str, Any]:
     from meridian.review.taxonomy import confirm_taxonomy
@@ -1252,7 +1233,6 @@ def taxonomy_confirm(name: str, req: _TaxonomyConfirmRequest) -> dict[str, Any]:
 
 @app.post(
     "/projects/{name}/taxonomy/merge",
-    dependencies=[Depends(require_session)],
 )
 def taxonomy_merge(name: str, req: _TaxonomyMergeRequest) -> dict[str, Any]:
     from meridian.review.taxonomy import merge_taxonomy
@@ -1269,7 +1249,6 @@ def taxonomy_merge(name: str, req: _TaxonomyMergeRequest) -> dict[str, Any]:
 
 @app.post(
     "/projects/{name}/taxonomy/reject",
-    dependencies=[Depends(require_session)],
 )
 def taxonomy_reject(name: str, req: _TaxonomyRejectRequest) -> dict[str, Any]:
     from meridian.review.taxonomy import reject_taxonomy
@@ -1296,7 +1275,6 @@ class _BootstrapRequest(BaseModel):
 
 @app.post(
     "/projects/{name}/bootstrap",
-    dependencies=[Depends(require_session)],
 )
 def projects_bootstrap_run(name: str, req: _BootstrapRequest) -> dict[str, Any]:
     """Run the per-project bootstrap LLM sweep."""

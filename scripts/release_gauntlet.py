@@ -735,38 +735,11 @@ def _step_backend_lifecycle(
             f"pid={rt_body['pid']} version={rt_body['version']} uptime={rt_body['uptime_seconds']:.1f}s",
         )
 
-        # Step 7g (alpha-13) -- auth bypass default-secure contract.
-        # The backend was launched WITHOUT MERIDIAN_AUTH_DISABLED set, so
-        # /setup/runtime should report auth_disabled=false. Catches a
-        # regression that defaults the bypass on (a real risk if a
-        # future refactor flips the default for "easier debugging").
-        if "auth_disabled" not in rt_body:
-            _fail(
-                "step 7g: auth bypass default-secure",
-                "missing 'auth_disabled' field on /setup/runtime; alpha-13 "
-                "added it so the GUI can render the debug-mode banner. "
-                f"Body keys: {sorted(rt_body)}",
-            )
-            return False
-        if not isinstance(rt_body["auth_disabled"], bool):
-            _fail(
-                "step 7g: auth bypass default-secure",
-                f"auth_disabled must be bool, got {type(rt_body['auth_disabled']).__name__}",
-            )
-            return False
-        if rt_body["auth_disabled"] is True:
-            _fail(
-                "step 7g: auth bypass default-secure",
-                "auth_disabled=true on a fresh install with no env var set. "
-                "The bypass MUST default off -- alpha-13 contract violation. "
-                "Check that MERIDIAN_AUTH_DISABLED is not being set "
-                "anywhere by the installer / launcher / pyproject.",
-            )
-            return False
-        _ok(
-            "step 7g: auth bypass default-secure",
-            "auth_disabled=false (bypass off by default, as required)",
-        )
+        # Alpha-15: step 7g (auth bypass default-secure) and step 7h
+        # (.env-loaded env-var contract) removed. They asserted on the
+        # alpha-13/14 MERIDIAN_AUTH_DISABLED bypass machinery, which
+        # alpha-15 retired by removing TOTP enforcement entirely
+        # (validate-the-product-first principle).
 
         return True
     finally:
@@ -1016,13 +989,14 @@ def _step_detach_pattern(installer_dir: Path) -> bool:
     # 7h (subprocess-level) but ship a broken .bat. This closes the
     # alpha-13-class miss the rest of alpha-14 exists to prevent.
     required_tokens = (
-        ("pythonw.exe",            "alpha-12 detach pattern (visible-cmd regression)"),
-        ("WindowStyle Hidden",     "alpha-12 detach pattern (visible-cmd regression)"),
-        ("MERIDIAN_ENV_FILE",      "alpha-14 .env loader (alpha-13 documentation-vs-reality regression)"),
-        # Inside cmd.exe's outer "..." quoting the powershell `Set-Item
-        # -Path "Env:$k"` becomes literal `Set-Item -Path \"Env:`. Match
-        # the on-disk escaped form, not the conceptual string.
-        (r'Set-Item -Path \"Env:', "alpha-14 .env loader (alpha-13 documentation-vs-reality regression)"),
+        ("pythonw.exe",          "alpha-12 detach pattern (visible-cmd regression)"),
+        ("WindowStyle Hidden",   "alpha-12 detach pattern (visible-cmd regression)"),
+        # Alpha-15: dropped MERIDIAN_ENV_FILE / Set-Item Env: tokens that
+        # alpha-14 added. Those existed only to wire the alpha-13
+        # MERIDIAN_AUTH_DISABLED bypass through .env -- which alpha-15
+        # retired by removing TOTP enforcement entirely. The cmd.exe
+        # parser pathology in alpha-14's multi-line PS argument is also
+        # gone (single-line spawn restored). Validate-the-product-first.
     )
 
     if not start_bat.exists():
@@ -1043,15 +1017,15 @@ def _step_detach_pattern(installer_dir: Path) -> bool:
 
     if failures:
         _fail(
-            "step 2c: detach-pattern + .env-loader static check",
-            "alpha-12 + alpha-14 user-facing contracts. Each token must appear in "
+            "step 2c: detach-pattern static check",
+            "alpha-12 contract -- pythonw.exe + WindowStyle Hidden must appear in "
             "BOTH Start-Meridian.bat and the Install-Meridian.ps1 inline copy:\n  - "
             + "\n  - ".join(failures),
         )
         return False
     _ok(
-        "step 2c: detach-pattern + .env-loader static check",
-        "pythonw.exe + WindowStyle Hidden + MERIDIAN_ENV_FILE + Set-Item Env: all present in both surfaces",
+        "step 2c: detach-pattern static check",
+        "pythonw.exe + WindowStyle Hidden present in both surfaces",
     )
     return True
 
@@ -1195,8 +1169,8 @@ def main() -> int:
         if not _step_backend_lifecycle(venv_dir, scratch, repo):
             return 1
 
-        if not _step_env_var_via_dotenv(scratch, venv_dir, repo):
-            return 1
+        # Alpha-15: step 7h removed; tested the .env -> bypass plumbing
+        # which alpha-15 retired with TOTP enforcement.
 
         if not _step_cli_help_smoke(venv_dir):
             return 1

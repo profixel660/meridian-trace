@@ -843,14 +843,9 @@ echo [...] Starting Meridian backend (this can take ~30 seconds on first run).
 echo       Log file: %MERIDIAN_BACKEND_LOG%
 echo.
 
-REM Alpha-14: load %MERIDIAN_ROOT%\.env into the PowerShell process
-REM environment BEFORE Start-Process so vars added there (e.g.
-REM MERIDIAN_AUTH_DISABLED=1) actually reach pythonw.exe. Alpha-13
-REM shipped without this and the bypass silently failed.
-set "MERIDIAN_ENV_FILE=%MERIDIAN_ROOT%\.env"
+REM Alpha-15: reverted to alpha-12 simplicity (no .env loader, no `^` continuation).
 set "MERIDIAN_BACKEND_LOG=%MERIDIAN_BACKEND_LOG%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "if (Test-Path -LiteralPath '%MERIDIAN_ENV_FILE%') { Get-Content -LiteralPath '%MERIDIAN_ENV_FILE%' | ForEach-Object { if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') { $k = $Matches[1]; $v = $Matches[2]; if ($v -match '^\"(.*)\"$' -or $v -match \"^'(.*)'$\") { $v = $Matches[1] } ; Set-Item -Path \"Env:$k\" -Value $v } } } ; $env:MERIDIAN_BACKEND_LOG = '%MERIDIAN_BACKEND_LOG%' ; $p = Start-Process -FilePath '%MERIDIAN_PYBIN%' -ArgumentList @('-m','meridian.api.main') -WorkingDirectory '%MERIDIAN_ROOT%' -WindowStyle Hidden -PassThru ; Set-Content -LiteralPath '%MERIDIAN_PID_FILE%' -Value $p.Id -Encoding ASCII ; Write-Host ('       PID: ' + $p.Id)"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:MERIDIAN_BACKEND_LOG = '%MERIDIAN_BACKEND_LOG%'; $p = Start-Process -FilePath '%MERIDIAN_PYBIN%' -ArgumentList @('-m','meridian.api.main') -WorkingDirectory '%MERIDIAN_ROOT%' -WindowStyle Hidden -PassThru; Set-Content -LiteralPath '%MERIDIAN_PID_FILE%' -Value $p.Id -Encoding ASCII; Write-Host ('       PID: ' + $p.Id)"
 if errorlevel 1 (
     echo [ERROR] Could not spawn the backend. See %MERIDIAN_BACKEND_LOG% for details.
     pause
@@ -1004,10 +999,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%MERIDIAN_CONSOLE_PS1%"
 exit /b %errorlevel%
 '@
 
-    Set-Content -LiteralPath $MERIDIAN_START_BAT   -Value $startBat   -Encoding ASCII
-    Set-Content -LiteralPath $MERIDIAN_STOP_BAT    -Value $stopBat    -Encoding ASCII
-    Set-Content -LiteralPath $MERIDIAN_STATUS_BAT  -Value $statusBat  -Encoding ASCII
-    Set-Content -LiteralPath $MERIDIAN_CONSOLE_BAT -Value $consoleBat -Encoding ASCII
+    # Alpha-15: normalise line endings to CRLF before writing. PS5's
+    # Set-Content writes the string verbatim with whatever line endings
+    # are in the variable; if the .ps1 source itself has LF-only
+    # endings (e.g. edited in a Unix-style editor or written by a tool
+    # that doesn't auto-convert), the .bat files inherit LF-only
+    # endings and cmd.exe parser misbehaviour follows. Force CRLF.
+    $crlf = "`r`n"
+    $startBat   = ($startBat   -replace "`r?`n", $crlf)
+    $stopBat    = ($stopBat    -replace "`r?`n", $crlf)
+    $statusBat  = ($statusBat  -replace "`r?`n", $crlf)
+    $consoleBat = ($consoleBat -replace "`r?`n", $crlf)
+
+    Set-Content -LiteralPath $MERIDIAN_START_BAT   -Value $startBat   -Encoding ASCII -NoNewline
+    Set-Content -LiteralPath $MERIDIAN_STOP_BAT    -Value $stopBat    -Encoding ASCII -NoNewline
+    Set-Content -LiteralPath $MERIDIAN_STATUS_BAT  -Value $statusBat  -Encoding ASCII -NoNewline
+    Set-Content -LiteralPath $MERIDIAN_CONSOLE_BAT -Value $consoleBat -Encoding ASCII -NoNewline
 
     Say-OK "Wrote Start-Meridian.bat / Stop-Meridian.bat / Status-Meridian.bat / Meridian-Console.bat in $MERIDIAN_ROOT."
 }
