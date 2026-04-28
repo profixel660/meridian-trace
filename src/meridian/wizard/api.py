@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -808,37 +809,74 @@ def _persist_api_key(key: str) -> None:
     },
 )
 def setup_create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
-    """Create the user's first project.
+    """Create OR ADOPT the user's first project.
 
-    Honours ``projects_dir`` from the request: this lets the GUI's
-    folder-picker drive where projects live. We override
-    ``settings.data_dir`` for the rest of this process so subsequent
-    endpoints (import, etc.) target the same location.
+    If the wizard's import-folder step has already created a staging
+    SQLite file at ``settings.projects_dir/<state.first_project_slug>.sqlite``,
+    that file is MOVED to ``<req.projects_dir>/<req.slug>.sqlite`` and its
+    ``project.name`` row is updated. This preserves imports that happened
+    before the user chose a final projects_dir.
+
+    If no staging exists (user skipped import), falls back to minting a
+    fresh DB via ``create_project``.
+
+    Four cases handled:
+        1. No staging DB (user skipped import) → create fresh.
+        2. Staging exists at same path AND same slug → just rename in-DB.
+        3. Staging exists at same path BUT different slug → adopt
+           (rename file + rewrite name).
+        4. Staging exists at different path → adopt across dirs.
     """
     target_dir = Path(req.projects_dir).expanduser()
     _ensure_writeable(target_dir)
 
-    # Process-wide: subsequent project_db_path() calls (in import / status
-    # endpoints) need to resolve against the GUI-chosen directory.
+    # Locate any staging DB BEFORE we mutate settings.data_dir, because
+    # project_db_path() resolves against settings.projects_dir at call time.
+    state = load_wizard_state()
+    staging_db: Path | None = None
+    if state.cli.first_project_slug:
+        candidate = project_db_path(state.cli.first_project_slug)
+        if candidate.exists():
+            staging_db = candidate
+
+    # Now mutate process-wide projects_dir to the user's choice.
     settings.data_dir = target_dir
 
-    db_path = project_db_path(req.slug)
-    if db_path.exists():
+    final_db_path = project_db_path(req.slug)
+    if final_db_path.exists():
+        # Pre-existing project at the target slug — refuse to overwrite.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": "slug_exists",
-                "existing_db_path": str(db_path),
+                "existing_db_path": str(final_db_path),
             },
         )
 
-    try:
-        _project_id, db_path = create_project(name=req.name)
-    except FileExistsError as exc:  # race: created between our exists() check and create
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "slug_exists", "existing_db_path": str(db_path)},
-        ) from exc
+    if staging_db is not None and staging_db.resolve() != final_db_path.resolve():
+        # Cases 3 & 4: adopt the staging DB into the user's chosen
+        # location and/or new slug, rewriting project.name.
+        from meridian.projects import adopt_project as _adopt  # noqa: PLC0415
+        _adopt(
+            old_db_path=staging_db,
+            new_db_path=final_db_path,
+            new_name=req.name,
+        )
+    elif staging_db is not None and staging_db.resolve() == final_db_path.resolve():
+        # Case 2: same path AND same slug — just update the name in place.
+        from contextlib import closing  # noqa: PLC0415
+        with closing(sqlite3.connect(final_db_path)) as conn:
+            conn.execute("UPDATE project SET name = ?", (req.name,))
+            conn.commit()
+    else:
+        # Case 1: no staging — user skipped import. Mint fresh.
+        try:
+            _project_id, final_db_path = create_project(name=req.name)
+        except FileExistsError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "slug_exists", "existing_db_path": str(final_db_path)},
+            ) from exc
 
     state = load_wizard_state()
     mark_first_project(
@@ -851,7 +889,7 @@ def setup_create_project(req: ProjectCreateRequest) -> ProjectCreateResponse:
     return ProjectCreateResponse(
         created=True,
         slug=req.slug,
-        db_path=str(db_path),
+        db_path=str(final_db_path),
     )
 
 
