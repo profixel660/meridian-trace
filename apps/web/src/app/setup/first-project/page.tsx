@@ -282,18 +282,6 @@ function SetupFirstProjectPageInner() {
           {FIRST_PROJECT_COPY.why()}
         </section>
 
-        {/* Bumped-name advisory — only shown when /suggest-name returned a
-            different name than the raw folder name. Helps PMs understand
-            why the input doesn't quite match the folder they picked. */}
-        {autoName?.wasBumped ? (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-200">
-            {FIRST_PROJECT_COPY.autoNameBumpedHeadline(
-              autoName.originalFolderName,
-              autoName.suggested,
-            )}
-          </div>
-        ) : null}
-
         {skippedDocs ? (
           <div className="rounded-lg border border-border bg-surface-elevated p-3 text-sm text-text-muted">
             You skipped the document scan — no problem. You can add documents
@@ -334,6 +322,22 @@ function SetupFirstProjectPageInner() {
           {autoNameLoading ? (
             <p className="text-[11px] text-text-muted">
               Loading suggested name from folder…
+            </p>
+          ) : null}
+          {/* Bumped-suffix hint — only shown when /suggest-name returned a
+              name that collides with a REAL pre-existing project and had to
+              be de-duplicated (e.g. "bod" → "bod-2"). Helps PMs understand
+              why the suggestion doesn't match the folder they picked and
+              that they're free to edit it. */}
+          {autoName?.wasBumped ? (
+            <p
+              role="status"
+              className="mt-2 text-xs text-amber-300"
+            >
+              {FIRST_PROJECT_COPY.autoNameBumpedHint(
+                autoName.originalFolderName,
+                autoName.suggested,
+              )}
             </p>
           ) : null}
         </div>

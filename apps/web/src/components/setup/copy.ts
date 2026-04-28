@@ -203,9 +203,9 @@ export const FIRST_PROJECT_COPY = {
   /** Helper line shown under the project-name input when an auto-suggestion was applied. */
   autoNameHelper:
     "We suggested this from your folder name — change if you'd like.",
-  /** Banner shown when the suggested name was bumped because the slug already exists. */
-  autoNameBumpedHeadline: (original: string, suggested: string) =>
-    `There's already a '${original}' project. We've suggested '${suggested}' instead.`,
+  /** Inline hint shown near the name input when the suggested name was bumped because the slug already exists. */
+  autoNameBumpedHint: (original: string, suggested: string) =>
+    `A project with the name “${original}” already exists. We suggested “${suggested}” — feel free to change it.`,
   fields: {
     name: {
       label: "Project name",
