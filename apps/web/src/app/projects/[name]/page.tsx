@@ -111,6 +111,16 @@ function DashboardBody({
         />
       </section>
 
+      {/*
+        Alpha-16: stripped review queues + hand-off tools to focus on
+        the core deliverables-extraction loop. The pages still exist at
+        /projects/[name]/{quarantine,audit,questions,conflicts,taxonomy,
+        tender,evidence,xref} for direct URL access; only the dashboard
+        cards are hidden. Quarantine is kept because it's how the user
+        accepts / edits / rejects a deliverable — load-bearing for the
+        core review path. The rest are useful but downstream of "does
+        the extraction even produce a register?"
+      */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <QueueCard
           href={`${base}/quarantine`}
@@ -118,59 +128,6 @@ function DashboardBody({
           count={coverage.deliverable_status.quarantined}
           description="Deliverables held back from the master register pending your decision. Accept, edit, or reject."
         />
-        <QueueCard
-          href={`${base}/audit`}
-          title="Audit (OUTSIDE)"
-          count={coverage.audit.pending}
-          description="Candidates the gate ruled OUTSIDE the deliverable definition. Promote any that should actually be on the register."
-        />
-        <QueueCard
-          href={`${base}/questions`}
-          title="Questions"
-          count={coverage.questions.pending}
-          description="Open questions raised by the AI during extraction. Resolve to remove the qualifier from impacted rows."
-        />
-        <QueueCard
-          href={`${base}/conflicts`}
-          title="Conflicts"
-          count={coverage.conflicts.pending}
-          description="Two or more sources disagree about the same item. Pick the winning side, accept a hybrid, or reject both."
-        />
-        <QueueCard
-          href={`${base}/taxonomy`}
-          title="Taxonomy proposals"
-          count={coverage.taxonomy.pending_proposals}
-          description="New trade / service / category values the AI proposed. Confirm, merge into an existing value, or reject."
-        />
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
-          Hand-off &amp; integrity
-        </h2>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <ToolCard
-            href={`${base}/tender`}
-            icon="📦"
-            title="Tender Package Builder"
-            description="Generate per-trade subcontractor packages (xlsx / md) from accepted deliverables."
-            glossaryAnchor="/glossary#tender-package"
-          />
-          <ToolCard
-            href={`${base}/evidence`}
-            icon="⚖️"
-            title="Legal Evidence Pack"
-            description="Assemble a defensible audit-trail zip — sources, prompts, LLM calls, register — for legal hand-off."
-            glossaryAnchor="/glossary#legal-evidence-pack"
-          />
-          <ToolCard
-            href={`${base}/xref`}
-            icon="🔗"
-            title="Cross-reference sweep"
-            description="Exhaustively scan documents for references to other project sources; queue ambiguous matches for SME review."
-            glossaryAnchor="/glossary#cross-reference-sweep"
-          />
-        </div>
       </section>
 
       <section>

@@ -199,3 +199,114 @@ def test_extraction_records_zero_real_llm_calls(
         for r in conn.execute("SELECT DISTINCT provider FROM llm_call").fetchall()
     }
     assert providers == {"stub"}, f"unexpected providers in llm_call: {providers}"
+
+
+def test_alpha16_full_loop_extraction_to_excel_export(
+    fresh_project_with_sample_doc: tuple[str, Path, sqlite3.Connection, str],
+    mock_llm_client,
+    tmp_path: Path,
+) -> None:
+    """Alpha-16 core-validation gate.
+
+    The full deliverables-extraction loop the user is trying to validate:
+    real document already imported (via fixture) -> orchestrator runs
+    over it with mock LLM producing 2 INSIDE deliverables -> deliverable
+    rows land in the project DB -> export_to_xlsx produces a real .xlsx
+    file with both rows on the Master sheet.
+
+    Until alpha-16, no test exercised export_to_xlsx end-to-end. The
+    extraction-side tests in this file cover the pipeline up to
+    persistence; this one closes the gap to the actual product output
+    (the per-trade Excel register the user receives)."""
+    from openpyxl import load_workbook
+
+    from meridian.export.excel import export_to_xlsx
+
+    _name, _db, conn, src_id = fresh_project_with_sample_doc
+
+    # Mock LLM produces two INSIDE deliverables on different trades so
+    # the pivot sheets exercise the group-by paths too.
+    mock_llm_client.responses["extract_text_spec"] = {
+        "deliverables": [
+            {
+                "trade": "Mechanical",
+                "service": "HVAC",
+                "category": "design",
+                "deliverables_summary": "Provide ductwork design drawings to AS 4254.",
+                "confidence": "high",
+                "flags": [],
+                "source_ref": "p.1",
+                "applicable_standards": ["AS 4254"],
+            },
+            {
+                "trade": "Electrical",
+                "service": "Power",
+                "category": "supply",
+                "deliverables_summary": "Supply and install MSB to AS/NZS 3000.",
+                "confidence": "high",
+                "flags": [],
+                "source_ref": "p.2",
+                "applicable_standards": ["AS/NZS 3000"],
+            },
+        ],
+        "audit": [],
+        "questions": [],
+    }
+
+    result = run_job_over_sources(conn, source_ids=[src_id])
+    assert result.sources and result.sources[0].error is None
+    assert result.sources[0].counts["inside"] == 2
+
+    # Two deliverables landed; the orchestrator's auto-route may
+    # quarantine a subset (e.g. for new-taxonomy review). Promote any
+    # quarantined rows to 'user_accepted' so both reach the master
+    # register — that mirrors what the operator would do clicking
+    # "Accept" in the Quarantine queue. This test exercises the
+    # extract -> quarantine-decision -> master -> export path the
+    # alpha-16 strip preserves.
+    deliv_rows = conn.execute(
+        "SELECT id, status FROM deliverable WHERE source_id = ?",
+        (src_id,),
+    ).fetchall()
+    assert len(deliv_rows) == 2, f"expected 2 deliverables persisted, got {len(deliv_rows)}"
+    with conn:
+        for row in deliv_rows:
+            if row["status"] == "quarantined":
+                conn.execute(
+                    "UPDATE deliverable SET status = 'user_accepted' WHERE id = ?",
+                    (row["id"],),
+                )
+    master_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM v_master_register"
+    ).fetchone()["n"]
+    assert master_count == 2, f"expected 2 deliverables on the master register, got {master_count}"
+
+    # Now exercise the actual product output: the Excel file.
+    out_path = tmp_path / "alpha16-export.xlsx"
+    export_to_xlsx(conn, output_path=out_path)
+    assert out_path.exists(), f"export did not produce a file at {out_path}"
+    assert out_path.stat().st_size > 0, "exported xlsx is empty"
+
+    wb = load_workbook(filename=str(out_path), read_only=True, data_only=True)
+    try:
+        # Master sheet should be the active one and contain both rows.
+        assert "Master" in wb.sheetnames, wb.sheetnames
+        master = wb["Master"]
+        # First row is the header. Following rows are deliverables.
+        rows = list(master.iter_rows(values_only=True))
+        assert len(rows) >= 3, f"expected header + at least 2 data rows, got {len(rows)}"
+        body = [r for r in rows[1:] if any(cell is not None for cell in r)]
+        # The deliverables_summary column should contain our two strings.
+        flat = " ".join(
+            str(cell) for row in body for cell in row if cell is not None
+        )
+        assert "ductwork" in flat.lower(), f"missing Mechanical deliverable text: {flat[:500]}"
+        assert "msb" in flat.lower(), f"missing Electrical deliverable text: {flat[:500]}"
+
+        # Pivot sheets must exist and not be empty.
+        for pivot in ("By Trade", "By Service", "By Category"):
+            assert pivot in wb.sheetnames, f"missing pivot sheet {pivot!r}; got {wb.sheetnames}"
+            pivot_rows = list(wb[pivot].iter_rows(values_only=True))
+            assert len(pivot_rows) >= 2, f"pivot {pivot!r} has no data rows"
+    finally:
+        wb.close()

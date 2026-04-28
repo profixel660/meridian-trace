@@ -25,28 +25,19 @@ export default function RootLayout({
             >
               Meridian - Trace
             </Link>
+            {/*
+              Alpha-16: stripped header nav to focus on the core
+              deliverables-extraction loop. Hidden but accessible by URL:
+                /onboarding, /glossary, /help/data-and-ai, /health.
+              The TOTP <AuthIndicator> stays — it gracefully renders
+              "Sign in" when no token is stored AND alpha-15 disabled
+              the redirect, so it's harmless. Restoring the nav links
+              is reverting this single edit.
+            */}
             <nav className="flex items-center gap-6 text-sm text-text-muted">
               <Link href="/" className="hover:text-text-primary">
                 Projects
               </Link>
-              <Link href="/onboarding" className="hover:text-text-primary">
-                Onboarding
-              </Link>
-              <Link
-                href="/help/data-and-ai"
-                className="hover:text-text-primary"
-              >
-                Help
-              </Link>
-              <Link href="/glossary" className="hover:text-text-primary">
-                Glossary
-              </Link>
-              <Link href="/health" className="hover:text-text-primary">
-                Health
-              </Link>
-              {/* Round-12 §3.2: TOTP bearer indicator + logout. Reads
-                  state from localStorage on mount; renders a "Sign in"
-                  link when no token is stored. */}
               <AuthIndicator />
             </nav>
           </div>

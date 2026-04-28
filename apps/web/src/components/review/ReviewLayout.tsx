@@ -22,12 +22,12 @@ interface ReviewLayoutProps {
   children: ReactNode;
 }
 
+// Alpha-16: pruned to the core review surface. The other queues
+// (audit / questions / conflicts / taxonomy) still exist as routes and
+// can be reached by URL; they're hidden from the nav strip until the
+// core deliverables-extraction loop has been validated end-to-end.
 const QUEUES: Array<{ key: keyof QueueCounts; label: string; href: string }> = [
   { key: "quarantine", label: "Quarantine", href: "quarantine" },
-  { key: "audit", label: "Audit", href: "audit" },
-  { key: "questions", label: "Questions", href: "questions" },
-  { key: "conflicts", label: "Conflicts", href: "conflicts" },
-  { key: "taxonomy", label: "Taxonomy", href: "taxonomy" },
 ];
 
 /**
