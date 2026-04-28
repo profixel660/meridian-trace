@@ -1313,10 +1313,45 @@ def setup_suggest_project_name(req: SuggestNameRequest) -> SuggestNameResponse:
     Returns ``is_available=True`` when the naive (un-suffixed) slug is
     free, ``False`` when the server had to bump the suffix because a
     project at that slug already exists.
+
+    Excludes the wizard's OWN in-flight staging DB from the collision
+    check: the import-folder step creates a staging SQLite at the
+    auto-derived slug, but that DB is going to be ADOPTED into whatever
+    name the user picks at /setup/projects, so it's not a real
+    collision from the user's perspective.
+
+    A DB is considered "staging" (and therefore excluded) if and only if
+    it was created by a /setup/import-folder job tracked in ``_jobs``.
+    Projects confirmed via /setup/projects are NOT excluded — they are
+    real collisions that must still cause the suffix bump.
     """
     folder = _validate_folder_path(req.folder_path)
     base = _slugify(folder.name)
-    if not project_db_path(base).exists():
+
+    # Determine the set of DB paths that are wizard-owned staging files.
+    # We use the _jobs registry (same predicate as setup_create_project's
+    # _staging_created_by_import guard) rather than state.cli.first_project_slug
+    # alone, because that field is also stamped by setup_create_project for
+    # CONFIRMED projects and must not be exempted from collision detection.
+    with _jobs_lock:
+        staging_db_paths: frozenset[Path] = frozenset(
+            getattr(j, "db_path", None)
+            for j in _jobs.values()
+            if getattr(j, "db_path", None) is not None
+        )
+
+    def _slug_taken(slug: str) -> bool:
+        db = project_db_path(slug)
+        if not db.exists():
+            return False
+        # If this DB was created by import-folder and is tracked in _jobs,
+        # it's the wizard's own staging file — not a real collision from the
+        # user's perspective (it'll be adopted into whatever name they pick).
+        if db.resolve() in {p.resolve() for p in staging_db_paths}:
+            return False
+        return True
+
+    if not _slug_taken(base):
         return SuggestNameResponse(suggested_name=base, is_available=True)
 
     # Bump suffix until unique. Cap at a sane number to avoid a runaway loop
@@ -1324,7 +1359,7 @@ def setup_suggest_project_name(req: SuggestNameRequest) -> SuggestNameResponse:
     # GUI needs to surface the situation, not silently pick -10001.
     for n in range(2, 10001):
         candidate = f"{base}-{n}"
-        if not project_db_path(candidate).exists():
+        if not _slug_taken(candidate):
             return SuggestNameResponse(suggested_name=candidate, is_available=False)
 
     # Pathological: the user has 10k+ collisions. Surface a clear error
