@@ -3,8 +3,9 @@
 Packages the manual sequence (configure API key -> create project -> import
 first document -> run bootstrap LLM sweep -> see first results) into a
 single guided ``meridian init`` command. Idempotent and resumable: state is
-persisted to ``<projects_dir>/_meridian/onboarding_state.json`` after every
-step so a half-finished run can be picked up where it left off.
+persisted to ``~/.meridian/onboarding_state.json`` (``MERIDIAN_WIZARD_STATE_DIR``
+env var overrides) after every step so a half-finished run can be picked up
+where it left off.
 
 Public surface intentionally small — the wizard composes existing CLI
 surfaces (``create_project``, ``ingest_file``, ``run_bootstrap_sweep``)

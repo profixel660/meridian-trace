@@ -619,9 +619,9 @@ def setup_state() -> SetupStateResponse:
     """Return the current wizard state.
 
     Public — no auth required (pre-setup, no user / token exists yet).
-    Reads from ``<projects_dir>/_meridian/onboarding_state.json``. A user
-    who started in CLI then opens the GUI sees CLI-driven progress
-    correctly reflected in ``next_step``.
+    Reads from ``~/.meridian/onboarding_state.json`` (``MERIDIAN_WIZARD_STATE_DIR``
+    overrides). A user who started in CLI then opens the GUI sees
+    CLI-driven progress correctly reflected in ``next_step``.
     """
     return _state_to_response(load_wizard_state())
 

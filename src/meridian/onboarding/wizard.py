@@ -60,7 +60,7 @@ STEP_NAMES: tuple[str, ...] = (
     "next_steps",
 )
 
-_STATE_DIR_NAME = "_meridian"
+_LEGACY_PROJECTS_DIR_STATE_SUBDIR = "_meridian"  # legacy only — pre-alpha-22 location
 _STATE_FILE_NAME = "onboarding_state.json"
 
 
@@ -107,42 +107,36 @@ def _stable_user_state_dir() -> Path:
     override = os.environ.get("MERIDIAN_WIZARD_STATE_DIR")
     if override:
         return Path(override).expanduser()
-    if os.name == "nt":
+    if sys.platform == "win32":
         profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
         return Path(profile) / ".meridian"
     return Path.home() / ".meridian"
 
 
-def state_path() -> Path:
-    """Where the wizard JSON state file lives — at a stable user-profile path,
-    NOT under settings.projects_dir.
+def _legacy_state_path() -> Path | None:
+    """Return the pre-alpha-22 state path IFF it exists, else None.
 
-    Backwards-compat: if the new path doesn't exist but an alpha-19..21-era
-    state file lives under ``<settings.projects_dir>/_meridian/onboarding_state.json``,
-    this returns the legacy path so a one-time migration can pick it up on
-    the next save.
+    The legacy file lived at ``<settings.projects_dir>/_meridian/onboarding_state.json``.
+    This helper is used ONLY by :func:`load_state` during one-time migration;
+    nothing else should call it.
     """
-    new_path = _stable_user_state_dir() / _STATE_FILE_NAME
-    if new_path.exists():
-        return new_path
-
-    # Legacy lookup — only used until the next save, which writes to new_path.
-    from meridian.config import settings as _settings  # late import: avoid cycle
-    legacy = _settings.projects_dir / _STATE_DIR_NAME / _STATE_FILE_NAME
-    if legacy.exists():
-        return legacy
-    return new_path
+    legacy = settings.projects_dir / _LEGACY_PROJECTS_DIR_STATE_SUBDIR / _STATE_FILE_NAME
+    return legacy if legacy.exists() else None
 
 
-def load_state() -> OnboardingState | None:
-    """Return the persisted state, or None if no run has ever happened."""
-    p = state_path()
-    if not p.exists():
-        return None
-    try:
-        raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
+def state_path() -> Path:
+    """Where the wizard JSON state file lives.
+
+    Always resolves to the stable user-profile path: env var
+    ``MERIDIAN_WIZARD_STATE_DIR`` if set, else ``~/.meridian/onboarding_state.json``
+    (``%USERPROFILE%\\.meridian\\onboarding_state.json`` on Windows).
+    Never coupled to ``settings.projects_dir``.
+    """
+    return _stable_user_state_dir() / _STATE_FILE_NAME
+
+
+def _parse_state_dict(raw: object) -> OnboardingState | None:
+    """Parse a raw JSON value into an OnboardingState, or None if invalid."""
     if not isinstance(raw, dict):
         return None
     # Defensive: filter to known fields so a future schema rev doesn't crash
@@ -152,6 +146,73 @@ def load_state() -> OnboardingState | None:
     if not isinstance(cleaned.get("completed_steps", []), list):
         cleaned["completed_steps"] = []
     return OnboardingState(**cleaned)
+
+
+def load_state() -> OnboardingState | None:
+    """Return the persisted state, or None if no run has ever happened.
+
+    Resolution order:
+    1. New stable path (``state_path()``).  If it exists, read from it.
+    2. Legacy path (``_legacy_state_path()``). If it exists, read it,
+       migrate to the new stable path (write + delete legacy so subsequent
+       calls go through branch 1), and return the loaded state.
+    3. Neither exists → return None (fresh install).
+
+    The legacy migration step is defensive: a corrupt or unreadable legacy
+    file is logged and treated as "no state yet" so a botched old file
+    never prevents a clean new-path install.
+    """
+    new_path = state_path()
+
+    # --- branch 1: new stable path -----------------------------------------
+    if new_path.exists():
+        try:
+            raw = json.loads(new_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return _parse_state_dict(raw)
+
+    # --- branch 2: legacy path (one-time migration) ------------------------
+    legacy = _legacy_state_path()
+    if legacy is not None:
+        try:
+            raw = json.loads(legacy.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            # Corrupt or unreadable legacy file — don't block the new install.
+            sys.stderr.write(
+                f"[meridian] WARNING: legacy state file {legacy} unreadable "
+                f"({exc}); starting fresh.\n"
+            )
+            return None
+
+        state = _parse_state_dict(raw)
+        if state is None:
+            sys.stderr.write(
+                f"[meridian] WARNING: legacy state file {legacy} has unexpected "
+                "format; starting fresh.\n"
+            )
+            return None
+
+        # Migrate: write to new location then remove legacy so we never
+        # visit this branch again.
+        try:
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            new_path.write_text(
+                json.dumps(raw if isinstance(raw, dict) else {}, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            legacy.unlink(missing_ok=True)
+        except OSError as exc:
+            # Migration failed (permissions, disk full). Return the state
+            # anyway — the user's data is intact even if we couldn't migrate.
+            sys.stderr.write(
+                f"[meridian] WARNING: could not migrate legacy state to {new_path} "
+                f"({exc}); legacy file preserved.\n"
+            )
+        return state
+
+    # --- branch 3: fresh install -------------------------------------------
+    return None
 
 
 def save_state(state: OnboardingState) -> None:

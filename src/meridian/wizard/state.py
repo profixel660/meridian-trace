@@ -3,10 +3,11 @@
 State file
 ==========
 
-Single source of truth: ``<settings.projects_dir>/_meridian/onboarding_state.json``
-— the same path used by ``meridian.onboarding.wizard``. This module never
-defines its own location; ``state_path()`` is re-exported from the CLI
-module so a relocation there propagates here.
+Single source of truth: ``~/.meridian/onboarding_state.json``
+(``MERIDIAN_WIZARD_STATE_DIR`` env var overrides) — the same path used by
+``meridian.onboarding.wizard``. This module never defines its own location;
+``state_path()`` is re-exported from the CLI module so a relocation there
+propagates here.
 
 Schema (CLI-compatible superset)
 --------------------------------

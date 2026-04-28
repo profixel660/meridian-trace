@@ -2,8 +2,8 @@
 
 This package exposes the existing CLI onboarding primitives
 (``meridian.onboarding.wizard``) over HTTP so the Tauri-bundled SPA's
-first-run wizard can drive setup. The state file under
-``<projects_dir>/_meridian/onboarding_state.json`` is shared with the CLI
+first-run wizard can drive setup. The state file at ``~/.meridian/onboarding_state.json``
+(``MERIDIAN_WIZARD_STATE_DIR`` env var overrides) is shared with the CLI
 wizard — a user who started in CLI and finished in GUI (or vice-versa)
 sees consistent state.
 
