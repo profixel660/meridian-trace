@@ -25,15 +25,47 @@ decision:
 
 The recommended default once the user has decided is global enforcement
 on any non-localhost binding, per-route on localhost-only.
+
+ALPHA-13 DEBUG BYPASS
+---------------------
+
+When the ``MERIDIAN_AUTH_DISABLED`` environment variable is set to
+``"1"``, ``require_session`` short-circuits to a no-op. This lets an
+SME walk the post-setup surface during alpha debugging without enrolling
+TOTP. Production deployments MUST NOT set this var; ``api/main.py``
+emits a loud WARNING at startup when the bypass is active so an
+operator who deploys with it enabled cannot miss the leak.
+
+The check happens at REQUEST time (not module-import time) so the var
+can be toggled live by editing ``C:\\Meridian\\.env`` and restarting the
+backend — no rebuild required. ``/setup/runtime`` exposes the current
+state via ``auth_disabled`` so the frontend can render a debug-mode
+banner.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import Header, HTTPException, status
 
 from meridian.auth.session import verify_session
+
+# Public sentinel — the env var name in one place so callers can probe
+# the same string without typo risk.
+AUTH_DISABLED_ENV_VAR = "MERIDIAN_AUTH_DISABLED"
+
+
+def auth_disabled() -> bool:
+    """Return True iff the alpha-13 debug bypass is currently active.
+
+    Read from the env at call time, NOT cached, so an operator can flip
+    the var live by editing ``.env`` + restarting (or even
+    ``$env:MERIDIAN_AUTH_DISABLED='1'`` in the running shell on the
+    test backend's process tree, since uvicorn inherits parent env).
+    """
+    return os.environ.get(AUTH_DISABLED_ENV_VAR) == "1"
 
 
 def require_session(
@@ -47,7 +79,14 @@ def require_session(
 
     Tokens are minted by :func:`meridian.auth.session.issue_session` after
     a successful TOTP verification.
+
+    Honours the alpha-13 ``MERIDIAN_AUTH_DISABLED=1`` env var as a
+    no-op short-circuit. See module docstring.
     """
+    if auth_disabled():
+        # Debug mode. The startup warning in api/main.py covers the
+        # "operator forgot to disable this in prod" case.
+        return
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -63,4 +102,4 @@ def require_session(
         )
 
 
-__all__ = ["require_session"]
+__all__ = ["AUTH_DISABLED_ENV_VAR", "auth_disabled", "require_session"]

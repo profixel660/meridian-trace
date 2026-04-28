@@ -643,6 +643,16 @@ class RuntimeStatusResponse(BaseModel):
             "triage flow answer 'is the worker stuck?' from one HTTP call."
         ),
     )
+    auth_disabled: bool = Field(
+        description=(
+            "Alpha-13: True iff MERIDIAN_AUTH_DISABLED=1 is set and "
+            "require_session is short-circuited. The frontend renders a "
+            "loud debug-mode banner when this is true so an operator "
+            "cannot ship a production build with the bypass on without "
+            "noticing. Always present (never null) so the GUI's banner "
+            "logic doesn't need an undefined-check."
+        ),
+    )
 
 
 class SetupDefaultsResponse(BaseModel):

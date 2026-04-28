@@ -83,7 +83,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from meridian import __version__
-from meridian.auth.fastapi_dep import require_session
+from meridian.auth.fastapi_dep import AUTH_DISABLED_ENV_VAR, auth_disabled, require_session
 from meridian.config import settings
 from meridian.db.connection import connect
 from meridian.export.excel import export_to_xlsx
@@ -97,6 +97,22 @@ from meridian.projects import ProjectBusy, create_project, project_db_path
 # context is bound on a per-request basis by the middleware below when the
 # path includes a project name.
 configure_logging(console=False)
+
+# Alpha-13: loud startup warning when the auth bypass is active so an
+# operator who accidentally ships a production build with
+# MERIDIAN_AUTH_DISABLED=1 cannot miss the leak. We emit at WARNING level
+# (uvicorn's stderr) AND through structlog (per-project file) so neither
+# surface can hide it. The banner is also re-emitted on every /health
+# probe response so a drifted prod check catches it.
+if auth_disabled():
+    _bypass_msg = (
+        f"!!! {AUTH_DISABLED_ENV_VAR}=1 -- AUTH BYPASS ACTIVE. "
+        "All require_session-protected routes are open. "
+        "DEBUG ONLY -- never deploy with this set in production. !!!"
+    )
+    import logging as _stdlib_logging
+    _stdlib_logging.warning(_bypass_msg)
+    get_logger("meridian.auth").warning("auth.bypass_active", env_var=AUTH_DISABLED_ENV_VAR)
 
 _log = get_logger("meridian.api")
 

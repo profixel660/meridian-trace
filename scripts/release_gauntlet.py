@@ -31,6 +31,10 @@ already been shipped (and embarrassed us) on the v0.2.0-alpha line:
     7f. /setup/runtime contract — endpoint returns pid, started_at,
         uptime_seconds, version, python_version, platform. Catches
         regressions that break the operator triage path.                 (alpha-12)
+    7g. Auth bypass default-secure — /setup/runtime.auth_disabled is
+        false on a fresh install with no env var set. Catches a
+        regression that defaults the alpha-13 MERIDIAN_AUTH_DISABLED
+        bypass on.                                                       (alpha-13)
     8.  CLI --help smoke (no browser opens)
     9.  Summary
 
@@ -720,6 +724,39 @@ def _step_backend_lifecycle(
             f"pid={rt_body['pid']} version={rt_body['version']} uptime={rt_body['uptime_seconds']:.1f}s",
         )
 
+        # Step 7g (alpha-13) -- auth bypass default-secure contract.
+        # The backend was launched WITHOUT MERIDIAN_AUTH_DISABLED set, so
+        # /setup/runtime should report auth_disabled=false. Catches a
+        # regression that defaults the bypass on (a real risk if a
+        # future refactor flips the default for "easier debugging").
+        if "auth_disabled" not in rt_body:
+            _fail(
+                "step 7g: auth bypass default-secure",
+                "missing 'auth_disabled' field on /setup/runtime; alpha-13 "
+                "added it so the GUI can render the debug-mode banner. "
+                f"Body keys: {sorted(rt_body)}",
+            )
+            return False
+        if not isinstance(rt_body["auth_disabled"], bool):
+            _fail(
+                "step 7g: auth bypass default-secure",
+                f"auth_disabled must be bool, got {type(rt_body['auth_disabled']).__name__}",
+            )
+            return False
+        if rt_body["auth_disabled"] is True:
+            _fail(
+                "step 7g: auth bypass default-secure",
+                "auth_disabled=true on a fresh install with no env var set. "
+                "The bypass MUST default off -- alpha-13 contract violation. "
+                "Check that MERIDIAN_AUTH_DISABLED is not being set "
+                "anywhere by the installer / launcher / pyproject.",
+            )
+            return False
+        _ok(
+            "step 7g: auth bypass default-secure",
+            "auth_disabled=false (bypass off by default, as required)",
+        )
+
         return True
     finally:
         # Cleanup — kill the backend so the next run isn't held up by a port collision.
@@ -830,31 +867,66 @@ def _step_detach_pattern(installer_dir: Path) -> bool:
 
 
 def _step_launcher_exec_policy(installer_dir: Path) -> bool:
-    """Step 2d (alpha-12): Meridian-Console.bat must invoke the .ps1 with
-    ``-ExecutionPolicy Bypass``. Alpha-11 SME hit 'running scripts is
-    disabled on this system' on a clean install because the desktop
-    shortcut targeted the .ps1 directly. The .bat wrapper bypasses the
-    policy without changing it system-wide. Static check only — runtime
-    invocation is covered by the install / launcher e2e at install time.
+    """Step 2d (alpha-12, broadened alpha-13): every .bat under installer/
+    that invokes a .ps1 must use ``-ExecutionPolicy Bypass``.
+
+    Alpha-12 only checked Meridian-Console.bat. Alpha-13 broadens the
+    rule because a regression that adds a new .bat-invokes-.ps1 surface
+    (Update-Meridian.bat, Repair-Meridian.bat, etc.) would silently
+    re-expose the alpha-11 ExecutionPolicy block.
+
+    Detection: any line in any .bat file that mentions ``powershell.exe``
+    or ``powershell `` AND ``-File`` (i.e. running a script) must also
+    contain ``-ExecutionPolicy Bypass``. Inline ``-Command`` invocations
+    are exempt because PS execution policy doesn't gate them.
     """
-    console_bat = installer_dir / "Meridian-Console.bat"
-    if not console_bat.exists():
+    failures: list[str] = []
+    bats = sorted(installer_dir.glob("*.bat"))
+    if not bats:
+        _info("No .bat files under installer/ -- nothing to check.")
+        _ok("step 2d: launcher exec-policy (no bats present)")
+        return True
+
+    for bat in bats:
+        try:
+            lines = bat.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            failures.append(f"{bat.name}: could not read ({exc})")
+            continue
+        for line_num, raw in enumerate(lines, start=1):
+            stripped = raw.lstrip()
+            if stripped.startswith("REM ") or stripped.startswith("::"):
+                continue
+            lower = stripped.lower()
+            invokes_ps = (
+                "powershell.exe" in lower or
+                lower.startswith("powershell ") or
+                " powershell " in lower
+            )
+            if not invokes_ps:
+                continue
+            # Only flag invocations that run a .ps1 script (-File). Inline
+            # -Command / -EncodedCommand / -NoProfile-only invocations
+            # don't hit the script-execution policy gate.
+            if "-file" not in lower:
+                continue
+            if "-executionpolicy bypass" not in lower:
+                failures.append(
+                    f"{bat.name}:{line_num}: invokes a .ps1 via -File but lacks "
+                    "-ExecutionPolicy Bypass"
+                )
+    if failures:
         _fail(
             "step 2d: launcher exec-policy",
-            f"missing: {console_bat}. The alpha-12 .bat wrapper is required so default "
-            "ExecutionPolicy can never block the desktop shortcut.",
+            "every .bat invoking a .ps1 via -File must include "
+            "-ExecutionPolicy Bypass (alpha-13 broadening of the alpha-12 "
+            "Meridian-Console-only check):\n  - " + "\n  - ".join(failures),
         )
         return False
-    text = console_bat.read_text(encoding="utf-8", errors="replace")
-    must_have = ["powershell.exe", "-ExecutionPolicy Bypass", "-File"]
-    missing = [m for m in must_have if m not in text]
-    if missing:
-        _fail(
-            "step 2d: launcher exec-policy",
-            f"{console_bat.name} missing required tokens: {missing}",
-        )
-        return False
-    _ok("step 2d: launcher exec-policy", f"{console_bat.name} bypasses ExecutionPolicy correctly")
+    _ok(
+        "step 2d: launcher exec-policy",
+        f"{len(bats)} .bat file(s) under installer/ all bypass ExecutionPolicy where needed",
+    )
     return True
 
 

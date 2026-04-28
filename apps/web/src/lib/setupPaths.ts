@@ -91,3 +91,93 @@ export function buildPrefilledPath(
   const trimmedHome = homeDir.replace(/[\\/]+$/, "");
   return `${trimmedHome}${sep}Documents${sep}${folderName}`;
 }
+
+/**
+ * Alpha-13 — broader paste normalisation.
+ *
+ * Real-world copy-from-Explorer patterns the user pastes into the
+ * typed-path input that the backend cannot resolve as-is:
+ *
+ *   * ``"C:\\Foo\\Bar"``        — Win+Shift+C wraps in quotes (alpha-10
+ *                                 fix; ``stripSurroundingQuotes``).
+ *   * ``file:///C:/Foo/Bar``    — drag-from-Explorer-into-browser-bar
+ *                                 produces this on some browsers.
+ *   * ``%5C%5Cserver%5Cshare``  — URL-encoded UNC paste.
+ *   * trailing whitespace       — invisible newlines from terminal copy.
+ *   * trailing path separator   — ``C:\Foo\Bar\`` confuses some Path
+ *                                 resolvers; trim it.
+ *   * mixed Unicode whitespace  — non-breaking space, em-space etc.
+ *                                 from PDF / Word copy.
+ *
+ * This function applies all of them in order. Pure; no IO.
+ *
+ * Idempotency caveat (alpha-13 reviewer ticket): this function is
+ * idempotent on every transformation EXCEPT percent-decoding. A
+ * pathological input like ``%2520foo`` decodes to ``%20foo`` on the
+ * first pass and to `` foo`` on the second. The current call sites
+ * (``submitManualPath`` + ``classifyPathShape``) only invoke this once
+ * per submit/classify off the raw user input, so the reflective
+ * ``setManualPath(cleaned)`` pattern is safe in practice. A future
+ * caller that loops on this function would be surprised; if you need
+ * loop-safe idempotency, either gate the percent-decode on a
+ * "did-this-already" sentinel or call it exactly once per user input.
+ */
+export function normalisePastedPath(raw: string): string {
+  if (raw == null) return "";
+  let p = raw;
+  // 1. Strip Unicode whitespace at start/end (covers   NBSP,   EM SPACE, etc.)
+  p = p.replace(/^[\s  -​  　]+/u, "");
+  p = p.replace(/[\s  -​  　]+$/u, "");
+  // 2. Strip surrounding ASCII double-quotes (Win+Shift+C).
+  p = stripSurroundingQuotes(p);
+  // 3. file:// URI -> filesystem path.
+  //    file:///C:/Foo/Bar -> C:/Foo/Bar  (note the THREE slashes for absolute paths)
+  //    file://server/share -> \\server\share (UNC)
+  if (/^file:\/\//i.test(p)) {
+    let withoutScheme = p.replace(/^file:\/\//i, "");
+    // file:///C:/Foo -> drop the leading "/" before the drive letter.
+    if (/^\/[A-Za-z]:/.test(withoutScheme)) {
+      withoutScheme = withoutScheme.slice(1);
+    } else if (withoutScheme.startsWith("/")) {
+      // file:///foo -> /foo (POSIX absolute) — keep the leading slash.
+      // No transformation needed.
+    } else if (withoutScheme.length > 0) {
+      // file://server/share -> \\server\share
+      withoutScheme = "\\\\" + withoutScheme.replace(/\//g, "\\");
+    }
+    p = withoutScheme;
+  }
+  // 4. URL-decode percent-encoded sequences (handles dropped-from-browser cases).
+  try {
+    if (/%[0-9A-Fa-f]{2}/.test(p)) {
+      p = decodeURIComponent(p);
+    }
+  } catch {
+    // Malformed percent-encoding — leave as-is and let the backend 400.
+  }
+  // 5. Strip trailing path separator (but NOT for a single-character "C:\" or "/").
+  if (p.length > 3 && /[\\/]$/.test(p)) {
+    p = p.replace(/[\\/]+$/, "");
+  }
+  return p;
+}
+
+/**
+ * Three-outcome client-side path classification for live-validation
+ * feedback in the typed-path input. Lets the GUI render an inline hint
+ * AS THE USER TYPES rather than waiting for them to submit and getting
+ * a backend 400 round-trip.
+ *
+ * * ``empty``       — nothing typed yet; render placeholder, no error.
+ * * ``looks_ok``    — passes ``looksAbsolute`` after normalisation; submit-eligible.
+ * * ``not_absolute`` — non-empty but doesn't match Windows-drive / UNC / POSIX-absolute shape.
+ *
+ * Pure function.
+ */
+export type PathShape = "empty" | "looks_ok" | "not_absolute";
+
+export function classifyPathShape(raw: string): PathShape {
+  const normalised = normalisePastedPath(raw);
+  if (!normalised) return "empty";
+  return looksAbsolute(normalised) ? "looks_ok" : "not_absolute";
+}

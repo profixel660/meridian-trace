@@ -1968,6 +1968,211 @@ def test_alpha12_runtime_endpoint_reports_last_import_job(
     assert snapshot["current_file"] is None
 
 
+# ==========================================================================
+# Alpha-13 — auth bypass + thread-safe log dir + dedup-aware partial copy
+#            + path-helpers extension
+# ==========================================================================
+#
+# Background: an SME walkthrough of alpha-12 surfaced two new failure modes
+# (and two reviewer tickets carried forward):
+#   1. /login TOTP gate blocks debug iteration. We need an env-var bypass
+#      that is loud + opt-in + verifiable from /setup/runtime.
+#   2. Partial-success panel renders "0 of 347 imported. 18 failed." when
+#      329 files were deduped, hiding the dedup count and reading as a
+#      catastrophic failure when it was actually a clean re-import.
+#   3. Folder-picker typed-path UX is hostile -- alpha-13 widens
+#      normalisePastedPath + adds classifyPathShape for live feedback.
+#   4. (alpha-12 reviewer) _logging_setup._current_log_dir module-global
+#      reads were unsynchronised. RLock + current_log_dir() getter close
+#      the gap.
+#
+# These tests lock down the alpha-13 fixes.
+
+
+def test_alpha13_auth_disabled_off_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default-secure: with the env var unset, require_session enforces
+    Authorization headers."""
+    from meridian.auth import fastapi_dep
+
+    monkeypatch.delenv("MERIDIAN_AUTH_DISABLED", raising=False)
+    assert fastapi_dep.auth_disabled() is False
+    # The dependency raises 401 when no Authorization header is supplied.
+    with pytest.raises(Exception) as excinfo:
+        fastapi_dep.require_session(authorization=None)
+    # Verify it's the HTTPException with 401.
+    assert getattr(excinfo.value, "status_code", None) == 401
+
+
+def test_alpha13_auth_disabled_short_circuits_when_env_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With MERIDIAN_AUTH_DISABLED=1, require_session is a no-op even
+    without an Authorization header. Critical contract: the bypass must
+    actually bypass."""
+    from meridian.auth import fastapi_dep
+
+    monkeypatch.setenv("MERIDIAN_AUTH_DISABLED", "1")
+    assert fastapi_dep.auth_disabled() is True
+    # No exception raised — bypass is active.
+    fastapi_dep.require_session(authorization=None)
+    fastapi_dep.require_session(authorization="Bearer total-garbage")
+
+
+def test_alpha13_auth_disabled_only_accepts_exact_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Truthy strings other than '1' do NOT bypass auth. Prevents an
+    operator from accidentally enabling the bypass with
+    MERIDIAN_AUTH_DISABLED=true / yes / on."""
+    from meridian.auth import fastapi_dep
+
+    for non_one in ("true", "yes", "on", "TRUE", "0", "", "  1  "):
+        monkeypatch.setenv("MERIDIAN_AUTH_DISABLED", non_one)
+        assert fastapi_dep.auth_disabled() is False, (
+            f"value {non_one!r} should NOT activate bypass; only literal '1' does"
+        )
+
+
+def test_alpha13_runtime_endpoint_reports_auth_disabled_off(
+    fastapi_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """/setup/runtime exposes auth_disabled=false when the bypass is off."""
+    monkeypatch.delenv("MERIDIAN_AUTH_DISABLED", raising=False)
+    response = fastapi_client.get("/setup/runtime")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["auth_disabled"] is False, body
+
+
+def test_alpha13_runtime_endpoint_reports_auth_disabled_on(
+    fastapi_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """/setup/runtime exposes auth_disabled=true when the bypass is on.
+    Lets the GUI render its red debug-mode banner."""
+    monkeypatch.setenv("MERIDIAN_AUTH_DISABLED", "1")
+    response = fastapi_client.get("/setup/runtime")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["auth_disabled"] is True, body
+
+
+def test_alpha13_partial_state_is_imported_zero_deduped_positive_failed_positive(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Locks the backend contract the alpha-13 dedup-aware partial copy
+    relies on: a re-import where some files dedup and some fail produces
+    status='succeeded', imported=0, deduped>0, failed_groups=[...].
+
+    Frontend's dedup-aware summary helper renders this as
+    'All N documents were already in the project. M files failed.'
+    instead of alpha-11's misleading '0 of total imported. M failed.'
+    """
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha13-partial-state",
+            "slug": "alpha13-partial-state",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+
+    folder = tmp_path / "alpha13-partial-state"
+    folder.mkdir()
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+    # Will fail on every dwg with oda_missing — patch ingest_file to
+    # raise the canonical FileNotFoundError for those.
+    real_ingest = wizard_api_mod.ingest_file
+
+    def faux_ingest(*args, **kwargs):
+        path = kwargs.get("file_path")
+        if path is not None and Path(path).suffix.lower() == ".dwg":
+            raise FileNotFoundError(
+                "ODA File Converter binary not found. Set the ODA_FILE_CONVERTER ..."
+            )
+        return real_ingest(*args, **kwargs)
+
+    monkeypatch.setattr(wizard_api_mod, "ingest_file", faux_ingest)
+
+    # Inject a dwg into the manifest. We don't need a real DWG file --
+    # FileNotFoundError will fire from the patched faux_ingest.
+    (folder / "drawing.dwg").write_bytes(b"fake-dwg-bytes")
+
+    def _kick_and_wait() -> dict:
+        kick = fastapi_client.post(
+            "/setup/import-folder",
+            json={
+                "folder_path": str(folder),
+                "project_name": "alpha13-partial-state",
+            },
+        )
+        job_id = kick.json()["job_id"]
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            r = fastapi_client.get(f"/setup/import-folder/{job_id}").json()
+            if r["status"] in ("succeeded", "failed"):
+                return r
+            time.sleep(0.05)
+        return {}
+
+    # First run: 1 docx imported, 1 dwg failed.
+    first = _kick_and_wait()
+    assert first["status"] == "succeeded", first
+    assert first["imported"] == 1
+    assert first["deduped"] == 0
+    assert any(g["code"] == "oda_missing" for g in first["failed_groups"])
+
+    # Second run: docx dedups (already in DB), dwg fails again. This is
+    # the alpha-13 partial state the dedup-aware copy targets.
+    second = _kick_and_wait()
+    assert second["status"] == "succeeded", second
+    assert second["imported"] == 0, second
+    assert second["deduped"] == 1, second
+    assert any(g["code"] == "oda_missing" for g in second["failed_groups"])
+    assert sum(g["count"] for g in second["failed_groups"]) >= 1
+
+
+def test_alpha13_logging_current_log_dir_getter_thread_safe() -> None:
+    """current_log_dir() returns the same path the module-global holds,
+    locked. Smoke test only -- the real RLock contract is verified by
+    not racing in production."""
+    from meridian.logging.setup import current_log_dir
+
+    # Just verify the function exists, returns a Path | None, and is
+    # callable from any thread without raising.
+    val = current_log_dir()
+    assert val is None or isinstance(val, Path), val
+
+    # Concurrent reads should not raise (lock is RLock so re-entrant).
+    import threading
+
+    errors: list[BaseException] = []
+
+    def _hammer() -> None:
+        try:
+            for _ in range(50):
+                current_log_dir()
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_hammer) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+    assert not errors, errors
+
+
 def test_alpha12_wizard_import_logger_has_dedicated_stderr_handler() -> None:
     """The alpha-11 _stdlog logger must reach stderr regardless of whether
     configure_logging(console=False) ran — that was the alpha-11 silence

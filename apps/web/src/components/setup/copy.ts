@@ -359,6 +359,38 @@ export const FIRST_DOCS_COPY = {
       headline: "Some files imported, some didn't.",
       body:
         "Failed files are grouped by reason below. Each group has a one-line fix you can take to recover those files; the rest of your import is already done.",
+      /**
+       * Alpha-13: dedup-aware summary line. Replaces alpha-11's
+       * "{imported} of {total} files imported. {failed_count} failed."
+       * which hid the dedup count entirely — an SME re-importing the
+       * same folder saw "0 of 347 imported. 18 failed." and had no
+       * idea their 329 files were already safe in the project.
+       *
+       * Three rendering branches based on which counts are non-zero:
+       *   imported>0 deduped>0 → "X added, Y already in the project, Z failed."
+       *   imported=0 deduped>0 → "All N documents were already in the project. Z failed."
+       *   imported>0 deduped=0 → "X of total imported. Z failed." (alpha-11 form)
+       */
+      summary: (imported: number, deduped: number, failed: number, total: number) => {
+        const fileWord = (n: number) => (n === 1 ? "file" : "files");
+        const docWord = (n: number) => (n === 1 ? "document" : "documents");
+        const verbWas = (n: number) => (n === 1 ? "was" : "were");
+        if (imported === 0 && deduped > 0) {
+          return (
+            `All ${deduped} ${docWord(deduped)} ${verbWas(deduped)} already in the project (deduplicated by content). ` +
+            `${failed} ${fileWord(failed)} failed.`
+          );
+        }
+        if (imported > 0 && deduped > 0) {
+          return (
+            `${imported} ${docWord(imported)} added; ` +
+            `${deduped} ${verbWas(deduped)} already in the project; ` +
+            `${failed} ${fileWord(failed)} failed.`
+          );
+        }
+        // imported>0 deduped=0 — alpha-11 form, kept for the "fresh import" case.
+        return `${imported} of ${total} ${fileWord(total)} imported. ${failed} failed.`;
+      },
     },
     failed: {
       headline: "No files were imported.",

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 
+import { AuthDisabledBanner } from "@/components/AuthDisabledBanner";
 import { AuthIndicator } from "@/components/AuthIndicator";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-background text-text-primary antialiased">
+        <AuthDisabledBanner />
         <header className="border-b border-border bg-surface">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
             <Link

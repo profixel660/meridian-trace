@@ -19,7 +19,9 @@ import {
 } from "@/lib/setupClient";
 import {
   buildPrefilledPath,
+  classifyPathShape,
   looksAbsolute,
+  normalisePastedPath,
   stripSurroundingQuotes,
 } from "@/lib/setupPaths";
 import { isInTauri, pickFolderWithFallback } from "@/lib/tauri";
@@ -351,7 +353,11 @@ export default function SetupFirstDocumentsPage() {
   const [pathError, setPathError] = useState<string | null>(null);
 
   const submitManualPath = () => {
-    const cleaned = stripSurroundingQuotes(manualPath.trim());
+    // Alpha-13: full normalisePastedPath instead of just stripSurroundingQuotes.
+    // Catches file:// URIs, percent-encoded UNC, trailing separators, NBSP,
+    // etc. — patterns the user produces when they paste from Explorer's
+    // address bar / drag-and-drop.
+    const cleaned = normalisePastedPath(manualPath);
     if (!cleaned) {
       setPathError("Please enter the folder path.");
       return;
@@ -363,6 +369,9 @@ export default function SetupFirstDocumentsPage() {
       return;
     }
     setPathError(null);
+    // If normalisation changed the path, reflect the canonicalised form
+    // back into the input so the user sees what we actually submitted.
+    if (cleaned !== manualPath) setManualPath(cleaned);
     void scanFolder(cleaned);
   };
 
@@ -621,6 +630,13 @@ export default function SetupFirstDocumentsPage() {
               className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
               autoFocus
             />
+            {/*
+              Alpha-13: live-shape feedback. Renders as the user types so
+              they see "looks like a path" / "needs a drive letter" before
+              hitting Enter and getting a backend round-trip. The
+              submit-time validator (submitManualPath) is the authority;
+              this is purely an affordance.
+            */}
             {pathError ? (
               <p
                 role="alert"
@@ -628,16 +644,38 @@ export default function SetupFirstDocumentsPage() {
               >
                 {pathError}
               </p>
-            ) : (
-              <p className="text-xs text-text-muted">
-                {FIRST_DOCS_COPY.browserPathPromptHelper}
-              </p>
-            )}
+            ) : (() => {
+              const shape = classifyPathShape(manualPath);
+              if (shape === "looks_ok") {
+                return (
+                  <p className="text-xs text-emerald-300">
+                    ✓ Looks like a full path — press Enter or "Scan this folder".
+                  </p>
+                );
+              }
+              if (shape === "not_absolute" && manualPath.trim().length > 2) {
+                return (
+                  <p className="text-xs text-amber-300">
+                    Doesn't yet look like a full path. Add the drive letter (e.g.
+                    C:\Users\...) — your browser only gave us the folder name,
+                    so we need the prefix.
+                  </p>
+                );
+              }
+              return (
+                <p className="text-xs text-text-muted">
+                  {FIRST_DOCS_COPY.browserPathPromptHelper}
+                </p>
+              );
+            })()}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={submitManualPath}
-                disabled={!manualPath.trim()}
+                disabled={
+                  !manualPath.trim() ||
+                  classifyPathShape(manualPath) === "not_absolute"
+                }
                 className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
               >
                 Scan this folder
@@ -903,13 +941,25 @@ export default function SetupFirstDocumentsPage() {
                 ⚠ {FIRST_DOCS_COPY.outcomes.partial.headline}
               </p>
               <p className="mt-1 text-sm text-text-muted">
-                {phase.status.imported} of {phase.status.total} files
-                imported.{" "}
-                {phase.status.failed_groups.reduce(
-                  (acc, g) => acc + g.count,
-                  0,
-                )}{" "}
-                failed.
+                {/*
+                  Alpha-13: dedup-aware summary. Alpha-11 used
+                  `{imported} of {total} imported. {failed_count} failed.`
+                  which hid the dedup count entirely — a real SME
+                  walkthrough saw "0 of 347 imported. 18 failed." for a
+                  re-import where 329 files dedup'd and only 18 DWGs
+                  failed on missing ODA, leaving the operator thinking
+                  329 files vanished. The summary helper handles all
+                  three count combinations.
+                */}
+                {FIRST_DOCS_COPY.outcomes.partial.summary(
+                  phase.status.imported,
+                  phase.status.deduped,
+                  phase.status.failed_groups.reduce(
+                    (acc, g) => acc + g.count,
+                    0,
+                  ),
+                  phase.status.total,
+                )}
               </p>
               <p className="mt-2 text-xs text-text-muted">
                 {FIRST_DOCS_COPY.outcomes.partial.body}

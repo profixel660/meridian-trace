@@ -687,17 +687,24 @@ def setup_runtime() -> RuntimeStatusResponse:
                 ),
             }
 
-    # Discover the structlog directory cheaply via the configure_logging
-    # module-level state. Importing the module is safe (it's already
-    # imported at process start by api/main.py).
+    # Discover the structlog directory via the alpha-13 thread-safe
+    # accessor. Alpha-12's read of the module global was unsynchronised;
+    # alpha-13 added current_log_dir() with an RLock so this is now
+    # honest (no race between configure_logging and a concurrent
+    # /setup/runtime probe).
     structlog_dir: str | None = None
     try:
-        from meridian.logging import setup as _logging_setup  # local import
+        from meridian.logging.setup import current_log_dir  # local import
 
-        if _logging_setup._current_log_dir is not None:  # noqa: SLF001 — module-internal probe
-            structlog_dir = str(_logging_setup._current_log_dir)
+        log_dir = current_log_dir()
+        if log_dir is not None:
+            structlog_dir = str(log_dir)
     except Exception:  # noqa: BLE001 — best-effort introspection
         pass
+
+    # Alpha-13 auth bypass status. Read at request time so an env-var
+    # toggle is reflected immediately on the next probe.
+    from meridian.auth.fastapi_dep import auth_disabled as _auth_disabled  # local import
 
     return RuntimeStatusResponse(
         pid=os.getpid(),
@@ -715,6 +722,7 @@ def setup_runtime() -> RuntimeStatusResponse:
         backend_log_path=os.environ.get("MERIDIAN_BACKEND_LOG"),
         structlog_dir=structlog_dir,
         last_import_job=last_import,
+        auth_disabled=_auth_disabled(),
     )
 
 
