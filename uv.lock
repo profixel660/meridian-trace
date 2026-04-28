@@ -1190,7 +1190,7 @@ wheels = [
 
 [[package]]
 name = "meridian"
-version = "0.2.0a11"
+version = "0.2.0a12"
 source = { editable = "." }
 dependencies = [
     { name = "extract-msg" },

@@ -21,6 +21,53 @@ Auth — round-12 §3.2 enforcement:
 
 from __future__ import annotations
 
+# ============================================================================
+# Alpha-12 stdout/stderr redirect — keep this at the VERY TOP of imports so
+# every subsequent module import sees the redirected streams.
+# ============================================================================
+#
+# The alpha-12 installer launches the backend via ``pythonw.exe`` (Windows
+# GUI subsystem, no console) so closing the parent terminal can't signal
+# uvicorn to shut down (that was the alpha-11 "documents uploaded then web
+# interface broke" failure mode). pythonw has no inherited stderr, so
+# uvicorn's INFO lines + the alpha-12 ``meridian.wizard.import`` per-file
+# lines would silently disappear — unless we redirect.
+#
+# Redirect rule: when ``MERIDIAN_BACKEND_LOG`` is set, open it append-mode
+# line-buffered and replace sys.stdout / sys.stderr. The installer sets the
+# var; the gauntlet's cwd-System32-spawn step does too. In dev-tree /
+# pytest / un-detached runs the var is unset and behaviour is unchanged.
+import os as _os
+import sys as _sys
+
+_BACKEND_LOG_PATH = _os.environ.get("MERIDIAN_BACKEND_LOG")
+_backend_log_file = None  # held in module globals for process lifetime
+if _BACKEND_LOG_PATH:
+    try:
+        _log_dir = _os.path.dirname(_BACKEND_LOG_PATH)
+        if _log_dir:
+            _os.makedirs(_log_dir, exist_ok=True)
+        # buffering=1 → line-buffered; lets `Get-Content -Tail -Wait` see
+        # each uvicorn log line in real time without process flush.
+        _backend_log_file = open(  # noqa: SIM115 — file kept open for process lifetime
+            _BACKEND_LOG_PATH, "a", encoding="utf-8", buffering=1,
+        )
+        _sys.stdout = _backend_log_file
+        _sys.stderr = _backend_log_file
+        # Alpha-12 reviewer fix: register an atexit cleanup so the file
+        # handle releases on graceful shutdown. Process death + OS reclaim
+        # would handle this anyway, but the explicit close keeps test
+        # re-imports honest (each pytest collection that imports this
+        # module would otherwise leak one fd into the next run).
+        import atexit as _atexit
+        _atexit.register(lambda: _backend_log_file.close() if _backend_log_file else None)
+    except OSError:
+        # Best-effort: if the log path is unwriteable, fall through to
+        # whatever stdout/stderr inherits (dev-tree run, or the user
+        # will see the OSError on first uvicorn write — better than
+        # crashing on import).
+        pass
+
 import contextlib
 import json
 import os

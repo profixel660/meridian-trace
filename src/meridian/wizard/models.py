@@ -587,6 +587,64 @@ class SetupCompleteResponse(SetupStateResponse):
     a follow-up GET."""
 
 
+class RuntimeStatusResponse(BaseModel):
+    """Operator-facing runtime introspection — alpha-12.
+
+    Triage on a slow / hung / silent backend used to require crawling
+    Get-Process + Get-NetTCPConnection + reading log paths the user
+    had to know. This endpoint surfaces the same data the backend
+    already knows. It is intentionally cheap (no DB queries, no file I/O
+    beyond os.getpid) so it stays callable even when the backend is
+    under load.
+
+    Why this exists: alpha-11's "documents uploaded then web interface
+    broke" triage took 20+ minutes because we had to ask the operator
+    to run 4 PowerShell probes to learn things the backend already
+    knew (pid, uptime, log paths, last activity). Surface them.
+    """
+
+    pid: int = Field(description="OS process ID of this uvicorn worker.")
+    started_at: str = Field(
+        description="ISO-8601 UTC timestamp of process start.",
+    )
+    uptime_seconds: float = Field(
+        description="Seconds since the process started.",
+    )
+    version: str = Field(description="Meridian package version (matches /health.version).")
+    python_version: str = Field(
+        description="CPython version (e.g. '3.12.8') for compatibility triage.",
+    )
+    platform: str = Field(
+        description="OS platform string (e.g. 'win32', 'linux', 'darwin').",
+    )
+    backend_log_path: str | None = Field(
+        default=None,
+        description=(
+            "Absolute path of the operator-visible backend.log if the "
+            "MERIDIAN_BACKEND_LOG env var is set (the installer sets it). "
+            "Null when running outside the canonical install layout (dev "
+            "tree, gauntlet venv, etc.)."
+        ),
+    )
+    structlog_dir: str | None = Field(
+        default=None,
+        description=(
+            "Absolute path of the directory holding the per-project "
+            "JSON-lines structlog files. Null until configure_logging "
+            "has run."
+        ),
+    )
+    last_import_job: dict | None = Field(
+        default=None,
+        description=(
+            "Snapshot of the most-recent folder-import job, if any: "
+            "{job_id, status, completed, total, last_activity_age_s}. "
+            "Null when no job has been kicked this process. Lets a "
+            "triage flow answer 'is the worker stuck?' from one HTTP call."
+        ),
+    )
+
+
 class SetupDefaultsResponse(BaseModel):
     """Server-side defaults the frontend pre-fills into form fields.
 
@@ -651,6 +709,7 @@ __all__ = [
     "ProjectCreateResponse",
     "ProjectExistsErrorResponse",
     "ProjectsDirNotWriteableResponse",
+    "RuntimeStatusResponse",
     "SetupCompleteResponse",
     "SetupDefaultsResponse",
     "SetupStateResponse",

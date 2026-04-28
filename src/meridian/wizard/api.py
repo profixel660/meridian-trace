@@ -16,11 +16,14 @@ on localhost inside Tauri.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import threading
 import time
 import uuid
 from collections import deque
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 
@@ -52,11 +55,25 @@ from meridian.wizard.models import (
     OdaStatus,
     ProjectCreateRequest,
     ProjectCreateResponse,
+    RuntimeStatusResponse,
     SetupCompleteResponse,
     SetupDefaultsResponse,
     SetupStateResponse,
     SuggestNameRequest,
     SuggestNameResponse,
+)
+
+# Process-start timestamp captured at module import. Used by the alpha-12
+# /setup/runtime endpoint to compute uptime; also recorded as the
+# canonical ISO-8601 wall-clock start so the operator can correlate
+# with backend.log entries without doing arithmetic.
+_PROCESS_STARTED_MONOTONIC: float = time.monotonic()
+# Sub-millisecond ISO-8601 with explicit Z suffix. Symmetric with
+# uptime_seconds (which has 3-decimal precision) so timestamp + uptime
+# arithmetic is consistent. Alpha-12 reviewer flagged the alpha-11 form
+# `strftime("%Y-%m-%dT%H:%M:%SZ")` as silently dropping sub-second precision.
+_PROCESS_STARTED_AT_ISO: str = (
+    datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 )
 from meridian.wizard.state import (
     _KEYRING_ACCOUNT,
@@ -75,17 +92,40 @@ from meridian.wizard.state import (
 
 _log = get_logger("meridian.wizard")
 
-# Stdlib logger routed through the root logging tree so import-worker
-# events also surface in uvicorn's stderr capture (the SME-visible
-# ``backend.log``). The structlog logger above continues to write JSON
-# lines into the per-project log file. Two surfaces, one event vocabulary.
+# Stdlib logger routed to operator-visible backend.log so import-worker
+# events surface alongside uvicorn's HTTP access lines. Alpha-11
+# finding: alpha-10 backend.log was silent during a 30-min folder
+# import — operator had no way to tell the worker was alive.
 #
-# Alpha-11 finding: alpha-10 backend.log was silent during a 30-min
-# folder import — operator (the SME) had no way to tell whether the
-# worker was alive, working, or dead, because per-file events lived only
-# in the per-project structlog file. This stdlib logger fixes that
-# without giving up the structured per-project log.
+# Alpha-12 finding: alpha-11 _attached_ this logger but never gave it
+# a working route to stderr. ``meridian.api.main`` calls
+# ``configure_logging(console=False)`` to keep structlog JSON out of
+# uvicorn's stderr (so HTTP access lines stay readable). That suppresses
+# the global stderr handler — which means alpha-11's ``_stdlog.info(...)``
+# calls were silently dropped. **No per-file lines actually appeared in
+# backend.log on the user's alpha-11 install.**
+#
+# The fix: attach a targeted ``StreamHandler(sys.stderr)`` to THIS
+# logger only, and disable propagation so we don't double-emit through
+# root. The wizard import logger now gets to stderr (and therefore
+# backend.log) regardless of the global ``console`` setting; structlog's
+# JSON tree elsewhere is unaffected.
 _stdlog = logging.getLogger("meridian.wizard.import")
+_stdlog.setLevel(logging.INFO)
+# Idempotent: re-import (e.g. test reload) must not stack handlers.
+if not any(getattr(h, "_meridian_import_stderr", False) for h in _stdlog.handlers):
+    _stderr_handler = logging.StreamHandler(sys.stderr)
+    _stderr_handler.setLevel(logging.INFO)
+    _stderr_handler.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s] [import] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    _stderr_handler._meridian_import_stderr = True  # type: ignore[attr-defined]
+    _stdlog.addHandler(_stderr_handler)
+    # propagate=False so the message doesn't double-fire through root.
+    _stdlog.propagate = False
 
 # --------------------------------------------------------------------------
 # Rate limiting — same shape as meridian/auth/login_api.py: in-memory
@@ -274,8 +314,23 @@ def _classify_ingest_error(exc: BaseException) -> ImportErrorCode:
     # PDF parse failures: pypdf raises PdfReadError (a ValueError
     # subclass) and pdfplumber raises various RuntimeError flavours. We
     # match on the substrings rather than importing those modules to
-    # avoid a hard dep here. Add new triggers as we see them in the wild.
-    if any(t in msg_lower for t in ("pypdf", "pdfplumber", "pdf header", "eof marker", "stream length")):
+    # avoid a hard dep here.
+    #
+    # Alpha-12 reviewer fix: alpha-11 used "stream length" as a marker
+    # which is broader than PDF context (any HTTP/JSON parser can use
+    # that phrase). Tightened to PDF-specific markers only — pdf_header
+    # and eof_marker are PDF-format-specific; pypdf/pdfplumber are
+    # explicit module names. "stream length" was the over-broad one
+    # and is removed.
+    if any(t in msg_lower for t in (
+        "pypdf",
+        "pdfplumber",
+        "pdf header",
+        "eof marker",
+        "pdf trailer",
+        "xref",
+        "/length is wrong",
+    )):
         return "pdf_unreadable"
     return "unknown"
 
@@ -589,6 +644,77 @@ def setup_defaults() -> SetupDefaultsResponse:
     return SetupDefaultsResponse(
         projects_dir=str(home / "projects"),
         home_dir=str(Path.home()),
+    )
+
+
+@wizard_router.get("/runtime", response_model=RuntimeStatusResponse)
+def setup_runtime() -> RuntimeStatusResponse:
+    """Operator-facing runtime introspection (alpha-12).
+
+    Triage on a slow / hung / silent backend used to require crawling
+    Get-Process + Get-NetTCPConnection + reading log paths the operator
+    had to know. This endpoint surfaces the same data the backend
+    itself knows. Cheap (no DB, no I/O beyond os.getpid + dir lookups)
+    so it stays callable when the backend is under load.
+    """
+    from meridian import __version__ as meridian_version  # local import
+
+    # Snapshot the most-recent folder-import job (if any) — answers
+    # "is the worker stuck?" from one HTTP call.
+    last_import: dict | None = None
+    with _jobs_lock:
+        if _jobs:
+            # Most-recent by current_file presence > terminal status.
+            # In practice the dict insertion order is fine — Python 3.7+
+            # dicts preserve insertion order, so the last job started
+            # is the last item.
+            job_id, job = next(reversed(_jobs.items()))
+            # Last-activity heuristic: if current_file is set we know
+            # the worker is mid-iteration; otherwise the job is between
+            # files or terminal. We don't track per-file timestamps so
+            # this is a coarse signal; precise per-file timing lives in
+            # backend.log via the alpha-12 _stdlog handler.
+            last_import = {
+                "job_id": job_id,
+                "status": job.status,
+                "completed": job.completed,
+                "total": job.total,
+                "imported": job.imported,
+                "deduped": job.deduped,
+                "failed_count": len(job.errors),
+                "current_file": (
+                    Path(job.current_file).name if job.current_file else None
+                ),
+            }
+
+    # Discover the structlog directory cheaply via the configure_logging
+    # module-level state. Importing the module is safe (it's already
+    # imported at process start by api/main.py).
+    structlog_dir: str | None = None
+    try:
+        from meridian.logging import setup as _logging_setup  # local import
+
+        if _logging_setup._current_log_dir is not None:  # noqa: SLF001 — module-internal probe
+            structlog_dir = str(_logging_setup._current_log_dir)
+    except Exception:  # noqa: BLE001 — best-effort introspection
+        pass
+
+    return RuntimeStatusResponse(
+        pid=os.getpid(),
+        started_at=_PROCESS_STARTED_AT_ISO,
+        uptime_seconds=round(time.monotonic() - _PROCESS_STARTED_MONOTONIC, 3),
+        version=meridian_version,
+        python_version=(
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        ),
+        platform=sys.platform,
+        # Honour MERIDIAN_BACKEND_LOG (set by Install-Meridian.ps1 + the
+        # new alpha-12 launcher .bat files) but fall back to None when
+        # running in dev tree / gauntlet / pytest where there is no
+        # canonical operator-visible log file.
+        backend_log_path=os.environ.get("MERIDIAN_BACKEND_LOG"),
+        structlog_dir=structlog_dir,
+        last_import_job=last_import,
     )
 
 

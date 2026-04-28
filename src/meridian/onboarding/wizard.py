@@ -335,6 +335,14 @@ def _validate_anthropic_key_via_httpx() -> tuple[str, str]:
         # user — flaky connections are the canonical "unable_to_verify"
         # case.
         return "unable_to_verify", f"httpx RequestError: {exc}"
+    except Exception as exc:  # noqa: BLE001 — alpha-12 reviewer ticket
+        # Belt-and-braces: anything else from httpx (TLS context init
+        # failure, OS-level socket creation refused, certificate-store
+        # corruption) must NEVER be classified as 'invalid' — that
+        # would punish a user with a perfectly good key. The contract
+        # invariant "flaky network never produces invalid" requires
+        # this catch-all.
+        return "unable_to_verify", f"httpx unexpected error: {type(exc).__name__}: {exc}"
 
     if resp.status_code in (401, 403):
         return "invalid", f"HTTP {resp.status_code}: {resp.text[:300]}"
@@ -345,8 +353,10 @@ def _validate_anthropic_key_via_httpx() -> tuple[str, str]:
     return "unable_to_verify", f"HTTP {resp.status_code}: {resp.text[:300]}"
 
 
-# Alias retained for any out-of-tree caller; the new name is canonical.
-_validate_anthropic_key_via_litellm = _validate_anthropic_key_via_httpx
+# Alpha-12 reviewer cleanup: the alpha-11
+# `_validate_anthropic_key_via_litellm = _validate_anthropic_key_via_httpx`
+# alias was retained "for out-of-tree callers". After grepping the
+# monorepo + the public release surface, no callers exist. Removed.
 
 
 def _step_totp_enrol(state: OnboardingState) -> OnboardingState:

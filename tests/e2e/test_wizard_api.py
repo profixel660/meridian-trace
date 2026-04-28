@@ -1685,3 +1685,329 @@ def test_alpha11_validate_anthropic_key_via_httpx_classifies_network_error_as_un
     outcome, detail = cli_wizard._validate_anthropic_key_via_httpx()
     assert outcome == "unable_to_verify"
     assert "DNS" in detail or "RequestError" in detail
+
+
+# ==========================================================================
+# Alpha-12 — launcher detachment + observability + reviewer-ticket fixes
+# ==========================================================================
+#
+# Background: alpha-11's SME walkthrough surfaced a real observability
+# gap (configure_logging(console=False) suppressed the stderr handler
+# the alpha-11 _stdlog calls relied on, so per-file lines never reached
+# the operator-visible backend.log) and a UX failure mode (closing the
+# install-time terminal window killed the backend because cmd.exe was
+# launched without -WindowStyle Hidden). Plus four reviewer tickets
+# carried forward from the alpha-11 review.
+#
+# These tests lock down the alpha-12 fixes:
+#   * #6 _classify_ingest_error tightened pdf_unreadable substrings
+#   * #7 httpx validator catches all Exception, not just RequestError
+#   * #8 _validate_anthropic_key_via_litellm alias removed
+#   * #9 BaseException worker test variant covers MemoryError, not just SystemExit
+#   * NEW: /setup/runtime endpoint exposes pid / uptime / log paths / last job
+#   * NEW: meridian.wizard.import logger emits to stderr regardless of console=False
+
+
+def test_alpha12_classify_ingest_error_no_longer_routes_stream_length_to_pdf() -> None:
+    """Alpha-11 reviewer ticket #6: 'stream length' was too broad — any HTTP
+    or JSON parser can use that phrase. Alpha-12 narrows to PDF-format-
+    specific markers only ('xref', 'pdf trailer', '/Length is wrong')."""
+    exc = RuntimeError("HTTP response stream length mismatch (expected 8192, got 4096)")
+    assert wizard_api_mod._classify_ingest_error(exc) == "unknown"
+
+
+def test_alpha12_classify_ingest_error_routes_pdf_specific_markers() -> None:
+    """Alpha-12: tightened triggers — pdf_trailer, xref, /Length is wrong."""
+    for msg in (
+        "Could not read PDF trailer at offset 12345",
+        "xref table is corrupt",
+        "PDF /Length is wrong: stream not consumed",
+        "pypdf raised PdfReadError",
+        "pdfplumber: malformed object",
+    ):
+        exc = RuntimeError(msg)
+        assert (
+            wizard_api_mod._classify_ingest_error(exc) == "pdf_unreadable"
+        ), f"expected pdf_unreadable for {msg!r}"
+
+
+def test_alpha12_validate_anthropic_key_via_httpx_handles_non_request_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Alpha-11 reviewer ticket #7: alpha-11 only caught httpx.RequestError.
+    A TLS-context init failure or a corrupted certificate store could
+    raise a non-RequestError that escaped uncaught. Alpha-12 widens the
+    catch to Exception so 'flaky environment never produces invalid'
+    holds even on cold-edge cases."""
+    from meridian.onboarding import wizard as cli_wizard
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+
+    class _FakeClient:
+        def __init__(self, **kw):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def post(self, url, headers=None, json=None):
+            # NOT an httpx.RequestError — simulates a TLS / cert / OS-
+            # level error that didn't subclass RequestError.
+            raise RuntimeError("TLS context initialisation failed: cert store corrupt")
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+    outcome, detail = cli_wizard._validate_anthropic_key_via_httpx()
+    assert outcome == "unable_to_verify", (outcome, detail)
+    # Must not have leaked to 'invalid' — that would block a valid key.
+    assert outcome != "invalid"
+    assert "RuntimeError" in detail or "TLS" in detail
+
+
+def test_alpha12_litellm_alias_no_longer_exists() -> None:
+    """Alpha-11 reviewer ticket #8: dead-code alias removed."""
+    from meridian.onboarding import wizard as cli_wizard
+
+    assert not hasattr(cli_wizard, "_validate_anthropic_key_via_litellm"), (
+        "_validate_anthropic_key_via_litellm should have been removed in alpha-12 "
+        "but is still present"
+    )
+
+
+def test_alpha12_worker_memoryerror_classified_as_per_file_failure(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MemoryError is in the Exception branch of Python's class hierarchy
+    (not BaseException directly), so it's caught by the worker's
+    per-file ``except Exception`` and classified — NOT by the
+    worker_aborted catch. Status flips to failed because no imports
+    succeeded; the file goes into failed_groups under code=unknown.
+    This documents Python's hierarchy explicitly so a future refactor
+    doesn't accidentally promote MemoryError to the BaseException
+    branch and lose continued processing of subsequent files."""
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha12-memerr",
+            "slug": "alpha12-memerr",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+    folder = tmp_path / "alpha12-memerr"
+    folder.mkdir()
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+
+    def faux_ingest(*args, **kwargs):
+        raise MemoryError("simulated allocator failure")
+
+    monkeypatch.setattr(wizard_api_mod, "ingest_file", faux_ingest)
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha12-memerr"},
+    )
+    job_id = kick.json()["job_id"]
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    assert body["status"] == "failed", body
+    # Classified as a per-file failure (NOT worker_aborted) — the
+    # worker kept running and was able to mark the job terminal cleanly.
+    by_code = {g["code"]: g for g in body["failed_groups"]}
+    assert "unknown" in by_code, body
+    assert "worker_aborted" not in by_code, body
+
+
+def test_alpha12_worker_keyboardinterrupt_marks_failed_with_worker_aborted(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Alpha-11 reviewer ticket #9: alpha-11 used SystemExit which Python
+    special-cases inside threads. KeyboardInterrupt is the canonical
+    non-SystemExit BaseException that genuinely escapes a worker — it
+    bypasses ``except Exception`` and would kill the thread silently
+    were it not for the alpha-11 ``except BaseException`` outer catch.
+    This test exercises the BaseException branch honestly."""
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha12-kbint",
+            "slug": "alpha12-kbint",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+    folder = tmp_path / "alpha12-kbint"
+    folder.mkdir()
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+
+    def faux_ingest(*args, **kwargs):
+        # KeyboardInterrupt is BaseException-tier; would escape
+        # `except Exception` and kill the worker thread silently
+        # in alpha-10. The alpha-11 outer `except BaseException`
+        # catches it; this test verifies that contract honestly.
+        raise KeyboardInterrupt("synthetic Ctrl-C inside worker")
+
+    monkeypatch.setattr(wizard_api_mod, "ingest_file", faux_ingest)
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha12-kbint"},
+    )
+    job_id = kick.json()["job_id"]
+    deadline = time.monotonic() + 10.0
+    body: dict = {}
+    while time.monotonic() < deadline:
+        resp = fastapi_client.get(f"/setup/import-folder/{job_id}")
+        body = resp.json()
+        if body["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+    assert body["status"] == "failed", body
+    by_code = {g["code"]: g for g in body["failed_groups"]}
+    assert "worker_aborted" in by_code, body
+    assert by_code["worker_aborted"]["count"] == 1
+    flat_msgs = " ".join(body["failed"])
+    assert "KeyboardInterrupt" in flat_msgs
+
+
+def test_alpha12_runtime_endpoint_returns_required_shape(
+    fastapi_client: TestClient,
+) -> None:
+    """Operator triage uses /setup/runtime to answer 'is the worker stuck?'
+    from one HTTP call. Lock the contract: pid, started_at, uptime_seconds,
+    version, python_version, platform must always be present;
+    backend_log_path / structlog_dir / last_import_job may be null but
+    must always be in the body."""
+    response = fastapi_client.get("/setup/runtime")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    for required in (
+        "pid",
+        "started_at",
+        "uptime_seconds",
+        "version",
+        "python_version",
+        "platform",
+    ):
+        assert required in body, f"/setup/runtime missing {required!r}; got {body}"
+    assert isinstance(body["pid"], int) and body["pid"] > 0
+    assert body["started_at"].endswith("Z"), body["started_at"]
+    assert body["uptime_seconds"] >= 0
+    assert body["version"]
+    for optional in ("backend_log_path", "structlog_dir", "last_import_job"):
+        assert optional in body, (
+            f"/setup/runtime missing optional key {optional!r}; got {body}"
+        )
+
+
+def test_alpha12_runtime_endpoint_reports_last_import_job(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    tmp_path: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+) -> None:
+    """After a folder import lands, /setup/runtime exposes the job
+    snapshot — operator triage can answer 'is the worker stuck?' from
+    one HTTP call instead of needing Get-Process + log-tail."""
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "alpha12-runtime-snapshot",
+            "slug": "alpha12-runtime-snapshot",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+    folder = tmp_path / "alpha12-runtime-snapshot"
+    folder.mkdir()
+    (folder / "spec.docx").write_bytes(synthetic_docx.read_bytes())
+
+    kick = fastapi_client.post(
+        "/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha12-runtime-snapshot"},
+    )
+    job_id = kick.json()["job_id"]
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        s = fastapi_client.get(f"/setup/import-folder/{job_id}").json()
+        if s["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+
+    runtime = fastapi_client.get("/setup/runtime").json()
+    assert runtime["last_import_job"] is not None, runtime
+    snapshot = runtime["last_import_job"]
+    assert snapshot["job_id"] == job_id
+    assert snapshot["status"] == "succeeded"
+    assert snapshot["total"] == 1
+    assert snapshot["completed"] == 1
+    assert snapshot["imported"] == 1
+    assert snapshot["failed_count"] == 0
+    # current_file is None on a finished job (the worker resets it).
+    assert snapshot["current_file"] is None
+
+
+def test_alpha12_wizard_import_logger_has_dedicated_stderr_handler() -> None:
+    """The alpha-11 _stdlog logger must reach stderr regardless of whether
+    configure_logging(console=False) ran — that was the alpha-11 silence
+    bug. Alpha-12 attaches a dedicated stderr handler tagged with the
+    sentinel attribute ``_meridian_import_stderr``.
+
+    Structural test (not output capture). pytest's stderr capture
+    cannot intercept a StreamHandler whose ``sys.stderr`` reference
+    was bound at module-import time; verifying the handler's
+    configuration is the more honest test of the contract.
+    """
+    import logging as _logging
+
+    from meridian.wizard import api as wizard_api_mod_inner
+
+    log = wizard_api_mod_inner._stdlog
+    assert log.level == _logging.INFO, log.level
+    # Don't propagate — that would double-emit through root.
+    assert log.propagate is False
+    # Exactly one tagged handler (idempotent: re-import must not stack).
+    tagged = [
+        h for h in log.handlers
+        if getattr(h, "_meridian_import_stderr", False)
+    ]
+    assert len(tagged) == 1, [type(h).__name__ for h in log.handlers]
+    handler = tagged[0]
+    assert isinstance(handler, _logging.StreamHandler)
+    assert handler.level == _logging.INFO
+    # Formatter must include a timestamp + the [import] tag so the
+    # operator can correlate with backend.log entries.
+    rendered = handler.formatter.format(
+        _logging.LogRecord(
+            name="meridian.wizard.import",
+            level=_logging.INFO,
+            pathname="x",
+            lineno=1,
+            msg="alpha12_marker",
+            args=(),
+            exc_info=None,
+        )
+    )
+    assert "[import]" in rendered, rendered
+    assert "alpha12_marker" in rendered, rendered

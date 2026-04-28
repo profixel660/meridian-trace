@@ -21,6 +21,16 @@ already been shipped (and embarrassed us) on the v0.2.0-alpha line:
     7c. Import status-pivot smoke — kick a tiny job, poll, confirm
         status reaches 'succeeded' and 'failed_groups' is a list. Catches
         the alpha-10 frontend-typed-it-wrong bug class                   (alpha-11)
+    2c. Detach-pattern static check — installer/Start-Meridian.bat AND
+        the Install-Meridian.ps1 backend launch use pythonw.exe AND
+        WindowStyle Hidden. Catches a regression that re-introduces the
+        alpha-11 "close terminal kills backend" bug class.               (alpha-12)
+    2d. Launcher .bat exec-policy check — installer/Meridian-Console.bat
+        invokes powershell.exe with -ExecutionPolicy Bypass. Catches
+        regressions that re-expose the alpha-11 ExecutionPolicy block.   (alpha-12)
+    7f. /setup/runtime contract — endpoint returns pid, started_at,
+        uptime_seconds, version, python_version, platform. Catches
+        regressions that break the operator triage path.                 (alpha-12)
     8.  CLI --help smoke (no browser opens)
     9.  Summary
 
@@ -659,6 +669,57 @@ def _step_backend_lifecycle(
             f"job reached '{terminal}', failed_groups + oda present",
         )
 
+        # Step 7f — /setup/runtime contract (alpha-12). Operator triage uses
+        # this endpoint to answer pid / uptime / log path / last-job from
+        # one HTTP call. Lock the field set so a future refactor doesn't
+        # silently drop a key the launcher .bat / Status-Meridian.bat
+        # depends on.
+        rt_status, rt_payload = _probe(f"{base}/setup/runtime", timeout=5.0)
+        if rt_status != 200:
+            _fail(
+                "step 7f: /setup/runtime contract",
+                f"GET /setup/runtime returned {rt_status} (expected 200)",
+            )
+            return False
+        try:
+            rt_body = json.loads(rt_payload.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            _fail("step 7f: /setup/runtime contract", f"non-JSON body: {exc}")
+            return False
+        required_runtime = {
+            "pid": int,
+            "started_at": str,
+            "uptime_seconds": (int, float),
+            "version": str,
+            "python_version": str,
+            "platform": str,
+        }
+        for field, expected_type in required_runtime.items():
+            if field not in rt_body:
+                _fail(
+                    "step 7f: /setup/runtime contract",
+                    f"missing field {field!r}; got {sorted(rt_body)}",
+                )
+                return False
+            if not isinstance(rt_body[field], expected_type):
+                _fail(
+                    "step 7f: /setup/runtime contract",
+                    f"field {field!r} has type {type(rt_body[field]).__name__}, expected {expected_type}",
+                )
+                return False
+        # Optional fields must be present even when null (Status-Meridian.bat reads them).
+        for opt in ("backend_log_path", "structlog_dir", "last_import_job"):
+            if opt not in rt_body:
+                _fail(
+                    "step 7f: /setup/runtime contract",
+                    f"optional field {opt!r} missing entirely; must be present (may be null)",
+                )
+                return False
+        _ok(
+            "step 7f: /setup/runtime contract",
+            f"pid={rt_body['pid']} version={rt_body['version']} uptime={rt_body['uptime_seconds']:.1f}s",
+        )
+
         return True
     finally:
         # Cleanup — kill the backend so the next run isn't held up by a port collision.
@@ -714,6 +775,89 @@ def _step_cli_help_smoke(venv_dir: Path) -> bool:
 # ──────────────────────────────────────────────────────────────────────────
 
 
+def _step_detach_pattern(installer_dir: Path) -> bool:
+    """Step 7d (alpha-12): the backend launch path MUST use pythonw.exe AND
+    WindowStyle Hidden. Catches a regression that re-introduces the
+    alpha-11 'close terminal kills backend' bug class.
+
+    Two surfaces are checked:
+
+      * ``installer/Start-Meridian.bat`` — the user-facing launcher.
+        Must reference ``pythonw.exe`` AND ``-WindowStyle Hidden``.
+      * ``installer/Install-Meridian.ps1`` — the install-time backend
+        spawn. Must reference ``pythonw.exe`` AND ``-WindowStyle Hidden``
+        in the ``Start-BackendAndOpenBrowser`` function.
+
+    Both are static-content greps, not live-process tests — runtime
+    detachment-survival belongs in tests/e2e where we can simulate
+    process-group semantics deterministically.
+    """
+    start_bat = installer_dir / "Start-Meridian.bat"
+    install_ps1 = installer_dir / "Install-Meridian.ps1"
+
+    failures: list[str] = []
+    if not start_bat.exists():
+        failures.append(f"missing: {start_bat}")
+    else:
+        text = start_bat.read_text(encoding="utf-8", errors="replace")
+        if "pythonw.exe" not in text:
+            failures.append(f"{start_bat.name}: 'pythonw.exe' not found in launcher body")
+        if "WindowStyle Hidden" not in text:
+            failures.append(f"{start_bat.name}: '-WindowStyle Hidden' missing")
+
+    if not install_ps1.exists():
+        failures.append(f"missing: {install_ps1}")
+    else:
+        ps_text = install_ps1.read_text(encoding="utf-8", errors="replace")
+        if "pythonw.exe" not in ps_text:
+            failures.append(f"{install_ps1.name}: 'pythonw.exe' not in installer (alpha-12 detach regression)")
+        if "WindowStyle Hidden" not in ps_text:
+            failures.append(f"{install_ps1.name}: '-WindowStyle Hidden' not in installer (alpha-12 detach regression)")
+
+    if failures:
+        _fail(
+            "step 2c: detach-pattern static check",
+            "alpha-11 SME hit 'close terminal kills backend'. Alpha-12 fixed it via "
+            "pythonw.exe + WindowStyle Hidden. The following surfaces no longer match:\n  - "
+            + "\n  - ".join(failures),
+        )
+        return False
+    _ok(
+        "step 2c: detach-pattern static check",
+        "Start-Meridian.bat + Install-Meridian.ps1 both use pythonw.exe + WindowStyle Hidden",
+    )
+    return True
+
+
+def _step_launcher_exec_policy(installer_dir: Path) -> bool:
+    """Step 2d (alpha-12): Meridian-Console.bat must invoke the .ps1 with
+    ``-ExecutionPolicy Bypass``. Alpha-11 SME hit 'running scripts is
+    disabled on this system' on a clean install because the desktop
+    shortcut targeted the .ps1 directly. The .bat wrapper bypasses the
+    policy without changing it system-wide. Static check only — runtime
+    invocation is covered by the install / launcher e2e at install time.
+    """
+    console_bat = installer_dir / "Meridian-Console.bat"
+    if not console_bat.exists():
+        _fail(
+            "step 2d: launcher exec-policy",
+            f"missing: {console_bat}. The alpha-12 .bat wrapper is required so default "
+            "ExecutionPolicy can never block the desktop shortcut.",
+        )
+        return False
+    text = console_bat.read_text(encoding="utf-8", errors="replace")
+    must_have = ["powershell.exe", "-ExecutionPolicy Bypass", "-File"]
+    missing = [m for m in must_have if m not in text]
+    if missing:
+        _fail(
+            "step 2d: launcher exec-policy",
+            f"{console_bat.name} missing required tokens: {missing}",
+        )
+        return False
+    _ok("step 2d: launcher exec-policy", f"{console_bat.name} bypasses ExecutionPolicy correctly")
+    return True
+
+
 def _step_installer_url_constants(installer_dir: Path) -> bool:
     """Catches the alpha-5 regression class: Install-Meridian.ps1 must NOT
     use 'http://localhost:...' in URL constants.
@@ -765,6 +909,10 @@ def main() -> int:
     if not _step_ascii_only(installer_dir):
         return 1
     if not _step_installer_url_constants(installer_dir):
+        return 1
+    if not _step_detach_pattern(installer_dir):
+        return 1
+    if not _step_launcher_exec_policy(installer_dir):
         return 1
 
     ok, wheel = _step_build_wheel(repo)
