@@ -4,6 +4,82 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.25
+
+The keystone: closes punch list item #3 from the SME's 2026-05-02 alpha-22 round — the dashboard "0 extracted, N pending" wall where the SME imported a folder, walked through setup, landed on a buttonless dashboard with no path to advance the pipeline. Plus three additive wins on shared dashboard / export surfaces.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The keystone — auto-trigger bootstrap+extract from the wizard
+
+After the wizard's `/setup/complete` lands, the frontend now POSTs `/api/projects/<slug>/pipeline` with a fresh `Idempotency-Key`, stashes the returned `job_id` in `sessionStorage`, and navigates to the dashboard. A new `PipelineProgressTile` mounts above `BaselineBanner`, picks up the stashed job_id (or falls back to `GET /api/projects/<slug>/pipeline` for the latest job), polls every 1.5 s, and renders three states:
+
+- **bootstrap** — "Classifying your project's vocabulary…" indeterminate spinner. One LLM call seeds trade / service / category taxonomies before extraction.
+- **extract** — progress bar (`extract_completed / extract_total`) plus the **current source filename rendered verbatim** per the project's surface-LLM-text-as-written posture.
+- **failed** — red panel with the worker's `error_message` rendered verbatim (no paraphrase) plus a "Try again" button that re-POSTs `/pipeline` with a fresh idempotency key.
+
+While `phase !== "done"` the dashboard hides the (now-redundant) amber `BaselineBanner` and dims the KPI grid to 50% opacity. On `phase=done` the tile self-removes, the dashboard refetches `/coverage`, and the KPIs return to full opacity with real numbers.
+
+### The pipeline endpoint — three new routes under `/api/projects/{name}`
+
+- `POST /pipeline` — kicks off a daemon-thread worker that runs `run_bootstrap_sweep` then `run_job_over_sources` serially. Returns `{job_id}` immediately (~50 ms). Accepts an optional `Idempotency-Key` header using the alpha-24 registry pattern, now extracted into `meridian.api.idempotency` for shared use. Surfaces `409 project_busy` when another extract / backup is in flight on the same project (checked via the new `is_project_lock_held(slug)` helper that reads the `.lock` file directly — no thread spawned just to discover the lock is held).
+- `GET /pipeline/{job_id}` — polled by the dashboard tile. Returns `{phase, bootstrap_status, extract_total, extract_completed, current_source_filename, started_at, finished_at, error_message, holder_pid}`.
+- `GET /pipeline` — same shape, returns the most-recent job for this project's `db_path` (insertion-ordered). Used by the dashboard tile when sessionStorage is empty (page refresh, new device) and by gauntlet step 7j.
+
+The orchestrator's `run_job_over_sources` gained an optional `on_source_complete: Callable[[str, str], None]` callback that fires `(source_id, filename)` once per source after its `extraction_job_source` row is committed. The pipeline worker uses it to bump per-source progress on the in-memory `_PipelineJob` registry without polling the DB on every tile-tick. Callback failures are swallowed with a warning — observers don't get to break the worker.
+
+### Bootstrap soft-fail
+
+Bootstrap proposals are advisory — extraction runs without them (the per-deliverable taxonomy proposal pass during extract is the canonical seeding). A bootstrap failure (LLM timeout, malformed JSON, no sources to sample) is logged at WARNING, marked `bootstrap_status="failed"`, and the worker proceeds to the extract phase. The dashboard tile renders the bootstrap step's outcome inline.
+
+### Three small wins on shared surfaces
+
+1. **`BaselineBanner` suppression on sources-only projects.** `is_data_present` now requires `deliverable_status.total + cost.total_calls > 0`, dropping `sources_imported` from the signal. A project with sources but no deliverables / LLM calls is genuinely "no opinion yet"; the welcome panel + the keystone tile cover those states. Pre-keystone, the SME would land on `is_data_present=true` with `0/0` blockers and an amber "NEEDS REVIEW" banner that was actively misleading.
+
+2. **Header `Projects` button gate-softening.** The homepage at `/` previously bounced any user with `setup.complete=false` straight back through the wizard, even when their project DBs were already on disk. The gate now requires `setup.complete=false` AND no projects on disk before redirecting — closes the SME's "the Project button at top still restarts setup" complaint without changing the gate's first-install role.
+
+3. **Master-register Excel `conflict_summary` column.** New column between `flags` and `deliverables_summary` rendering the conflict-pass LLM's `most_onerous_reasoning` paragraph **verbatim** (with a `[<conflict.kind>]` prefix) for every pending conflict referenced in the deliverable's `flag_context` JSON. `wrap_text=True`, column width 60. Resolved conflicts are excluded — they already shaped the surviving deliverable's summary. No schema change; reads existing `flag_context` and the `conflict` table.
+
+### Tests + gauntlet
+
+- 11 new backend e2e tests across pipeline worker, pipeline endpoints, pipeline e2e (happy path + busy 409), `is_data_present` regression and forward case, master Excel `conflict_summary` (verbatim and resolved-hidden).
+- One pre-existing test updated (`test_alpha22_coverage_empty_state.py`) to add an LLM call so its assertion still holds after the `is_data_present` redefinition.
+- One regression caught by the full e2e run (`test_alpha24_log_volume.py:45` was reaching `wizard_api._idempotency_lock` directly; the alpha-25 idempotency-helper extraction made that attribute disappear) — fixup landed before tag.
+- Full backend e2e: **197 passing / 1 skipped** (alpha-24 was 179 → +18 alpha-25 tests).
+- Release gauntlet **17 steps green** including the new step 7j (`_step_pipeline_e2e_and_workbook_smoke`): generates a synthetic `.docx`, ingests via `/setup/import-folder`, kicks `/pipeline`, polls until `phase=done` (4-min cap), asserts deliverables produced, downloads `export.xlsx`, asserts `conflict_summary` column header. Catches future wiring drift on the pipeline path at the wheel level.
+
+### What's NOT fixed yet (alpha-25 carry-overs)
+
+The alpha-24 punch list still has work after the keystone landed. Notable open items:
+
+- **Cancel / Ctrl+C** on a wedged extract. Pipeline failure + retry works; deliberate cancel does not.
+- **Quarantine taxonomy add-new** flow (strict vs permissive — design question deferred).
+- **`--isolated` extract child-process IPC** (CLI surface, not GUI).
+- **CLI / wizard data-dir consolidation** — CLI uses `settings.data_dir`, wizard uses `_meridian_home()` chain.
+- **Onboarding three small fixes** (Tour button copy, Step 2 Ollama hyperlink routing, Step 3 missing Projects link).
+- **`?` keyboard shortcut binding** — hint shown, binding doesn't fire.
+
+Backend-honest item still open: log-level on silent-failure paths (alpha-22 punch #2). And the OSE-Requisition-Form 0-deliverables investigation noted in the 09/05 SME round.
+
+### Edge cases worth knowing about
+
+- **Backend restart mid-extract.** The in-memory `_pipeline_jobs` dict dies; a refreshed dashboard tile's `pipelineApi.latest()` returns 404 and the tile renders nothing. The user sees `last_extraction_at` populated in `/coverage` and no banner. They can re-trigger by completing the wizard again or via the CLI — durable resume is a separate concern.
+- **Two browser tabs.** Each `setup/ready` mount generates its own UUID; the second tab's POST returns the first tab's `job_id` via the idempotency registry's race-loser path — both tiles converge on the same job. Out-of-band manual POSTs from a refresh-after-close behave identically.
+- **Bootstrap failure + extract success.** If bootstrap fails (e.g., LLM auth blip on the first call) but extract recovers, the pipeline still ends `phase=done` with `bootstrap_status=failed` exposed in the GET response. Tile renders the extract progress as normal; the `failed` bootstrap is a warning-level log entry, not user-visible.
+
+### Backward-compatibility note
+
+The synchronous `POST /api/projects/{name}/extract` endpoint is unchanged — CLI consumers (`meridian extract`) and the alpha-12 e2e tests still drive it directly. The new `/pipeline` endpoint is additive.
+
+### Carry-overs to alpha-26
+
+- The full alpha-24 punch list minus the four items closed in alpha-25.
+- Pipeline cancel / Ctrl+C support.
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+
 ## What's new in v0.2.0-alpha.24
 
 One fix: closes punch list item #4 from the SME's 2026-05-02 alpha-22 testing round — the frontend double-submission of the folder-import POST that produced 694 `import_job.file_done` events for a 347-file folder (each file kicked off twice). Alpha-23's race-safety in `ingest_file` neutered the user-visible failure mode; alpha-24 closes the source so log volume + LLM cost stop doubling and the operator's mental model ("each file uploaded once") is honest.
