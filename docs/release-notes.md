@@ -4,6 +4,24 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.23
+
+One fix: closes punch list item #1 from the SME's 2026-05-02 alpha-22 testing round — the post-import banner that read "127 files failed for an unclassified reason" when the SME imported a 347-file project folder.
+
+Root cause was a race in `ingest_file`: SELECT-then-INSERT on `content_hash` was not atomic. Under the alpha-22 double-submission pattern (two concurrent worker jobs processing the same path list — punch list item #4, still open), the slower worker hit the `source_document.content_hash` UNIQUE constraint, raised `sqlite3.IntegrityError`, and `_classify_ingest_error` had no branch for it — so 127 successfully-ingested files were labelled `unknown` and surfaced as "unclassified failed."
+
+### The fix
+
+`ingest_file` now wraps the INSERT block in `try/except sqlite3.IntegrityError`. On a content_hash UNIQUE conflict the loser re-reads the row the sibling worker committed and returns `IngestResult(deduped=True, race_recovered=True)` — semantically "this file is already in the project" (which it is — the sibling just put it there). Other UNIQUE-constraint paths propagate normally so genuine schema violations are not swallowed. A `_build_dedupe_result` helper unifies the existing SELECT-found-existing branch and the new IntegrityError-recovery branch so the two dedupe paths cannot drift.
+
+### Tests + gauntlet
+
+One new e2e test (`tests/e2e/test_alpha22_ingest_race.py`) — two threads synchronise at a barrier post-hash, then race the transaction; pre-fix raised `IntegrityError`, post-fix returns one `deduped=False` + one `deduped=True` with the same `source_id` and exactly one row in the DB. Full e2e suite: 175 passing / 2 skipped. Gauntlet green on the 0.2.0a23 wheel.
+
+### What's NOT fixed yet
+
+Items #2 (log-level on silent-failure paths), #3 (dashboard "0 extracted, 329 pending"), and #4 (frontend double-submission) from the SME's 2026-05-02 round remain open. Item #1's race-safety means even if #4 keeps happening, the user no longer sees phantom failures — the loser dedupes cleanly. #4 is still worth fixing for log volume + UX clarity (the user expects each file to be uploaded once).
+
 ## What's new in v0.2.0-alpha.22
 
 Closes the bod-2 zero-sources bug end-to-end. Alpha-21 shipped a wizard where the user could import 4 PDFs successfully, walk through the rest of setup, and land on a dashboard reading "0 sources". Root cause: wizard state file path was coupled to `settings.projects_dir`, which the projects-creation handler mutates mid-process — orphaning every prior step's progress at the old location AND minting a fresh empty SQLite at the user-chosen location instead of adopting the staging DB.
