@@ -24,32 +24,34 @@ export default function ProjectsPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // 1) First, ask the API whether setup is complete. If not, bounce
-      //    to /setup. Failures here fall through to the existing
-      //    projects flow — never block the operator if the setup
-      //    endpoint is unreachable (Stream C may not have shipped yet).
+      // Fetch projects ONCE and share between the gate-softening check
+      // and the existing render.
+      let listResult: ProjectListItem[] | null = null;
+      try {
+        listResult = await apiFetch<ProjectListItem[]>("/projects");
+      } catch (e) {
+        if (!cancelled) setListError(e);
+      }
+      if (cancelled) return;
+
+      // Setup gate: bounce to /setup ONLY if no projects exist on disk.
+      // The state file's complete-flag is the gate for first-install; once
+      // the operator has any real project, that gate is past — bouncing
+      // them is hostile (alpha-25 §8).
       try {
         const setupState = await apiFetch<SetupState>("/setup/state");
         if (cancelled) return;
-        if (setupState.complete === false) {
+        if (setupState.complete === false && (listResult ?? []).length === 0) {
           router.replace("/setup");
           return;
         }
       } catch {
-        // ignore — proceed to load projects
+        // /setup/state unreachable — fall through to whatever projects we have.
       }
       if (cancelled) return;
       setSetupChecked(true);
-
-      // 2) Load projects as before.
-      try {
-        const result = await apiFetch<ProjectListItem[]>("/projects");
-        if (!cancelled) setProjects(result);
-      } catch (e) {
-        if (!cancelled) setListError(e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      if (listResult !== null) setProjects(listResult);
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
