@@ -82,7 +82,7 @@ class PipelineResponse(BaseModel):
 class PipelineStatusResponse(BaseModel):
     job_id: str
     phase: Literal["bootstrap", "extract", "done", "failed"]
-    bootstrap_status: Literal["pending", "running", "succeeded", "failed", "skipped"]
+    bootstrap_status: Literal["pending", "running", "succeeded", "failed"]
     extract_total: int               # 0 until extract phase begins
     extract_completed: int
     current_source_filename: str | None
@@ -93,9 +93,12 @@ class PipelineStatusResponse(BaseModel):
 ```
 
 ```
-POST  /api/projects/{name}/pipeline       → PipelineResponse  (200 / 404 / 409 / 400)
+POST  /api/projects/{name}/pipeline       → PipelineResponse        (200 / 404 / 409 / 400)
 GET   /api/projects/{name}/pipeline/{id}  → PipelineStatusResponse  (200 / 404)
+GET   /api/projects/{name}/pipeline       → PipelineStatusResponse  (200 / 404)
 ```
+
+The bare-GET (no job_id) returns the most-recent unfinished or recently-finished `_PipelineJob` for this project from the in-memory registry, or 404 if none exist. Used by the dashboard tile (§6.3) when sessionStorage is gone, and by the gauntlet (§10.3) so the gauntlet doesn't need to know the wizard's stashed job_id.
 
 POST accepts an optional `Idempotency-Key` UUIDv4 header using the same registry pattern alpha-24 just landed for `/setup/import-folder` (§5.4).
 
@@ -303,7 +306,29 @@ Tests: update `tests/coverage/test_dashboard.py` (or equivalent) — the existin
 
 ## 8. Top "Project" button restart fix
 
-Locate during implementation: most likely `apps/web/src/components/review/ReviewLayout.tsx` or a header child. Currently `href="/setup"` (or equivalent route). Change to `href={\`/projects/${projectSlug}\`}`. Single-line change once located.
+Diagnosis (after grep): the "Projects" link in the global header (`apps/web/src/app/layout.tsx:38-40`) routes to `/`, which is `apps/web/src/app/page.tsx`. The homepage runs a `GET /setup/state` check on mount and `router.replace("/setup")` if `setupState.complete === false`. So the apparent "restart setup" behaviour is actually the homepage's setup-state guard firing — either the state file is wrongly marked incomplete, or the gate definition is too strict for a post-wizard user who completed setup but somehow has `complete=false` persisted.
+
+Fix (one-step gate softening in `apps/web/src/app/page.tsx`):
+
+```ts
+const setupState = await apiFetch<SetupState>("/setup/state");
+if (cancelled) return;
+if (setupState.complete === false) {
+  // Soften: only bounce to /setup if there are no existing projects on
+  // disk. If projects exist, the user is past first-install whether the
+  // wizard state file says so or not — bouncing them is hostile.
+  const projects = await apiFetch<ProjectListItem[]>("/projects");
+  if (cancelled) return;
+  if (!projects.length) {
+    router.replace("/setup");
+    return;
+  }
+}
+```
+
+Cost: one extra `/projects` GET on the home-page mount when `setup.complete=false`. The existing flow already calls `/projects` two lines down — refactor to fetch once and share the result. No `/setup/<step>` redirect ever fires for users who have a real project.
+
+Backend `/setup/state` complete-flag definition stays unchanged (its role is to gate first-install; that contract is fine).
 
 ## 9. Master Excel `conflict_summary` column
 
@@ -380,10 +405,10 @@ No new infra. Manual gauntlet step 7j replaces it (§10.3).
 1. Run installer.
 2. Open Tauri.
 3. Drive wizard end-to-end with a 2-PDF fixture folder.
-4. Land on dashboard.
-5. Wait until pipeline tile reports `phase=done` (poll `last_extraction_at` via `/api/projects/<slug>/coverage`; cap timeout 4 min).
-6. Assert `coverage.deliverable_status.total > 0`.
-7. Open `/api/projects/<slug>/export.xlsx`, assert the workbook has a `conflict_summary` column header.
+4. Land on dashboard (URL match `/projects/<slug>`).
+5. Poll `GET /api/projects/<slug>/pipeline` (no job_id) every 2 s; on 200 with `phase=done`, advance. Cap 4 min wall-clock; fail loudly on timeout.
+6. Assert `coverage.deliverable_status.total > 0` via `/api/projects/<slug>/coverage`.
+7. GET `/api/projects/<slug>/export.xlsx`, open with openpyxl in the gauntlet, assert workbook has a `conflict_summary` column header.
 8. Tear down.
 
 ## 11. Risks
