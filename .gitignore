@@ -87,3 +87,6 @@ src-tauri/WixTools/
 src-tauri/gen/
 # NOTE: src-tauri/Cargo.lock IS tracked (Tauri recommends committing it for
 # binary applications so .msi builds are reproducible).
+
+# Brainstorming visual companion (per-session mockups, not source)
+.superpowers/
