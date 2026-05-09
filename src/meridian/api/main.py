@@ -297,6 +297,34 @@ class JobStatusResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------
+# Pipeline models (alpha-25)
+# --------------------------------------------------------------------------
+
+
+class PipelineRequest(BaseModel):
+    sample_size: int = 15
+    provider: str | None = None
+    model: str | None = None
+
+
+class PipelineResponse(BaseModel):
+    job_id: str
+
+
+class PipelineStatusResponse(BaseModel):
+    job_id: str
+    phase: Literal["pending", "bootstrap", "extract", "done", "failed"]
+    bootstrap_status: Literal["pending", "running", "succeeded", "failed"]
+    extract_total: int
+    extract_completed: int
+    current_source_filename: str | None
+    started_at: str
+    finished_at: str | None
+    error_message: str | None
+    holder_pid: int | None
+
+
+# --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
 
@@ -545,6 +573,117 @@ def projects_extract(name: str, req: ExtractRequest) -> ExtractResponse:
         )
     finally:
         conn.close()
+
+
+# --------------------------------------------------------------------------
+# Pipeline endpoints (alpha-25)
+# --------------------------------------------------------------------------
+
+
+@_projects_api.post(
+    "/projects/{name}/pipeline",
+    response_model=PipelineResponse,
+    responses={
+        400: {"description": "Idempotency-Key header malformed."},
+        404: {"description": "Project not found."},
+        409: {"description": "Another extraction already in flight on this project."},
+    },
+)
+def projects_pipeline_run(
+    name: str, req: PipelineRequest, request: Request,
+) -> PipelineResponse:
+    import uuid
+    from meridian.api import idempotency as _idem
+    from meridian.projects import is_project_lock_held
+    from meridian.workers import pipeline_worker as _pw
+
+    db_path = _ensure_project(name)
+    idem_key = _idem.validate(
+        request.headers.get("Idempotency-Key"),
+        log_event="pipeline.idempotency_token_rejected",
+    )
+
+    if idem_key is not None:
+        existing = _idem.lookup(idem_key)
+        if existing is not None:
+            return PipelineResponse(job_id=existing[0])
+
+    candidate_id = str(uuid.uuid4())
+    if idem_key is not None:
+        winner = _idem.claim(idem_key, candidate_id)
+        if winner != candidate_id:
+            return PipelineResponse(job_id=winner)
+
+    if is_project_lock_held(name):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "project_busy",
+                "message": (
+                    "Another extract or backup is already running on this "
+                    "project. Wait for it to finish, then try again."
+                ),
+            },
+        )
+
+    job = _pw._PipelineJob(id=candidate_id, db_path=db_path)
+    with _pw._pipeline_jobs_lock:
+        _pw._pipeline_jobs[job.id] = job
+    _pw.start_pipeline_thread(
+        job, sample_size=req.sample_size, provider=req.provider, model=req.model,
+    )
+    return PipelineResponse(job_id=job.id)
+
+
+def _job_to_status(job) -> PipelineStatusResponse:
+    return PipelineStatusResponse(
+        job_id=job.id,
+        phase=job.phase,
+        bootstrap_status=job.bootstrap_status,
+        extract_total=job.extract_total,
+        extract_completed=job.extract_completed,
+        current_source_filename=job.current_source_filename,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error_message=job.error_message,
+        holder_pid=job.holder_pid,
+    )
+
+
+@_projects_api.get(
+    "/projects/{name}/pipeline/{job_id}",
+    response_model=PipelineStatusResponse,
+)
+def projects_pipeline_status(name: str, job_id: str) -> PipelineStatusResponse:
+    from meridian.workers import pipeline_worker as _pw
+
+    _ensure_project(name)
+    with _pw._pipeline_jobs_lock:
+        job = _pw._pipeline_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    return _job_to_status(job)
+
+
+@_projects_api.get(
+    "/projects/{name}/pipeline",
+    response_model=PipelineStatusResponse,
+)
+def projects_pipeline_latest(name: str) -> PipelineStatusResponse:
+    """Return the most-recently-started job for this project, or 404."""
+    from meridian.workers import pipeline_worker as _pw
+
+    db_path = _ensure_project(name)
+    with _pw._pipeline_jobs_lock:
+        # Insertion order in Python dicts == registration order; later jobs
+        # for the same db_path supersede earlier ones. We pick the last one
+        # whose db_path matches.
+        candidates = [
+            j for j in _pw._pipeline_jobs.values() if j.db_path == db_path
+        ]
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No pipeline jobs for this project.")
+    return _job_to_status(candidates[-1])
 
 
 @_projects_api.get("/projects/{name}/quarantine")

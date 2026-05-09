@@ -557,6 +557,36 @@ def acquire_project_lock(
         time.sleep(_DEFAULT_LOCK_POLL_INTERVAL)
 
 
+def is_project_lock_held(slug: str) -> bool:
+    """Return True iff the project lock is currently held by a live process.
+
+    Cheap helper for HTTP layers that want to surface 409 BEFORE attempting
+    to acquire the lock (and thereby blocking the request thread).
+
+    Uses the same file-based lock mechanism and staleness check as
+    ``acquire_project_lock`` — a lock file whose pid is no longer alive
+    (or is unknown-liveness but within the grace window) counts as held.
+    """
+    lock_path = _project_lock_path(slug)
+    payload = _read_lock_payload(lock_path)
+    if payload is None:
+        return False
+
+    holder_pid = int(payload.get("pid", -1))
+    holder_ts = str(payload.get("acquired_at", ""))
+
+    liveness = _pid_liveness(holder_pid) if holder_pid > 0 else "dead"
+    if liveness == "dead":
+        return False
+    if liveness == "unknown":
+        age = _seconds_since(holder_ts)
+        if age is not None and age > _LOCK_GRACE_SECONDS:
+            return False
+        return True
+    # liveness == "alive"
+    return True
+
+
 def _try_write_lock(lock_path: Path, *, purpose: str) -> bool:
     """Attempt to create the lock file exclusively. Returns True on success."""
     payload = json.dumps(
@@ -589,6 +619,7 @@ __all__ = [
     "create_project",
     "get_air_gapped",
     "get_project_routing",
+    "is_project_lock_held",
     "open_project",
     "project_db_path",
     "set_air_gapped",
