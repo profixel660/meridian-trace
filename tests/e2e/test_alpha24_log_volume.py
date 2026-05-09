@@ -39,11 +39,12 @@ def test_double_submit_does_not_double_emit_file_done_events(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    from meridian.api import idempotency as _idem
     from meridian.wizard import api as wizard_api
 
-    # Clear registries.
-    with wizard_api._idempotency_lock:
-        wizard_api._idempotency.clear()
+    # Clear registries. Idempotency-key registry moved to a shared module
+    # in alpha-25 (commit 1b5f830); reset via the module's test seam.
+    _idem._reset_for_tests()
     with wizard_api._jobs_lock:
         wizard_api._jobs.clear()
 
