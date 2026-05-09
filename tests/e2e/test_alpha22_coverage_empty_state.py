@@ -9,6 +9,7 @@ on empty projects (Task 7).
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -57,19 +58,25 @@ def test_coverage_populated_project_still_reports_trustworthiness(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Sanity: when a project HAS data, the trust flag should still be
-    bool (true or false), NOT None. is_data_present should be true."""
+    """Sanity: when a project HAS data (deliverables or LLM calls), the trust flag
+    should still be bool (true or false), NOT None. is_data_present should be true."""
     from meridian.config import settings
     monkeypatch.setattr(settings, "data_dir", tmp_path)
     from meridian.projects import create_project, project_db_path
+    from datetime import UTC, datetime
 
     create_project(name="populated-test")
     db = project_db_path("populated-test")
 
-    # Insert a single source row directly so the project has data.
+    # Insert a single source row + an LLM call so the project has data.
+    # Just having an LLM call is enough to trigger is_data_present=True.
     # Column names match src/meridian/db/schema.sql source_document table.
     import sqlite3
+    import json
+    import uuid
+
     with sqlite3.connect(db) as conn:
+        # Add a source
         conn.execute(
             "INSERT INTO source_document "
             "(id, filename, relative_path, content_hash, mime_type, size_bytes, "
@@ -84,6 +91,46 @@ def test_coverage_populated_project_still_reports_trustworthiness(
                 100,
                 "2026-04-28T00:00:00Z",
                 "pending",
+            ),
+        )
+        # Add an LLM call so is_data_present will be True
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute(
+            """
+            INSERT INTO llm_call (
+                id, job_id, purpose, provider, model, provider_api_version,
+                system_prompt, user_prompt, prompt_version_ref,
+                temperature, top_p, max_tokens, input_hash,
+                response_text, parsed_response,
+                prompt_tokens, completion_tokens,
+                cache_read_tokens, cache_write_tokens, cost_cents,
+                started_at, finished_at, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                None,
+                "quality_scan",
+                "test",
+                "test-model",
+                None,
+                "test system",
+                "test user",
+                "quality_scan_v_test",
+                0.0,
+                None,
+                16000,
+                "deadbeef",
+                json.dumps({"scan_quality": "clean"}),
+                None,
+                10,
+                10,
+                None,
+                None,
+                0,
+                now,
+                now,
+                None,
             ),
         )
         conn.commit()
@@ -122,3 +169,37 @@ def test_render_coverage_text_empty_state(tmp_path: Path, monkeypatch) -> None:
     # Crucial: must NOT render the BLOCKED branch on an empty project.
     assert "BASELINE NOT YET TRUSTWORTHY" not in text, text
     assert "BLOCKED" not in text, text
+
+
+def test_is_data_present_false_when_only_sources_imported(
+    project_with_two_sources_via_api, api_client,
+):
+    """Sources-only project (no deliverables, no LLM calls) → is_data_present=False."""
+    slug = project_with_two_sources_via_api
+    cov = api_client.get(f"/api/projects/{slug}/coverage").json()
+    # Sources are present; deliverables and LLM calls are not (no extract yet).
+    assert cov["sources_imported"] >= 1
+    assert cov["deliverable_status"]["total"] == 0
+    assert cov["is_data_present"] is False, (
+        "Sources-only projects should suppress the BaselineBanner amber "
+        "(alpha-25 §7)."
+    )
+
+
+def test_is_data_present_true_when_a_deliverable_exists(
+    project_with_two_sources_via_api, api_client, mock_llm_client,
+):
+    """One source + one deliverable → is_data_present=True (regression guard)."""
+    slug = project_with_two_sources_via_api
+    res = api_client.post(f"/api/projects/{slug}/pipeline", json={})
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        s = api_client.get(f"/api/projects/{slug}/pipeline/{job_id}").json()
+        if s["phase"] in {"done", "failed"}:
+            break
+        time.sleep(0.1)
+    cov = api_client.get(f"/api/projects/{slug}/coverage").json()
+    assert cov["is_data_present"] is True
+    assert cov["deliverable_status"]["total"] > 0

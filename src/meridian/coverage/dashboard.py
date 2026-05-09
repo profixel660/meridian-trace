@@ -391,11 +391,11 @@ def project_coverage(conn: sqlite3.Connection) -> ProjectCoverage:
     # nonsense "0% complete" messaging that previously fired the dashboard
     # NEEDS REVIEW banner on a project that just needs documents added.
     #
-    # Three signals suffice: audit / questions / conflicts / taxonomy are
-    # all downstream of deliverables, so a project can't have those without
-    # also having deliverables (or sources). LLM calls are an independent
-    # axis (a debug-only call without sources is rare but possible).
-    total_data_signals = sources_imported + status.total + cost.total_calls
+    # Drop sources_imported: a sources-only project (4 sources, 0 deliverables,
+    # 0 LLM calls) is genuinely "no opinion yet" — surfacing the BaselineBanner
+    # amber on it is misleading. The welcome panel + the alpha-25 pipeline
+    # tile cover the post-import / mid-extract states.
+    total_data_signals = status.total + cost.total_calls
     is_data_present = total_data_signals > 0
 
     if not is_data_present:
