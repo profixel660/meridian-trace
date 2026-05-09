@@ -555,6 +555,19 @@ export default function SetupFirstDocumentsPage() {
           {FIRST_DOCS_COPY.why()}
         </section>
 
+        {/* Picker / import error — rendered unconditionally so it surfaces in
+            any phase (idle, scanned, etc.). triggerImport's catch reverts to
+            "scanned" and calls setPickerError; without this hoist the error
+            was silently invisible during the scanned phase. */}
+        {pickerError ? (
+          <p
+            role="alert"
+            className="rounded border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-300"
+          >
+            {pickerError}
+          </p>
+        ) : null}
+
         {/* Idle / pick-folder UI. Always available so the user can re-pick. */}
         {(phase.kind === "idle" ||
           phase.kind === "scan_invalid" ||
@@ -594,15 +607,6 @@ export default function SetupFirstDocumentsPage() {
                 </span>
               </Tooltip>
             </p>
-
-            {pickerError ? (
-              <p
-                role="alert"
-                className="rounded border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-300"
-              >
-                {pickerError}
-              </p>
-            ) : null}
 
             <p className="text-xs text-text-muted">
               Or{" "}
