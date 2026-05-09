@@ -372,14 +372,24 @@ export const setupApi = {
    * Kick off a folder-import job. Returns a job id the wizard polls via
    * `folderImportStatus`. `project_name` becomes the project's display
    * name; the backend derives the slug.
+   *
+   * Alpha-24 item #4: pass a UUIDv4 `idempotencyKey` (one per user
+   * click). Two POSTs with the same key within the server-side TTL
+   * (15 minutes) return the same `job_id`. This closes the
+   * double-submission class even when the page-level guards (L1+L2)
+   * are bypassed by browser-layer retries.
    */
   importFolder(
     folderPath: string,
     projectName: string,
+    idempotencyKey: string,
   ): Promise<ImportResponse> {
     return apiFetch<ImportResponse>("/setup/import-folder", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
       body: JSON.stringify({
         folder_path: folderPath,
         project_name: projectName,
