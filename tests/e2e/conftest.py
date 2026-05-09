@@ -448,3 +448,90 @@ def project_with_two_sources_via_api(fastapi_client, tmp_path) -> str:
         f"import-folder job did not succeed within timeout: {last_status}"
     )
     return "alpha25-fixture"
+
+
+# --------------------------------------------------------------------------
+# Conflict-fixture (Task 7 — conflict_summary Excel column)
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def project_with_conflicts(tmp_path):
+    """In-memory project with one deliverable having a pending conflict.
+
+    FK enforcement is disabled so we can insert rows without building the full
+    extraction_job / llm_call prerequisite graph.  The fixture yields
+    ``(conn, expected_pending_text)`` where ``expected_pending_text`` is the
+    verbatim ``most_onerous_reasoning`` that should appear in the Excel column.
+    """
+    import json
+    import sqlite3
+    import uuid
+
+    from meridian.db.connection import initialise
+
+    db = tmp_path / "p.sqlite"
+    conn = initialise(db)
+
+    # Disable FK enforcement so we can insert conflict / deliverable rows
+    # without building the full extraction_job + llm_call prerequisite graph.
+    conn.execute("PRAGMA foreign_keys = OFF;")
+
+    sd_id = str(uuid.uuid4())
+    d_id = str(uuid.uuid4())
+    c_id = str(uuid.uuid4())
+    # Stub IDs for the FK columns we skip building.
+    job_id = str(uuid.uuid4())
+    llm_id = str(uuid.uuid4())
+    group_id = str(uuid.uuid4())
+
+    pending_text = (
+        "The chiller-spec ≤22°C ceiling is not enforced in the global "
+        "OSE document; the per-trade BoD is the more onerous source."
+    )
+    flag_label = f"conflicts_with_source_{c_id}"
+    flag_context_json = json.dumps({flag_label: {"conflict_id": c_id}})
+    flags_json = json.dumps([flag_label])
+
+    conn.execute(
+        """
+        INSERT INTO source_document (
+            id, filename, relative_path, content_hash, mime_type,
+            size_bytes, imported_at, extraction_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (sd_id, "chiller-bod.pdf", "chiller-bod.pdf", f"hash_{sd_id}", "application/pdf",
+         1, "2026-05-10T00:00:00Z", "text_spec"),
+    )
+    conn.execute(
+        """
+        INSERT INTO deliverable (
+            id, extraction_group_id, source_id, extraction_job_id, llm_call_id,
+            source_ref, applicable_standards, confidence, flags, flag_context,
+            deliverables_summary, gate_outcome, status, auto_route_decision, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            d_id, group_id, sd_id, job_id, llm_id,
+            '{"rendered": "Section 1"}', "[]", "high",
+            flags_json, flag_context_json,
+            "Chiller specification", "inside", "auto_approved", "auto_approved",
+            "2026-05-10T00:00:00Z",
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO conflict (
+            id, extraction_job_id, llm_call_id, kind,
+            most_onerous_reasoning, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (c_id, job_id, llm_id, "cross_source_content",
+         pending_text, "pending", "2026-05-10T00:00:00Z"),
+    )
+    conn.commit()
+
+    yield conn, pending_text
+
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.close()

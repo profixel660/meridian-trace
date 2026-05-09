@@ -179,6 +179,56 @@ def test_three_outcome_classification(
     assert "OUTSIDE" in audit_rows[0]["candidate_text"]
 
 
+def test_master_excel_has_conflict_summary_column(
+    project_with_conflicts, tmp_path,
+):
+    """The master sheet exposes pending conflict reasoning verbatim."""
+    from openpyxl import load_workbook
+    from meridian.export.excel import export_to_xlsx
+
+    conn, expected_pending_text = project_with_conflicts
+    out = tmp_path / "out.xlsx"
+    export_to_xlsx(conn, output_path=out)
+
+    wb = load_workbook(out)
+    ws = wb["Master"]
+    headers = [c.value for c in ws[1]]
+    assert "conflict_summary" in headers, headers
+    col_idx = headers.index("conflict_summary") + 1  # openpyxl 1-indexed
+
+    cells = [ws.cell(row=r, column=col_idx).value for r in range(2, ws.max_row + 1)]
+    # The deliverable known to have a pending conflict: its cell should
+    # contain the LLM's most_onerous_reasoning verbatim with a [<kind>] prefix.
+    assert any(
+        expected_pending_text in (c or "") for c in cells
+    ), f"pending reasoning not found in column; cells={cells}"
+
+
+def test_master_excel_resolved_conflicts_hidden_from_summary(
+    project_with_conflicts, tmp_path,
+):
+    """Conflicts in a resolved status do NOT appear in conflict_summary."""
+    from openpyxl import load_workbook
+    from meridian.export.excel import export_to_xlsx
+
+    conn, _ = project_with_conflicts
+    # Mark all conflicts resolved (use a valid resolved status from the schema)
+    conn.execute("UPDATE conflict SET status = 'resolved_accept_a'")
+    conn.commit()
+
+    out = tmp_path / "out.xlsx"
+    export_to_xlsx(conn, output_path=out)
+    wb = load_workbook(out)
+    ws = wb["Master"]
+    headers = [c.value for c in ws[1]]
+    col_idx = headers.index("conflict_summary") + 1
+    cells = [
+        ws.cell(row=r, column=col_idx).value or ""
+        for r in range(2, ws.max_row + 1)
+    ]
+    assert all(c == "" for c in cells), cells
+
+
 def test_extraction_records_zero_real_llm_calls(
     fresh_project_with_sample_doc: tuple[str, Path, sqlite3.Connection, str],
     mock_llm_client,

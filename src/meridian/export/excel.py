@@ -29,6 +29,7 @@ _MASTER_COLUMNS = [
     "document_class",
     "confidence",
     "flags",
+    "conflict_summary",
     "deliverables_summary",
 ]
 
@@ -36,7 +37,46 @@ _HEADER_FILL = PatternFill("solid", fgColor="1F2937")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 
 
-def _row_payload(row: sqlite3.Row) -> dict[str, str]:
+def _format_conflict_summary(
+    conn: sqlite3.Connection, flag_context_raw: str | None,
+) -> str:
+    """Return newline-joined pending conflict summaries for a deliverable row.
+
+    Reads ``flag_context`` JSON, extracts conflict_ids, queries the conflict
+    table for rows that are still pending, and returns the LLM's
+    ``most_onerous_reasoning`` verbatim with a ``[<kind>]`` prefix per row.
+    Resolved conflicts (any resolved_* status) are intentionally excluded so
+    the column only surfaces unresolved items requiring PM attention.
+    """
+    if not flag_context_raw:
+        return ""
+    try:
+        ctx = json.loads(flag_context_raw)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(ctx, dict):
+        return ""
+    conflict_ids = [
+        v.get("conflict_id")
+        for v in ctx.values()
+        if isinstance(v, dict) and v.get("conflict_id")
+    ]
+    if not conflict_ids:
+        return ""
+    placeholders = ",".join("?" * len(conflict_ids))
+    rows = conn.execute(
+        f"SELECT kind, most_onerous_reasoning FROM conflict "
+        f"WHERE id IN ({placeholders}) AND status = 'pending'",
+        conflict_ids,
+    ).fetchall()
+    return "\n".join(
+        f"[{r['kind']}] {r['most_onerous_reasoning']}"
+        for r in rows
+        if r["most_onerous_reasoning"]
+    )
+
+
+def _row_payload(row: sqlite3.Row, conn: sqlite3.Connection) -> dict[str, str]:
     """Flatten a v_master_register row into the Excel column shape."""
     source_ref = row["source_ref"]
     if isinstance(source_ref, str):
@@ -59,6 +99,7 @@ def _row_payload(row: sqlite3.Row) -> dict[str, str]:
     except json.JSONDecodeError:
         flags_list = []
 
+    flag_context_raw = row["flag_context"] if "flag_context" in row.keys() else None
     return {
         "id": row["id"],
         "source_document": row["source_filename"],
@@ -71,6 +112,7 @@ def _row_payload(row: sqlite3.Row) -> dict[str, str]:
         "document_class": row["document_class"] or "",
         "confidence": row["confidence"] or "",
         "flags": ", ".join(str(f) for f in flags_list),
+        "conflict_summary": _format_conflict_summary(conn, flag_context_raw),
         "deliverables_summary": row["deliverables_summary"] or "",
     }
 
@@ -84,6 +126,7 @@ def _select_master(conn: sqlite3.Connection) -> list[sqlite3.Row]:
             d.applicable_standards,
             d.confidence,
             d.flags,
+            d.flag_context,
             d.deliverables_summary,
             d.created_at,
             sd.filename     AS source_filename,
@@ -102,7 +145,9 @@ def _select_master(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def _write_master_sheet(workbook: Workbook, rows: list[sqlite3.Row]) -> None:
+def _write_master_sheet(
+    workbook: Workbook, rows: list[sqlite3.Row], conn: sqlite3.Connection,
+) -> None:
     sheet = workbook.active
     sheet.title = "Master"
 
@@ -114,7 +159,7 @@ def _write_master_sheet(workbook: Workbook, rows: list[sqlite3.Row]) -> None:
     sheet.row_dimensions[1].height = 24
 
     for index, row in enumerate(rows, start=1):
-        payload = _row_payload(row)
+        payload = _row_payload(row, conn)
         sheet.append(
             [
                 payload["id"],
@@ -129,8 +174,17 @@ def _write_master_sheet(workbook: Workbook, rows: list[sqlite3.Row]) -> None:
                 payload["document_class"],
                 payload["confidence"],
                 payload["flags"],
+                payload["conflict_summary"],
                 payload["deliverables_summary"],
             ]
+        )
+
+    # Apply wrap_text on the conflict_summary column so multi-conflict rows
+    # render correctly in Excel.
+    conflict_col_letter = get_column_letter(_MASTER_COLUMNS.index("conflict_summary") + 1)
+    for row_idx in range(2, sheet.max_row + 1):
+        sheet[f"{conflict_col_letter}{row_idx}"].alignment = Alignment(
+            wrap_text=True, vertical="top"
         )
 
     # Column widths — heuristic, no hyperlink yet.
@@ -147,6 +201,7 @@ def _write_master_sheet(workbook: Workbook, rows: list[sqlite3.Row]) -> None:
         "document_class": 22,
         "confidence": 10,
         "flags": 26,
+        "conflict_summary": 60,
         "deliverables_summary": 80,
     }
     for col_index, name in enumerate(_MASTER_COLUMNS, start=1):
@@ -155,11 +210,18 @@ def _write_master_sheet(workbook: Workbook, rows: list[sqlite3.Row]) -> None:
     sheet.freeze_panes = "B2"
 
 
-def _write_pivot_sheet(workbook: Workbook, *, title: str, group_field: str, rows: list[sqlite3.Row]) -> None:
+def _write_pivot_sheet(
+    workbook: Workbook,
+    *,
+    title: str,
+    group_field: str,
+    rows: list[sqlite3.Row],
+    conn: sqlite3.Connection,
+) -> None:
     sheet = workbook.create_sheet(title=title)
     grouped: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:
-        payload = _row_payload(row)
+        payload = _row_payload(row, conn)
         key = payload[group_field] or "(unset)"
         grouped[key].append(row)
 
@@ -171,7 +233,7 @@ def _write_pivot_sheet(workbook: Workbook, *, title: str, group_field: str, rows
 
     for key in sorted(grouped):
         bucket = grouped[key]
-        preview = "; ".join(_row_payload(r)["deliverables_summary"] for r in bucket[:3])
+        preview = "; ".join(_row_payload(r, conn)["deliverables_summary"] for r in bucket[:3])
         sheet.append([key, len(bucket), preview])
 
     sheet.column_dimensions["A"].width = 28
@@ -186,10 +248,10 @@ def export_to_xlsx(conn: sqlite3.Connection, *, output_path: Path) -> Path:
     rows = _select_master(conn)
 
     workbook = Workbook()
-    _write_master_sheet(workbook, rows)
-    _write_pivot_sheet(workbook, title="By Trade", group_field="trade", rows=rows)
-    _write_pivot_sheet(workbook, title="By Service", group_field="service", rows=rows)
-    _write_pivot_sheet(workbook, title="By Category", group_field="category", rows=rows)
+    _write_master_sheet(workbook, rows, conn)
+    _write_pivot_sheet(workbook, title="By Trade", group_field="trade", rows=rows, conn=conn)
+    _write_pivot_sheet(workbook, title="By Service", group_field="service", rows=rows, conn=conn)
+    _write_pivot_sheet(workbook, title="By Category", group_field="category", rows=rows, conn=conn)
 
     workbook.save(str(output_path))
     return output_path
