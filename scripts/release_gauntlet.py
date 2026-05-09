@@ -1132,41 +1132,91 @@ def _step_pipeline_e2e_and_workbook_smoke(
             )
             return False
 
-        # Discover a project slug to use. Use the first slug returned by
-        # /api/projects, or create one if the list is empty.
-        slug: str | None = None
-        list_status, list_body = _probe(f"{base_url}/api/projects", timeout=5.0)
-        if list_status == 200:
-            try:
-                projects = _json.loads(list_body.decode("utf-8"))
-                if isinstance(projects, list) and projects:
-                    slug = projects[0].get("slug") or projects[0].get("id")
-            except (_json.JSONDecodeError, (AttributeError, KeyError)):
-                pass
+        # Create a project + ingest one synthetic DOCX via /setup/import-folder.
+        # A bare /api/projects POST creates an empty project (no sources), and
+        # the pipeline assertion below requires deliverables to actually be
+        # produced — so we must ingest at least one parseable file. A bare
+        # %PDF-1.4 stub fails at the text-extraction stage; python-docx makes
+        # a real, parseable document the dispatcher can ingest. (Mirrors the
+        # alpha-25 e2e fixture pattern in tests/e2e/conftest.py.)
+        try:
+            from docx import Document  # noqa: PLC0415 — script-time import
+        except ImportError as exc:
+            _fail(
+                "step 7j: pipeline e2e",
+                f"python-docx not available in controller Python: {exc}",
+            )
+            return False
 
-        if slug is None:
-            # Create a minimal project so the pipeline has something to run.
-            create_payload = _json.dumps({"name": "gauntlet-7j"}).encode("utf-8")
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td) / "src"
+            folder.mkdir()
+            doc = Document()
+            doc.add_heading("Sample Specification Section", level=1)
+            for line in (
+                "Contractor shall supply and install one (1) air handling unit.",
+                "All ductwork shall be sealed to SMACNA Class A.",
+                "Coordinate penetrations with the structural engineer.",
+            ):
+                doc.add_paragraph(line)
+            doc.save(str(folder / "spec.docx"))
+
+            slug = "gauntlet-7j"
+            import_payload = _json.dumps({
+                "folder_path": str(folder),
+                "project_name": slug,
+            }).encode("utf-8")
             try:
                 req = urllib.request.Request(
-                    f"{base_url}/api/projects",
-                    data=create_payload,
+                    f"{base_url}/setup/import-folder",
+                    data=import_payload,
                     headers={
                         "Content-Type": "application/json",
                         "User-Agent": "release-gauntlet",
                     },
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — localhost
-                    created = _json.loads(resp.read().decode("utf-8"))
-                    slug = created.get("slug") or created.get("id")
+                with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 — localhost
+                    import_body = _json.loads(resp.read().decode("utf-8"))
             except (urllib.error.URLError, TimeoutError, _json.JSONDecodeError) as exc:
-                _fail("step 7j: pipeline e2e", f"project creation failed: {exc}")
+                _fail("step 7j: pipeline e2e", f"import-folder POST failed: {exc}")
                 return False
 
-        if not slug:
-            _fail("step 7j: pipeline e2e", "could not obtain a project slug")
-            return False
+            import_job_id = import_body.get("job_id")
+            if not isinstance(import_job_id, str):
+                _fail(
+                    "step 7j: pipeline e2e",
+                    f"import-folder response missing job_id; got {import_body!r}",
+                )
+                return False
+
+            # Wait for import to land before kicking the pipeline.
+            import_deadline = _t.monotonic() + 30.0
+            import_done = False
+            while _t.monotonic() < import_deadline:
+                ip_status, ip_body = _probe(
+                    f"{base_url}/setup/import-folder/{import_job_id}", timeout=5.0,
+                )
+                if ip_status == 200:
+                    try:
+                        ip_state = _json.loads(ip_body.decode("utf-8"))
+                    except _json.JSONDecodeError:
+                        ip_state = {}
+                    if ip_state.get("status") in {"succeeded", "failed"}:
+                        if ip_state.get("status") == "failed":
+                            _fail(
+                                "step 7j: pipeline e2e",
+                                f"import-folder failed: {ip_state.get('failed_groups')}",
+                            )
+                            return False
+                        import_done = True
+                        break
+                _t.sleep(0.5)
+            if not import_done:
+                _fail("step 7j: pipeline e2e", "import-folder didn't reach terminal status in 30s")
+                return False
+        # tempfile is cleaned up; the project + sources persist in the
+        # backend's MERIDIAN_HOME for the rest of step 7j.
 
         # 1. Kick off the pipeline (no idempotency key -- first run on this slug).
         pipeline_payload = _json.dumps({}).encode("utf-8")
