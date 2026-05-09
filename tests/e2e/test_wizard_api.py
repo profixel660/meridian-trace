@@ -2284,3 +2284,70 @@ def test_alpha12_wizard_import_logger_has_dedicated_stderr_handler() -> None:
     )
     assert "[import]" in rendered, rendered
     assert "alpha12_marker" in rendered, rendered
+
+
+def test_idempotent_replay_emits_structured_log(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The replay branch emits 'wizard.import_folder.idempotent_replay'
+    once per replay, carrying the recorded job_id and a non-negative
+    age_seconds field.
+    """
+    from meridian.wizard import api as wizard_api
+
+    with wizard_api._idempotency_lock:
+        wizard_api._idempotency.clear()
+    with wizard_api._jobs_lock:
+        wizard_api._jobs.clear()
+
+    # Spy on the structlog logger directly. More robust than caplog —
+    # we don't depend on whether structlog is configured to forward to
+    # stdlib logging in the test environment.
+    recorded: list[tuple[str, dict]] = []
+    real_info = wizard_api._log.info
+
+    def _spy_info(event: str, **kwargs):
+        recorded.append((event, dict(kwargs)))
+        return real_info(event, **kwargs)
+
+    monkeypatch.setattr(wizard_api._log, "info", _spy_info)
+
+    folder = tmp_path / "src"
+    folder.mkdir()
+    (folder / "doc.pdf").write_bytes(b"%PDF-1.4 test\n%%EOF\n")
+    body = {"folder_path": str(folder), "project_name": "alpha24-log"}
+    token = "11111111-1111-4111-8111-111111111111"
+
+    res1 = fastapi_client.post(
+        "/setup/import-folder",
+        json=body,
+        headers={"Idempotency-Key": token},
+    )
+    assert res1.status_code == 200
+    expected_job_id = res1.json()["job_id"]
+
+    # Reset the recorder so only events from the replay show up.
+    recorded.clear()
+
+    res2 = fastapi_client.post(
+        "/setup/import-folder",
+        json=body,
+        headers={"Idempotency-Key": token},
+    )
+    assert res2.status_code == 200
+
+    replay_events = [
+        (event, kwargs)
+        for event, kwargs in recorded
+        if event == "wizard.import_folder.idempotent_replay"
+    ]
+    assert len(replay_events) == 1, (
+        f"Expected exactly one replay event; got {len(replay_events)}. "
+        f"All recorded events: {[e[0] for e in recorded]}"
+    )
+    _, kwargs = replay_events[0]
+    assert kwargs["job_id"] == expected_job_id
+    assert kwargs["idempotency_token"] == token
+    assert kwargs["age_seconds"] >= 0

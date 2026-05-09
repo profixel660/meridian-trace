@@ -247,3 +247,50 @@ def test_malformed_token_returns_400_invalid_idempotency_key(
         )
         detail = res.json()["detail"]
         assert detail["error"] == "invalid_idempotency_key", detail
+
+
+def test_replay_after_job_reaped_returns_token_record_with_dead_job_id(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """A token record outlives the job it points at.
+
+    Documents the limit, not a regression: if the job was reaped from
+    _jobs but the token record is still within TTL, the replay returns
+    the recorded job_id — the next GET /import-folder/{job_id} returns
+    404 and the frontend's existing 'Lost contact' phase fires.
+    """
+    folder = _seed_folder(tmp_path)
+    body = {"folder_path": str(folder), "project_name": "alpha24-reaped"}
+
+    res1 = fastapi_client.post(
+        "/setup/import-folder",
+        json=body,
+        headers={"Idempotency-Key": TOKEN_A},
+    )
+    assert res1.status_code == 200
+    job_id_first = res1.json()["job_id"]
+
+    # Simulate post-completion reaping by clearing the job from _jobs
+    # without touching _idempotency. This is the future-cleanup scenario
+    # alpha-24 explicitly accepts: the token record outlives the job.
+    from meridian.wizard import api as wizard_api
+
+    with wizard_api._jobs_lock:
+        wizard_api._jobs.pop(job_id_first, None)
+
+    res2 = fastapi_client.post(
+        "/setup/import-folder",
+        json=body,
+        headers={"Idempotency-Key": TOKEN_A},
+    )
+    assert res2.status_code == 200
+    assert res2.json()["job_id"] == job_id_first, (
+        "Replay must return the originally-recorded job_id even when "
+        "the job has been reaped from the live registry."
+    )
+
+    # Subsequent GET /import-folder/{job_id} must 404 — confirms the
+    # frontend will route to the existing 'Lost contact' path.
+    poll = fastapi_client.get(f"/setup/import-folder/{job_id_first}")
+    assert poll.status_code == 404
