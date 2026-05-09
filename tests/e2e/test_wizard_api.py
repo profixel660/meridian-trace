@@ -2295,10 +2295,10 @@ def test_idempotent_replay_emits_structured_log(
     once per replay, carrying the recorded job_id and a non-negative
     age_seconds field.
     """
+    from meridian.api import idempotency as _idem
     from meridian.wizard import api as wizard_api
 
-    with wizard_api._idempotency_lock:
-        wizard_api._idempotency.clear()
+    _idem._reset_for_tests()
     with wizard_api._jobs_lock:
         wizard_api._jobs.clear()
 

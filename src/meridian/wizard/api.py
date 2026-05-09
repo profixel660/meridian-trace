@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import sys
 import threading
 import time
@@ -211,89 +210,6 @@ _jobs_lock = Lock()
 # --------------------------------------------------------------------------
 # Idempotency registry — alpha-24 item #4.
 #
-# Maps Idempotency-Key (UUIDv4 from the wizard) → (job_id, recorded_at_monotonic).
-# Lifetime is process-local: a backend bounce forfeits the dedup window.
-# Lookups also opportunistically delete entries older than the TTL — no
-# background thread, no persistent storage.
-# --------------------------------------------------------------------------
-
-_IDEMPOTENCY_TTL_SECONDS: float = 15 * 60.0
-_IDEMPOTENCY_KEY_PATTERN = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
-
-_idempotency: dict[str, tuple[str, float]] = {}
-_idempotency_lock = Lock()
-
-
-def _idempotency_lookup(key: str) -> tuple[str, float] | None:
-    """Return (job_id, age_seconds) if the key is on file and unexpired.
-
-    Side-effect: opportunistically purges any expired entries it sees.
-    """
-    now = time.monotonic()
-    with _idempotency_lock:
-        # Lazy GC of every expired entry — cheap (registry is bounded by
-        # request rate × TTL, ~hundreds at most for a single-user wizard).
-        expired = [
-            k for k, (_jid, recorded_at) in _idempotency.items()
-            if now - recorded_at > _IDEMPOTENCY_TTL_SECONDS
-        ]
-        for k in expired:
-            del _idempotency[k]
-        record = _idempotency.get(key)
-        if record is None:
-            return None
-        job_id, recorded_at = record
-        return job_id, now - recorded_at
-
-
-def _idempotency_claim(key: str, job_id: str) -> str:
-    """Atomically claim ``key`` for ``job_id`` or return the existing winner.
-
-    If the key is already registered (and unexpired) returns the winner's
-    job_id unchanged. If the key is absent (or expired), records ``job_id``
-    and returns it. The entire check-and-set is held under ``_idempotency_lock``
-    so two threads racing on the same key always agree on one winner — the
-    alpha-24 parallel-POST race condition that the gauntlet step 7i catches.
-    """
-    now = time.monotonic()
-    with _idempotency_lock:
-        # Lazy GC (mirrors _idempotency_lookup).
-        expired = [
-            k for k, (_jid, recorded_at) in _idempotency.items()
-            if now - recorded_at > _IDEMPOTENCY_TTL_SECONDS
-        ]
-        for k in expired:
-            del _idempotency[k]
-        record = _idempotency.get(key)
-        if record is not None:
-            existing_job_id, _ = record
-            return existing_job_id
-        # No existing entry — claim the slot for this job_id.
-        _idempotency[key] = (job_id, now)
-        return job_id
-
-
-def _validate_idempotency_key(value: str | None) -> str | None:
-    """Return the UUIDv4 unchanged if valid, or None if absent. Raises on malformed."""
-    if value is None:
-        return None
-    if not _IDEMPOTENCY_KEY_PATTERN.match(value):
-        _log.info("wizard.import_folder.idempotency_token_rejected", reason="invalid_format")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": "invalid_idempotency_key",
-                "message": (
-                    "Idempotency-Key header must be a UUIDv4 "
-                    "(lower-case, e.g. '11111111-1111-4111-8111-111111111111')."
-                ),
-            },
-        )
-    return value
-
-
 # --------------------------------------------------------------------------
 # Error classification + coalescing — alpha-11
 # --------------------------------------------------------------------------
@@ -1311,8 +1227,11 @@ def setup_import_folder(
     :func:`meridian.ingest.ingest_file`; calling this twice on the same
     folder produces a job whose ``deduped`` count equals the file count.
     """
-    idempotency_key = _validate_idempotency_key(
-        request.headers.get("Idempotency-Key")
+    from meridian.api import idempotency as _idem
+
+    idempotency_key = _idem.validate(
+        request.headers.get("Idempotency-Key"),
+        log_event="wizard.import_folder.idempotency_token_rejected"
     )
 
     # Idempotency gate — must happen BEFORE any side-effects (project
@@ -1332,7 +1251,7 @@ def setup_import_folder(
     #      collided in create_project.
     candidate_id: str | None = None
     if idempotency_key is not None:
-        existing = _idempotency_lookup(idempotency_key)
+        existing = _idem.lookup(idempotency_key)
         if existing is not None:
             existing_job_id, age_seconds = existing
             _log.info(
@@ -1347,7 +1266,7 @@ def setup_import_folder(
         # atomically before any DB writes. The loser of the race (claim
         # returns a different ID) returns immediately without side-effects.
         candidate_id = str(uuid.uuid4())
-        winner_id = _idempotency_claim(idempotency_key, candidate_id)
+        winner_id = _idem.claim(idempotency_key, candidate_id)
         if winner_id != candidate_id:
             _log.info(
                 "wizard.import_folder.idempotent_race_loser",

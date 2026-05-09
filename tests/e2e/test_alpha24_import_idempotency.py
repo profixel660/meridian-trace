@@ -29,10 +29,10 @@ def _clear_idempotency_registry() -> None:
     the same pytest run; without this fixture, a token recorded in test N
     would leak into test N+1 and falsely trigger the replay branch.
     """
+    from meridian.api import idempotency as _idem
     from meridian.wizard import api as wizard_api
 
-    with wizard_api._idempotency_lock:
-        wizard_api._idempotency.clear()
+    _idem._reset_for_tests()
     # Also clear the _jobs registry so two tests scanning the same folder
     # don't trip the staging-detection logic in suggest-name (irrelevant
     # to this file's contract but defensive).
@@ -125,14 +125,14 @@ def test_first_post_creates_job_and_records_token(
     assert res.status_code == 200, res.text
     job_id = res.json()["job_id"]
 
-    from meridian.wizard import api as wizard_api
+    from meridian.api import idempotency as _idem
 
-    with wizard_api._idempotency_lock:
-        assert TOKEN_A in wizard_api._idempotency, (
-            "Idempotency registry should contain the token after a first POST."
-        )
-        recorded_job_id, recorded_at = wizard_api._idempotency[TOKEN_A]
-        assert recorded_job_id == job_id
+    registry = _idem._get_registry_for_tests()
+    assert TOKEN_A in registry, (
+        "Idempotency registry should contain the token after a first POST."
+    )
+    recorded_job_id, recorded_at = registry[TOKEN_A]
+    assert recorded_job_id == job_id
 
 
 def test_different_tokens_create_different_jobs(
@@ -187,17 +187,18 @@ def test_token_ttl_expires_after_15_minutes(
     body = {"folder_path": str(folder), "project_name": "alpha24-ttl"}
 
     # Pin time so we can fast-forward predictably. Patch the symbol the
-    # wizard module reaches for, not time.monotonic globally — there are
+    # idempotency module reaches for, not time.monotonic globally — there are
     # other monotonic readers in the request path (uvicorn, FastAPI, etc.)
     # that would behave oddly under a global patch.
-    from meridian.wizard import api as wizard_api
+    import time as time_module
+    from meridian.api import idempotency as _idem
 
     fake_now = {"t": 100.0}
 
     def _fake_monotonic() -> float:
         return fake_now["t"]
 
-    monkeypatch.setattr(wizard_api.time, "monotonic", _fake_monotonic)
+    monkeypatch.setattr(time_module, "monotonic", _fake_monotonic)
 
     res1 = fastapi_client.post(
         "/setup/import-folder",
@@ -208,7 +209,7 @@ def test_token_ttl_expires_after_15_minutes(
     job_id_first = res1.json()["job_id"]
 
     # Fast-forward past TTL.
-    fake_now["t"] = 100.0 + wizard_api._IDEMPOTENCY_TTL_SECONDS + 1.0
+    fake_now["t"] = 100.0 + _idem.IDEMPOTENCY_TTL_SECONDS + 1.0
 
     res2 = fastapi_client.post(
         "/setup/import-folder",
@@ -221,11 +222,13 @@ def test_token_ttl_expires_after_15_minutes(
     )
 
     # Lazy GC: the expired entry should have been pruned during the lookup.
-    with wizard_api._idempotency_lock:
-        # The new POST recorded a fresh entry — assert it's the new job_id,
-        # not the stale one.
-        recorded_job_id, _ = wizard_api._idempotency[TOKEN_A]
-        assert recorded_job_id == res2.json()["job_id"]
+    from meridian.api import idempotency as _idem
+
+    registry = _idem._get_registry_for_tests()
+    # The new POST recorded a fresh entry — assert it's the new job_id,
+    # not the stale one.
+    recorded_job_id, _ = registry[TOKEN_A]
+    assert recorded_job_id == res2.json()["job_id"]
 
 
 def test_malformed_token_returns_400_invalid_idempotency_key(
@@ -346,3 +349,35 @@ def test_concurrent_posts_with_same_token_dedupe_via_claim(
             f"Expected exactly 1 job in registry; got {len(wizard_api._jobs)}. "
             "Race-loser must NOT have constructed a second _ImportJob."
         )
+
+
+# Direct unit tests for the shared idempotency module
+def test_idempotency_module_validate_uuid4() -> None:
+    from meridian.api import idempotency
+
+    assert idempotency.validate(None) is None
+    assert idempotency.validate("11111111-1111-4111-8111-111111111111") == \
+        "11111111-1111-4111-8111-111111111111"
+
+
+def test_idempotency_module_validate_rejects_v3() -> None:
+    from fastapi import HTTPException
+    from meridian.api import idempotency
+
+    try:
+        idempotency.validate("11111111-1111-3111-8111-111111111111")
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail["error"] == "invalid_idempotency_key"
+        return
+    raise AssertionError("expected HTTPException")
+
+
+def test_idempotency_module_claim_idempotent() -> None:
+    from meridian.api import idempotency
+
+    idempotency._reset_for_tests()
+    key = "22222222-2222-4222-8222-222222222222"
+    assert idempotency.claim(key, "job-A") == "job-A"
+    # second claim returns the original winner
+    assert idempotency.claim(key, "job-B") == "job-A"
