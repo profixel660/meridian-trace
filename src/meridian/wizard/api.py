@@ -253,6 +253,33 @@ def _idempotency_lookup(key: str) -> tuple[str, float] | None:
         return job_id, now - recorded_at
 
 
+def _idempotency_claim(key: str, job_id: str) -> str:
+    """Atomically claim ``key`` for ``job_id`` or return the existing winner.
+
+    If the key is already registered (and unexpired) returns the winner's
+    job_id unchanged. If the key is absent (or expired), records ``job_id``
+    and returns it. The entire check-and-set is held under ``_idempotency_lock``
+    so two threads racing on the same key always agree on one winner — the
+    alpha-24 parallel-POST race condition that the gauntlet step 7i catches.
+    """
+    now = time.monotonic()
+    with _idempotency_lock:
+        # Lazy GC (mirrors _idempotency_lookup).
+        expired = [
+            k for k, (_jid, recorded_at) in _idempotency.items()
+            if now - recorded_at > _IDEMPOTENCY_TTL_SECONDS
+        ]
+        for k in expired:
+            del _idempotency[k]
+        record = _idempotency.get(key)
+        if record is not None:
+            existing_job_id, _ = record
+            return existing_job_id
+        # No existing entry — claim the slot for this job_id.
+        _idempotency[key] = (job_id, now)
+        return job_id
+
+
 def _validate_idempotency_key(value: str | None) -> str | None:
     """Return the UUIDv4 unchanged if valid, or None if absent. Raises on malformed."""
     if value is None:
@@ -1293,9 +1320,22 @@ def setup_import_folder(
         request.headers.get("Idempotency-Key")
     )
 
-    # Replay path — same token within TTL returns the original job_id.
-    # Skip every side-effect (path validation, project creation, scan,
-    # thread spawn): the original POST already did all of them.
+    # Idempotency gate — must happen BEFORE any side-effects (project
+    # creation, job spawn) so that parallel POSTs with the same key
+    # never race into create_project or walk_directory simultaneously.
+    #
+    # Two-stage strategy:
+    #   1. Fast read-only check: if the key is already settled, return
+    #      immediately with zero side-effects (the common case after the
+    #      first POST has landed).
+    #   2. Pre-claim with a candidate UUID: generate the UUID we WOULD
+    #      use for the new job, then atomically claim the key. If another
+    #      thread wins the claim, we return the winner's job_id without
+    #      touching the DB. Only the winner proceeds to create the project
+    #      and spawn the job. This closes the alpha-24 parallel-POST race
+    #      where both threads passed the fast check simultaneously and then
+    #      collided in create_project.
+    candidate_id: str | None = None
     if idempotency_key is not None:
         existing = _idempotency_lookup(idempotency_key)
         if existing is not None:
@@ -1307,6 +1347,20 @@ def setup_import_folder(
                 age_seconds=round(age_seconds, 3),
             )
             return ImportJobResponse(job_id=existing_job_id)
+
+        # Key not yet recorded — generate a candidate and claim the slot
+        # atomically before any DB writes. The loser of the race (claim
+        # returns a different ID) returns immediately without side-effects.
+        candidate_id = str(uuid.uuid4())
+        winner_id = _idempotency_claim(idempotency_key, candidate_id)
+        if winner_id != candidate_id:
+            _log.info(
+                "wizard.import_folder.idempotent_race_loser",
+                idempotency_token=idempotency_key,
+                winner_job_id=winner_id,
+                discarded_candidate=candidate_id,
+            )
+            return ImportJobResponse(job_id=winner_id)
 
     folder = _validate_folder_path(req.folder_path)
     slug = _slugify(req.project_name)
@@ -1329,9 +1383,14 @@ def setup_import_folder(
         paths.extend(kind_paths)
 
     job = _ImportJob(total=len(paths))
+    # If we pre-claimed an idempotency slot, stamp the job with the exact
+    # UUID we registered so the caller can look it up by the right ID.
+    if candidate_id is not None:
+        job.id = candidate_id
     # Stamp db_path so suggest-name + setup_create_project can identify
     # this as wizard-owned staging — see _ImportJob.db_path docstring.
     job.db_path = db_path
+
     with _jobs_lock:
         _jobs[job.id] = job
 
@@ -1342,9 +1401,6 @@ def setup_import_folder(
         name=f"wizard-folder-import-{job.id[:8]}",
     )
     thread.start()
-
-    if idempotency_key is not None:
-        _idempotency_record(idempotency_key, job.id)
 
     return ImportJobResponse(job_id=job.id)
 

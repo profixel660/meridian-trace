@@ -919,6 +919,132 @@ def _step_env_var_via_dotenv(scratch: Path, venv_dir: Path, repo: Path) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Step 7i — alpha-24 idempotency dedupe under parallel POST
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _step_idempotency_dedupes_parallel_posts(
+    scratch: Path, venv_dir: Path, repo: Path
+) -> bool:
+    """Step 7i — alpha-24 item #4: same Idempotency-Key + parallel POSTs == one job.
+
+    Spawns two threads, each posting /setup/import-folder with the same
+    UUIDv4 token to a tmp folder containing one .pdf. Both responses must
+    carry the same job_id; the post-state /setup/runtime probe must
+    report at most one folder-import job created during the window.
+
+    Catches wiring drift at the wheel level (analogous to step 2b's
+    static check on installer URL constants for the alpha-5 IPv6 bug).
+    """
+    import concurrent.futures
+    import json as _json
+
+    _info("step 7i -- alpha-24 idempotency dedupe under parallel POST")
+
+    if os.name == "nt":
+        py = venv_dir / "Scripts" / "python.exe"
+    else:
+        py = venv_dir / "bin" / "python"
+
+    home_7i = scratch / "meridian_home_7i"
+    home_7i.mkdir(exist_ok=True)
+    spawn_cwd = scratch / "spawn_cwd_7i"
+    spawn_cwd.mkdir(exist_ok=True)
+
+    port = 8002
+    base_url = f"http://127.0.0.1:{port}"
+    log_path = scratch / "backend_7i.log"
+
+    env = {
+        **os.environ,
+        "MERIDIAN_HOME": str(home_7i),
+        "MERIDIAN_PORT": str(port),
+        "MERIDIAN_HOST": "127.0.0.1",
+    }
+    env.pop("PYTHONPATH", None)
+
+    _info(f"step 7i: spawning backend on :{port}")
+    with log_path.open("wb") as logf:
+        proc = subprocess.Popen(
+            [str(py), "-m", "meridian.api.main"],
+            cwd=str(spawn_cwd),
+            env=env,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+        )
+    try:
+        deadline = time.monotonic() + 60.0
+        healthy = False
+        while time.monotonic() < deadline:
+            status, _body = _probe(f"{base_url}/health", timeout=0.5)
+            if status == 200:
+                healthy = True
+                break
+            time.sleep(0.25)
+        if not healthy:
+            try:
+                tail = log_path.read_text(errors="replace").splitlines()[-30:]
+            except OSError:
+                tail = []
+            _fail(
+                "step 7i: idempotency dedupe",
+                f"backend on :{port} never reported /health 200 within 60s. "
+                "backend.log tail:\n" + "\n".join(tail),
+            )
+            return False
+
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td) / "src"
+            folder.mkdir()
+            (folder / "doc.pdf").write_bytes(b"%PDF-1.4 gauntlet 7i\n%%EOF\n")
+
+            token = "11111111-1111-4111-8111-111111111111"
+            body = _json.dumps({
+                "folder_path": str(folder),
+                "project_name": "gauntlet-7i",
+            }).encode("utf-8")
+
+            def _post() -> str:
+                req = urllib.request.Request(
+                    f"{base_url}/setup/import-folder",
+                    data=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": token,
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 -- localhost
+                    payload = _json.loads(resp.read().decode("utf-8"))
+                    return payload["job_id"]
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+                f1 = ex.submit(_post)
+                f2 = ex.submit(_post)
+                job_id_1 = f1.result()
+                job_id_2 = f2.result()
+
+        if job_id_1 != job_id_2:
+            _fail(
+                "7i",
+                f"parallel POSTs with same Idempotency-Key returned different "
+                f"job_ids: {job_id_1!r} vs {job_id_2!r}. Backend dedupe is "
+                "not wired or the registry is leaking.",
+            )
+            return False
+        _ok("7i", f"both POSTs returned job_id={job_id_1[:8]}...")
+        return True
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5.0)
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Step 8 — CLI --help smoke
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -1171,6 +1297,9 @@ def main() -> int:
 
         # Alpha-15: step 7h removed; tested the .env -> bypass plumbing
         # which alpha-15 retired with TOTP enforcement.
+
+        if not _step_idempotency_dedupes_parallel_posts(scratch, venv_dir, repo):
+            return 1
 
         if not _step_cli_help_smoke(venv_dir):
             return 1
