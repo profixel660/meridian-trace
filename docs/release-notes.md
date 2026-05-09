@@ -4,6 +4,57 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.24
+
+One fix: closes punch list item #4 from the SME's 2026-05-02 alpha-22 testing round — the frontend double-submission of the folder-import POST that produced 694 `import_job.file_done` events for a 347-file folder (each file kicked off twice). Alpha-23's race-safety in `ingest_file` neutered the user-visible failure mode; alpha-24 closes the source so log volume + LLM cost stop doubling and the operator's mental model ("each file uploaded once") is honest.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The fix — three layers, defence-in-depth
+
+The double-submit can fire from at least three triggers (confirm-dialog double-click, browser auto-resubmit on focus regain, page remount race). Rather than guess which trigger the SME hit, alpha-24 closes the structural opening at three independent layers, all shipped together:
+
+1. **L1 — phase-machine guard** (`apps/web/src/app/setup/first-documents/page.tsx`). New `submitting` Phase variant flipped synchronously BEFORE `triggerImport`'s `await setupApi.importFolder(...)`. Re-entrant calls to `triggerImport` hit the existing `if (phase.kind !== "scanned") return` guard and bail. Failed POSTs revert to `scanned` (not `failed`) so deliberate retries get a fresh idempotency key without re-picking the folder; `pickerError` is hoisted out of the `idle/scan_*` branches so the user sees the error during `scanned` too.
+
+2. **L2 — disabled `ConfirmDialog` confirm button**. The existing `ConfirmDialog.busy` prop is now plumbed from `first-documents/page.tsx` (`busy={phase.kind === "submitting"}`); the disabled button additionally surfaces `title="Working — please wait"` for hover-discoverability. Two complementary signals (visible "Working…" label + native tooltip) stop the second click that L1 alone can't catch in React's batched-event window.
+
+3. **L3 — server-side `Idempotency-Key` dedupe** (`src/meridian/wizard/api.py`). New in-process `_idempotency` registry alongside the existing `_jobs` board. Frontend generates `crypto.randomUUID()` per click; backend validates the UUIDv4 shape (regex anchored on the `4` version + `[89ab]` variant nibble — malformed values 400 with `error: "invalid_idempotency_key"`); the atomic `_idempotency_claim()` helper does a check-and-set under `_idempotency_lock` BEFORE any side-effects (path validation, project creation, folder walk, thread spawn). Same-token replays return the original `job_id` with `wizard.import_folder.idempotent_replay` structured-log; race-losers return the winner's `job_id` with `wizard.import_folder.idempotent_race_loser`. TTL: 15 minutes with lazy GC (no background thread). Backwards-compat: header-less POSTs keep current behaviour.
+
+The L3 atomic claim was a real catch — building the release-gauntlet step exposed a TOCTOU race in the original two-stage `lookup-then-record` design where two parallel POSTs both passed the read-only lookup, both ran `create_project`, hit a SQLite write lock, and produced two distinct `job_id`s. The atomic claim closes that window cleanly.
+
+### Tests + gauntlet
+
+10 new e2e tests across three files:
+
+* `tests/e2e/test_alpha24_import_idempotency.py` (8 tests) — replay returns same `job_id`, first-post records, distinct tokens, no-header backwards-compat, malformed 400, TTL expiry, reaped-job replay (documents the limit), in-process concurrent-race dedupe via the atomic claim.
+* `tests/e2e/test_wizard_api.py` (1 new test) — `wizard.import_folder.idempotent_replay` event fires once per replay with the recorded `job_id` + `idempotency_token` + non-negative `age_seconds`.
+* `tests/e2e/test_alpha24_log_volume.py` (1 test) — symptom-level regression: N files imported under simulated double-submit pressure (two concurrent POSTs with same `Idempotency-Key`) emit exactly N `import_job.file_done` (or `file_failed`) events, not 2N. The original alpha-22 SME-round shape, locked.
+
+Full e2e: 179 passing / 1 skipped. Release gauntlet 16 steps green including the new 7i (`step_7i_idempotency_dedupes_parallel_posts`) which spawns two threads against `/setup/import-folder` on a wheel-installed backend with the same idempotency token and asserts identical `job_id`. Catches future wiring drift on the dedupe path at the wheel level — same posture as step 2b's static check on installer URL constants for the alpha-5 IPv6 regression class.
+
+### What's NOT fixed yet
+
+Items #2 (log-level on silent-failure paths) and #3 (dashboard "0 extracted, 329 pending" → auto-trigger bootstrap+extract from the wizard, the keystone) from the SME's 2026-05-02 round remain open. The 09/05 SME round added a stack of further UX/wiring findings — full alpha-24 punch list (~17 items) is sequenced for subsequent revisions starting with the keystone (#3, the heaviest single item; unblocks ~6 downstream dashboard items).
+
+### Edge cases worth knowing about
+
+- **Process restart between claim and registry write:** the in-process `_idempotency` registry is empty after a backend bounce. A retry whose token survived a backend bounce is treated as a fresh request and creates a new job. Same posture as alpha-22 noted for `_jobs`. Persisting tokens to disk would couple this fix to the broader storage cleanup the keystone touches; out of scope here.
+- **Two parallel browser tabs:** each tab generates its own UUID. Server creates two jobs. Per project memory, "academic, single-user single-tab" — not addressed.
+- **Reaped-job replay:** if the recorded `job_id` has been removed from `_jobs` (manual reaping or a future cleanup pass), the replay returns the recorded `job_id` and the client's first poll resolves to 404 → existing "Lost contact with the import job" failed-phase UX. Documented limit, not a regression. Locked by `test_replay_after_job_reaped_returns_token_record_with_dead_job_id`.
+
+### Backward-compatibility note
+
+Header-less `POST /api/setup/import-folder` keeps the current behaviour (creates a fresh job per request). The `Idempotency-Key` header is additive — older clients and scripts pinned to alpha-23 will not break.
+
+### Carry-overs to alpha-25
+
+- The full alpha-24 punch list (~17 items) — keystone (#3) sequenced first.
+- The same in-process `_idempotency` registry posture (no persistence across backend bounces).
+- Tauri `.msi` (round 18) still requires Rust + MSVC + WiX.
+- Crash endpoint URL still awaits Cloudflare Worker deployment.
+- License public key still awaits keypair generation.
+- T-Bionic TLD still TBD.
+
 ## What's new in v0.2.0-alpha.23
 
 One fix: closes punch list item #1 from the SME's 2026-05-02 alpha-22 testing round — the post-import banner that read "127 files failed for an unclassified reason" when the SME imported a 347-file project folder.
