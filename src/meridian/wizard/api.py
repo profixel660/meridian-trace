@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -205,6 +206,70 @@ class _ImportJob:
 
 _jobs: dict[str, _ImportJob] = {}
 _jobs_lock = Lock()
+
+
+# --------------------------------------------------------------------------
+# Idempotency registry — alpha-24 item #4.
+#
+# Maps Idempotency-Key (UUIDv4 from the wizard) → (job_id, recorded_at_monotonic).
+# Lifetime is process-local: a backend bounce forfeits the dedup window.
+# Lookups also opportunistically delete entries older than the TTL — no
+# background thread, no persistent storage.
+# --------------------------------------------------------------------------
+
+_IDEMPOTENCY_TTL_SECONDS: float = 15 * 60.0
+_IDEMPOTENCY_KEY_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
+_idempotency: dict[str, tuple[str, float]] = {}
+_idempotency_lock = Lock()
+
+
+def _idempotency_record(key: str, job_id: str) -> None:
+    with _idempotency_lock:
+        _idempotency[key] = (job_id, time.monotonic())
+
+
+def _idempotency_lookup(key: str) -> tuple[str, float] | None:
+    """Return (job_id, age_seconds) if the key is on file and unexpired.
+
+    Side-effect: opportunistically purges any expired entries it sees.
+    """
+    now = time.monotonic()
+    with _idempotency_lock:
+        # Lazy GC of every expired entry — cheap (registry is bounded by
+        # request rate × TTL, ~hundreds at most for a single-user wizard).
+        expired = [
+            k for k, (_jid, recorded_at) in _idempotency.items()
+            if now - recorded_at > _IDEMPOTENCY_TTL_SECONDS
+        ]
+        for k in expired:
+            del _idempotency[k]
+        record = _idempotency.get(key)
+        if record is None:
+            return None
+        job_id, recorded_at = record
+        return job_id, now - recorded_at
+
+
+def _validate_idempotency_key(value: str | None) -> str | None:
+    """Return a normalised UUIDv4, or None if no header. Raises on malformed."""
+    if value is None:
+        return None
+    if not _IDEMPOTENCY_KEY_PATTERN.match(value):
+        _log.info("wizard.import_folder.idempotency_token_rejected", reason="invalid_format")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "invalid_idempotency_key",
+                "message": (
+                    "Idempotency-Key header must be a UUIDv4 "
+                    "(lower-case, e.g. '11111111-1111-4111-8111-111111111111')."
+                ),
+            },
+        )
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -1203,10 +1268,17 @@ def setup_import_folder_scan(req: FolderScanRequest) -> FolderScanResponse:
     "/import-folder",
     response_model=ImportJobResponse,
     responses={
-        400: {"description": "folder_path is missing, not a directory, or unreadable."},
+        400: {
+            "description": (
+                "folder_path is missing, not a directory, or unreadable; "
+                "OR Idempotency-Key header is malformed (alpha-24)."
+            ),
+        },
     },
 )
-def setup_import_folder(req: FolderImportRequest) -> ImportJobResponse:
+def setup_import_folder(
+    req: FolderImportRequest, request: Request
+) -> ImportJobResponse:
     """Walk ``folder_path`` and queue every supported file for ingestion.
 
     Auto-creates the project if it does not yet exist (the alpha-2 swapped
@@ -1217,6 +1289,9 @@ def setup_import_folder(req: FolderImportRequest) -> ImportJobResponse:
     :func:`meridian.ingest.ingest_file`; calling this twice on the same
     folder produces a job whose ``deduped`` count equals the file count.
     """
+    idempotency_key = _validate_idempotency_key(
+        request.headers.get("Idempotency-Key")
+    )
     folder = _validate_folder_path(req.folder_path)
     slug = _slugify(req.project_name)
     db_path = project_db_path(slug)
