@@ -27,6 +27,8 @@ import pytest
 from docx import Document
 from fastapi.testclient import TestClient
 
+import time
+
 from meridian import llm as _llm_pkg  # noqa: F401  (ensure package import)
 from meridian.config import settings
 from meridian.db.connection import connect, transaction
@@ -170,6 +172,12 @@ def fastapi_client(tmp_projects_dir: Path) -> Iterator[TestClient]:
 
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture
+def api_client(fastapi_client: TestClient) -> TestClient:
+    """Canonical alias used by task-4/5 specs; prefer this name in new tests."""
+    return fastapi_client
 
 
 # --------------------------------------------------------------------------
@@ -394,3 +402,49 @@ def mock_llm_client(monkeypatch: pytest.MonkeyPatch) -> StubLlm:
             monkeypatch.setattr(f"{mod_path}.call_llm", _fake_call_llm)
 
     return stub
+
+
+# --------------------------------------------------------------------------
+# API-level project fixture (alpha-25)
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def project_with_two_sources_via_api(fastapi_client, tmp_path) -> str:
+    """Create a project + import two tiny DOCXs via the wizard's import-folder.
+
+    Uses real DOCX files (not bare PDF bytes) because the ingest pipeline
+    requires parseable file content. Returns the project slug so callers can
+    drive the pipeline endpoint straight away.
+    """
+    folder = tmp_path / "alpha25_fixtures"
+    folder.mkdir()
+    _make_synthetic_docx(folder / "spec_a.docx", paragraphs=[
+        "Contractor shall supply one (1) air handling unit.",
+        "All ductwork sealed to SMACNA Class A.",
+    ])
+    _make_synthetic_docx(folder / "spec_b.docx", paragraphs=[
+        "Electrical contractor shall install switchboard as shown.",
+        "All cabling to AS/NZS 3000.",
+    ])
+
+    res = fastapi_client.post(
+        "/api/setup/import-folder",
+        json={"folder_path": str(folder), "project_name": "alpha25-fixture"},
+    )
+    assert res.status_code == 200, f"import-folder POST failed: {res.text}"
+    job_id = res.json()["job_id"]
+
+    deadline = time.monotonic() + 15.0
+    last_status: dict = {}
+    while time.monotonic() < deadline:
+        s = fastapi_client.get(f"/api/setup/import-folder/{job_id}").json()
+        last_status = s
+        if s["status"] in {"succeeded", "failed"}:
+            break
+        time.sleep(0.05)
+
+    assert last_status.get("status") == "succeeded", (
+        f"import-folder job did not succeed within timeout: {last_status}"
+    )
+    return "alpha25-fixture"
