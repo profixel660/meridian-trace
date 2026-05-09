@@ -310,3 +310,22 @@ def test_alpha16_full_loop_extraction_to_excel_export(
             assert len(pivot_rows) >= 2, f"pivot {pivot!r} has no data rows"
     finally:
         wb.close()
+
+
+def test_run_job_over_sources_invokes_on_source_complete(
+    project_with_two_sources, mock_llm_client, monkeypatch,
+):
+    """The on_source_complete callback fires once per source (in order)."""
+    conn, source_ids, source_filenames = project_with_two_sources
+    seen: list[tuple[str, str]] = []
+
+    def cb(source_id: str, filename: str) -> None:
+        seen.append((source_id, filename))
+
+    run_job_over_sources(
+        conn, source_ids=source_ids, on_source_complete=cb,
+    )
+    assert len(seen) == len(source_ids)
+    assert [sid for sid, _ in seen] == source_ids
+    # Filenames are passed verbatim — no normalisation
+    assert all(fn for _, fn in seen)

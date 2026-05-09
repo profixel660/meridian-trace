@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -404,12 +405,20 @@ def run_job_over_sources(
     provider: str | None = None,
     model: str | None = None,
     force: bool = False,
+    on_source_complete: Callable[[str, str], None] | None = None,
 ) -> JobRunResult:
     """Convenience: create a job, iterate sources, finish.
 
     ``force=False`` (default) honours per-source idempotency
     (CONTEXT.md §13): each source consults
     :func:`meridian.extract.idempotency.should_skip_extraction`.
+
+    ``on_source_complete``: optional callback fired once per source after its
+    extraction_job_source row is committed, receiving (source_id, filename).
+    Used by the alpha-25 pipeline worker to bump per-source progress on
+    the in-memory job record. Failures inside the callback are swallowed
+    with a warning — the orchestrator does not let observer code break
+    the worker.
 
     Concurrency: holds the project-level lock for the entire run (see
     ``meridian.projects.acquire_project_lock`` and
@@ -428,11 +437,25 @@ def run_job_over_sources(
         final_status = "completed"
         try:
             for source_id in source_ids:
-                result.sources.append(
-                    run_extraction_for_source(
-                        conn, job_id=job_id, source_id=source_id, force=force
-                    )
+                source_result = run_extraction_for_source(
+                    conn, job_id=job_id, source_id=source_id, force=force
                 )
+                result.sources.append(source_result)
+                # Fire the callback after the per-source row is committed
+                if on_source_complete is not None:
+                    try:
+                        filename = conn.execute(
+                            "SELECT filename FROM source_document WHERE id = ?",
+                            (source_id,),
+                        ).fetchone()
+                        fn_str = filename["filename"] if filename else ""
+                        on_source_complete(source_id, fn_str)
+                    except Exception as exc:  # noqa: BLE001 — swallow and warn
+                        _log.warning(
+                            "orchestrator.on_source_complete_failed",
+                            source_id=source_id,
+                            error=f"{type(exc).__name__}: {exc}",
+                        )
             if any(s.error for s in result.sources):
                 final_status = "completed"  # job ran; per-source errors recorded on EJS
         finally:

@@ -122,6 +122,38 @@ def fresh_project_with_sample_doc(
     return name, db_path, conn, result.source_id
 
 
+@pytest.fixture
+def project_with_two_sources(
+    fresh_project: tuple[str, Path, sqlite3.Connection],
+    tmp_path: Path,
+) -> tuple[sqlite3.Connection, list[str], list[str]]:
+    """Create a project, ingest two synthetic documents, return (conn, source_ids, filenames).
+
+    Used by tests that iterate over multiple sources (e.g., on_source_complete callback tests).
+    """
+    from meridian.ingest import ingest_file
+
+    name, db_path, conn = fresh_project
+
+    # Create and ingest two distinct synthetic documents
+    doc1_path = _make_synthetic_docx(tmp_path / "doc1.docx", paragraphs=[
+        "First document paragraph one.",
+        "First document paragraph two.",
+    ])
+    doc2_path = _make_synthetic_docx(tmp_path / "doc2.docx", paragraphs=[
+        "Second document paragraph one.",
+        "Second document paragraph two.",
+    ])
+
+    result1 = ingest_file(conn, file_path=doc1_path, project_root=tmp_path)
+    result2 = ingest_file(conn, file_path=doc2_path, project_root=tmp_path)
+
+    source_ids = [result1.source_id, result2.source_id]
+    filenames = ["doc1.docx", "doc2.docx"]
+
+    return conn, source_ids, filenames
+
+
 # --------------------------------------------------------------------------
 # FastAPI test client
 # --------------------------------------------------------------------------
