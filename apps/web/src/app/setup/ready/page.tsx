@@ -12,6 +12,7 @@ import {
   DEFAULT_SETUP_STATE,
   type SetupState,
   setupApi,
+  pipelineApi,
 } from "@/lib/setupClient";
 
 /**
@@ -138,9 +139,34 @@ function ReadyPageInner() {
     let cancelled = false;
     setCompleteInFlight(true);
     void setupApi.complete().then(
-      () => {
+      async () => {
         if (cancelled) return;
         setCompleteError(null);
+
+        // Alpha-25: kick off bootstrap+extract immediately after the wizard
+        // reports complete. The user opens the dashboard a second later; the
+        // PipelineProgressTile picks up the stashed job_id and polls.
+        if (state.first_project_slug) {
+          const idempotencyKey = crypto.randomUUID();
+          try {
+            const res = await pipelineApi.start(state.first_project_slug, {}, { idempotencyKey });
+            try {
+              window.sessionStorage.setItem(
+                "meridian.setup.pipeline_job_id",
+                res.job_id,
+              );
+            } catch {
+              // sessionStorage blocked — dashboard tile falls back to the
+              // /pipeline (latest) GET path. No user action needed.
+            }
+          } catch (err) {
+            // Silent — dashboard tile's fallback path covers this. We do NOT
+            // block the wizard's open-project navigation on a kick-off failure.
+            // eslint-disable-next-line no-console
+            console.warn("[setup/ready] pipeline kick-off failed", err);
+          }
+        }
+
         setCompleteInFlight(false);
       },
       (err: unknown) => {
@@ -164,7 +190,7 @@ function ReadyPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [stateLoaded, retryNonce]);
+  }, [stateLoaded, retryNonce, state.first_project_slug]);
 
   const skipped = state.documents_skipped || skippedHint;
   const docCount = state.documents_imported;
