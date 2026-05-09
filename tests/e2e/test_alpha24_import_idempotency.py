@@ -226,3 +226,24 @@ def test_token_ttl_expires_after_15_minutes(
         # not the stale one.
         recorded_job_id, _ = wizard_api._idempotency[TOKEN_A]
         assert recorded_job_id == res2.json()["job_id"]
+
+
+def test_malformed_token_returns_400_invalid_idempotency_key(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """Bad header value → 400 with structured error code."""
+    folder = _seed_folder(tmp_path)
+    body = {"folder_path": str(folder), "project_name": "alpha24-bad-token"}
+
+    for bad in ("", "not-a-uuid", "11111111111141118111111111111111", "x"):
+        res = fastapi_client.post(
+            "/setup/import-folder",
+            json=body,
+            headers={"Idempotency-Key": bad},
+        )
+        assert res.status_code == 400, (
+            f"Idempotency-Key={bad!r} should produce 400; got {res.status_code}"
+        )
+        detail = res.json()["detail"]
+        assert detail["error"] == "invalid_idempotency_key", detail
