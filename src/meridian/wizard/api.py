@@ -254,7 +254,7 @@ def _idempotency_lookup(key: str) -> tuple[str, float] | None:
 
 
 def _validate_idempotency_key(value: str | None) -> str | None:
-    """Return a normalised UUIDv4, or None if no header. Raises on malformed."""
+    """Return the UUIDv4 unchanged if valid, or None if absent. Raises on malformed."""
     if value is None:
         return None
     if not _IDEMPOTENCY_KEY_PATTERN.match(value):
@@ -1292,6 +1292,22 @@ def setup_import_folder(
     idempotency_key = _validate_idempotency_key(
         request.headers.get("Idempotency-Key")
     )
+
+    # Replay path — same token within TTL returns the original job_id.
+    # Skip every side-effect (path validation, project creation, scan,
+    # thread spawn): the original POST already did all of them.
+    if idempotency_key is not None:
+        existing = _idempotency_lookup(idempotency_key)
+        if existing is not None:
+            existing_job_id, age_seconds = existing
+            _log.info(
+                "wizard.import_folder.idempotent_replay",
+                idempotency_token=idempotency_key,
+                job_id=existing_job_id,
+                age_seconds=round(age_seconds, 3),
+            )
+            return ImportJobResponse(job_id=existing_job_id)
+
     folder = _validate_folder_path(req.folder_path)
     slug = _slugify(req.project_name)
     db_path = project_db_path(slug)
@@ -1326,6 +1342,10 @@ def setup_import_folder(
         name=f"wizard-folder-import-{job.id[:8]}",
     )
     thread.start()
+
+    if idempotency_key is not None:
+        _idempotency_record(idempotency_key, job.id)
+
     return ImportJobResponse(job_id=job.id)
 
 
