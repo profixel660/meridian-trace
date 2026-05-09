@@ -1051,6 +1051,239 @@ def _step_idempotency_dedupes_parallel_posts(
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Step 7j — alpha-25 pipeline e2e + workbook conflict_summary smoke
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _step_pipeline_e2e_and_workbook_smoke(
+    scratch: Path, venv_dir: Path, repo: Path
+) -> bool:
+    """Step 7j (alpha-25): pipeline e2e + workbook conflict_summary smoke.
+
+    Kicks /api/projects/<slug>/pipeline (no idempotency key — first run),
+    polls until phase=done (cap 4 minutes), asserts deliverables were
+    produced, downloads the Excel export and verifies the
+    conflict_summary column is present in the Master sheet.
+
+    Catches wiring drift between the alpha-25 pipeline worker and the
+    workbook builder introduced in that release.
+    """
+    import io
+    import json as _json
+    import time as _t
+
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        _fail("step 7j: workbook download", f"openpyxl not available: {exc}")
+        return False
+
+    _info("step 7j -- alpha-25 pipeline e2e + workbook conflict_summary smoke")
+
+    if os.name == "nt":
+        py = venv_dir / "Scripts" / "python.exe"
+    else:
+        py = venv_dir / "bin" / "python"
+
+    home_7j = scratch / "meridian_home_7j"
+    home_7j.mkdir(exist_ok=True)
+    spawn_cwd = scratch / "spawn_cwd_7j"
+    spawn_cwd.mkdir(exist_ok=True)
+
+    port = 8003
+    base_url = f"http://127.0.0.1:{port}"
+    log_path = scratch / "backend_7j.log"
+
+    env = {
+        **os.environ,
+        "MERIDIAN_HOME": str(home_7j),
+        "MERIDIAN_PORT": str(port),
+        "MERIDIAN_HOST": "127.0.0.1",
+    }
+    env.pop("PYTHONPATH", None)
+
+    _info(f"step 7j: spawning backend on :{port}")
+    with log_path.open("wb") as logf:
+        proc = subprocess.Popen(
+            [str(py), "-m", "meridian.api.main"],
+            cwd=str(spawn_cwd),
+            env=env,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+        )
+    try:
+        deadline = _t.monotonic() + 60.0
+        healthy = False
+        while _t.monotonic() < deadline:
+            status, _body = _probe(f"{base_url}/health", timeout=0.5)
+            if status == 200:
+                healthy = True
+                break
+            _t.sleep(0.25)
+        if not healthy:
+            try:
+                tail = log_path.read_text(errors="replace").splitlines()[-30:]
+            except OSError:
+                tail = []
+            _fail(
+                "step 7j: pipeline e2e",
+                f"backend on :{port} never reported /health 200 within 60s. "
+                "backend.log tail:\n" + "\n".join(tail),
+            )
+            return False
+
+        # Discover a project slug to use. Use the first slug returned by
+        # /api/projects, or create one if the list is empty.
+        slug: str | None = None
+        list_status, list_body = _probe(f"{base_url}/api/projects", timeout=5.0)
+        if list_status == 200:
+            try:
+                projects = _json.loads(list_body.decode("utf-8"))
+                if isinstance(projects, list) and projects:
+                    slug = projects[0].get("slug") or projects[0].get("id")
+            except (_json.JSONDecodeError, (AttributeError, KeyError)):
+                pass
+
+        if slug is None:
+            # Create a minimal project so the pipeline has something to run.
+            create_payload = _json.dumps({"name": "gauntlet-7j"}).encode("utf-8")
+            try:
+                req = urllib.request.Request(
+                    f"{base_url}/api/projects",
+                    data=create_payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "release-gauntlet",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — localhost
+                    created = _json.loads(resp.read().decode("utf-8"))
+                    slug = created.get("slug") or created.get("id")
+            except (urllib.error.URLError, TimeoutError, _json.JSONDecodeError) as exc:
+                _fail("step 7j: pipeline e2e", f"project creation failed: {exc}")
+                return False
+
+        if not slug:
+            _fail("step 7j: pipeline e2e", "could not obtain a project slug")
+            return False
+
+        # 1. Kick off the pipeline (no idempotency key -- first run on this slug).
+        pipeline_payload = _json.dumps({}).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                f"{base_url}/api/projects/{slug}/pipeline",
+                data=pipeline_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "release-gauntlet",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — localhost
+                post_body = _json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            _fail(
+                "step 7j: pipeline POST",
+                f"status={exc.code} body={exc.read()[:200]!r}",
+            )
+            return False
+        except (urllib.error.URLError, TimeoutError, _json.JSONDecodeError) as exc:
+            _fail("step 7j: pipeline POST", f"failed: {exc}")
+            return False
+
+        job_id = post_body.get("job_id")
+        if not isinstance(job_id, str):
+            _fail(
+                "step 7j: pipeline POST",
+                f"response missing job_id; got {post_body!r}",
+            )
+            return False
+
+        # 2. Poll until phase=done OR 4 minutes elapse.
+        deadline = _t.monotonic() + 240.0
+        last: dict = {}
+        while _t.monotonic() < deadline:
+            poll_status, poll_payload = _probe(
+                f"{base_url}/api/projects/{slug}/pipeline/{job_id}", timeout=5.0
+            )
+            if poll_status == 200:
+                try:
+                    last = _json.loads(poll_payload.decode("utf-8"))
+                except _json.JSONDecodeError:
+                    last = {}
+                if last.get("phase") in {"done", "failed"}:
+                    break
+            _t.sleep(2.0)
+
+        if not last or last.get("phase") != "done":
+            _fail(
+                "step 7j: pipeline completion",
+                f"final={last!r}",
+            )
+            return False
+        _ok(
+            "step 7j: pipeline completion",
+            f"phase={last['phase']} bootstrap={last.get('bootstrap_status')}",
+        )
+
+        # 3. Coverage sanity.
+        cov_status, cov_payload = _probe(
+            f"{base_url}/api/projects/{slug}/coverage", timeout=10.0
+        )
+        if cov_status != 200:
+            _fail("step 7j: deliverables produced", f"coverage GET returned {cov_status}")
+            return False
+        try:
+            cov = _json.loads(cov_payload.decode("utf-8"))
+        except _json.JSONDecodeError as exc:
+            _fail("step 7j: deliverables produced", f"non-JSON coverage body: {exc}")
+            return False
+        total = cov.get("deliverable_status", {}).get("total", 0)
+        if total <= 0:
+            _fail("step 7j: deliverables produced", f"total={total}")
+            return False
+        _ok("step 7j: deliverables produced", f"total={total}")
+
+        # 4. Workbook column smoke.
+        try:
+            xl_status, xl_bytes = _probe(
+                f"{base_url}/api/projects/{slug}/export.xlsx", timeout=30.0
+            )
+        except Exception as exc:
+            _fail("step 7j: workbook download", f"failed: {exc}")
+            return False
+        if xl_status != 200:
+            _fail("step 7j: workbook download", f"export.xlsx returned {xl_status}")
+            return False
+        try:
+            wb = load_workbook(io.BytesIO(xl_bytes))
+            if "Master" not in wb.sheetnames:
+                _fail(
+                    "step 7j: workbook download",
+                    f"no 'Master' sheet; sheets={wb.sheetnames}",
+                )
+                return False
+            headers = [c.value for c in wb["Master"][1]]
+        except Exception as exc:
+            _fail("step 7j: workbook download", f"failed to parse xlsx: {exc}")
+            return False
+        if "conflict_summary" not in headers:
+            _fail("step 7j: conflict_summary column", f"headers={headers}")
+            return False
+        _ok("step 7j: conflict_summary column", "present")
+        return True
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5.0)
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Step 8 — CLI --help smoke
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -1305,6 +1538,9 @@ def main() -> int:
         # which alpha-15 retired with TOTP enforcement.
 
         if not _step_idempotency_dedupes_parallel_posts(scratch, venv_dir, repo):
+            return 1
+
+        if not _step_pipeline_e2e_and_workbook_smoke(scratch, venv_dir, repo):
             return 1
 
         if not _step_cli_help_smoke(venv_dir):
