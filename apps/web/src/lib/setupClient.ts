@@ -659,3 +659,65 @@ export function isValidSlug(slug: string): boolean {
   if (slug.length > 64) return false;
   return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug);
 }
+
+/* ---------- pipeline endpoints (alpha-25) ---------- */
+
+export interface PipelineRequest {
+  sample_size?: number;
+  provider?: string;
+  model?: string;
+}
+
+export interface PipelineResponse {
+  job_id: string;
+}
+
+export type PipelinePhase = "pending" | "bootstrap" | "extract" | "done" | "failed";
+
+export type PipelineBootstrapStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export interface PipelineStatus {
+  job_id: string;
+  phase: PipelinePhase;
+  bootstrap_status: PipelineBootstrapStatus;
+  extract_total: number;
+  extract_completed: number;
+  current_source_filename: string | null;
+  started_at: string;
+  finished_at: string | null;
+  error_message: string | null;
+  holder_pid: number | null;
+}
+
+export const pipelineApi = {
+  async start(
+    slug: string,
+    body: PipelineRequest,
+    opts: { idempotencyKey?: string } = {},
+  ): Promise<PipelineResponse> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
+    return apiFetch<PipelineResponse>(
+      `/projects/${encodeURIComponent(slug)}/pipeline`,
+      { method: "POST", headers, body: JSON.stringify(body) },
+    );
+  },
+
+  async status(slug: string, jobId: string): Promise<PipelineStatus> {
+    return apiFetch<PipelineStatus>(
+      `/projects/${encodeURIComponent(slug)}/pipeline/${encodeURIComponent(jobId)}`,
+    );
+  },
+
+  async latest(slug: string): Promise<PipelineStatus> {
+    return apiFetch<PipelineStatus>(
+      `/projects/${encodeURIComponent(slug)}/pipeline`,
+    );
+  },
+};
