@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AuthGate } from "@/components/AuthGate";
+import { PipelineProgressTile } from "@/components/dashboard/PipelineProgressTile";
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
 import { StatusBadge } from "@/components/review/StatusBadge";
 import { Tooltip, TooltipMore } from "@/components/review/Tooltip";
 import { type ProjectCoverage } from "@/lib/api";
 import { apiFetch } from "@/lib/fetcher";
+import { type PipelinePhase } from "@/lib/setupClient";
 import { useRuntimeProjectSlug } from "@/lib/useRuntimeProjectSlug";
 
 export default function ProjectDashboardPage() {
@@ -17,6 +19,25 @@ export default function ProjectDashboardPage() {
   const [coverage, setCoverage] = useState<ProjectCoverage | null>(null);
   const [coverageError, setCoverageError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase | null>(null);
+
+  const refetchCoverage = useCallback(() => {
+    if (!name) return;
+    setLoading(true);
+    setCoverageError(null);
+    (async () => {
+      try {
+        const result = await apiFetch<ProjectCoverage>(
+          `/projects/${encodeURIComponent(name)}/coverage`,
+        );
+        setCoverage(result);
+      } catch (err) {
+        setCoverageError(err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [name]);
 
   useEffect(() => {
     if (!name) return;
@@ -74,7 +95,13 @@ export default function ProjectDashboardPage() {
       {coverageError ? (
         <ApiErrorPanel error={coverageError} />
       ) : coverage ? (
-        <DashboardBody projectName={name} coverage={coverage} />
+        <DashboardBody
+          projectName={name}
+          coverage={coverage}
+          pipelinePhase={pipelinePhase}
+          onPipelinePhaseChange={setPipelinePhase}
+          onPipelineDone={refetchCoverage}
+        />
       ) : loading ? (
         <div className="text-text-muted text-sm">Loading…</div>
       ) : null}
@@ -85,14 +112,32 @@ export default function ProjectDashboardPage() {
 function DashboardBody({
   projectName,
   coverage,
+  pipelinePhase,
+  onPipelinePhaseChange,
+  onPipelineDone,
 }: {
   projectName: string;
   coverage: ProjectCoverage;
+  pipelinePhase: PipelinePhase | null;
+  onPipelinePhaseChange: (phase: PipelinePhase) => void;
+  onPipelineDone: () => void;
 }) {
   const base = `/projects/${encodeURIComponent(projectName)}`;
+  const pipelineActive =
+    pipelinePhase !== null &&
+    pipelinePhase !== "done" &&
+    pipelinePhase !== "failed";
+
   return (
     <div className="space-y-8">
-      <BaselineBanner coverage={coverage} />
+      <PipelineProgressTile
+        projectSlug={projectName}
+        onPhaseChange={onPipelinePhaseChange}
+        onDone={onPipelineDone}
+      />
+      {/* Hide the BaselineBanner while the pipeline is running — the tile is
+          the only signal the user needs in that window. */}
+      {pipelineActive ? null : <BaselineBanner coverage={coverage} />}
 
       {!coverage.is_data_present ? (
         <section className="rounded-lg border border-accent/40 bg-accent/5 p-6">
@@ -120,7 +165,11 @@ function DashboardBody({
         </section>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section
+        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 transition-opacity ${
+          pipelineActive ? "opacity-50" : ""
+        }`}
+      >
         <KpiCard
           label="Sources"
           value={coverage.sources_imported}
