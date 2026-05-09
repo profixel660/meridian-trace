@@ -175,3 +175,54 @@ def test_no_token_header_creates_new_job_each_time(
         "Without the Idempotency-Key header, the endpoint must keep its "
         "current behaviour of creating a fresh job per POST."
     )
+
+
+def test_token_ttl_expires_after_15_minutes(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A record older than _IDEMPOTENCY_TTL_SECONDS is treated as absent."""
+    folder = _seed_folder(tmp_path)
+    body = {"folder_path": str(folder), "project_name": "alpha24-ttl"}
+
+    # Pin time so we can fast-forward predictably. Patch the symbol the
+    # wizard module reaches for, not time.monotonic globally — there are
+    # other monotonic readers in the request path (uvicorn, FastAPI, etc.)
+    # that would behave oddly under a global patch.
+    from meridian.wizard import api as wizard_api
+
+    fake_now = {"t": 100.0}
+
+    def _fake_monotonic() -> float:
+        return fake_now["t"]
+
+    monkeypatch.setattr(wizard_api.time, "monotonic", _fake_monotonic)
+
+    res1 = fastapi_client.post(
+        "/setup/import-folder",
+        json=body,
+        headers={"Idempotency-Key": TOKEN_A},
+    )
+    assert res1.status_code == 200, res1.text
+    job_id_first = res1.json()["job_id"]
+
+    # Fast-forward past TTL.
+    fake_now["t"] = 100.0 + wizard_api._IDEMPOTENCY_TTL_SECONDS + 1.0
+
+    res2 = fastapi_client.post(
+        "/setup/import-folder",
+        json=body,
+        headers={"Idempotency-Key": TOKEN_A},
+    )
+    assert res2.status_code == 200, res2.text
+    assert res2.json()["job_id"] != job_id_first, (
+        "After TTL elapsed, replay must create a fresh job."
+    )
+
+    # Lazy GC: the expired entry should have been pruned during the lookup.
+    with wizard_api._idempotency_lock:
+        # The new POST recorded a fresh entry — assert it's the new job_id,
+        # not the stale one.
+        recorded_job_id, _ = wizard_api._idempotency[TOKEN_A]
+        assert recorded_job_id == res2.json()["job_id"]
