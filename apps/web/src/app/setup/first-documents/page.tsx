@@ -70,6 +70,13 @@ type Phase =
   | { kind: "scanned"; manifest: FolderScanResponse }
   | { kind: "scan_invalid"; folderPath: string; message: string }
   | { kind: "scan_unable"; folderPath: string; message: string }
+  // Alpha-24 item #4: structural guard against double-submit. While
+  // triggerImport's POST is in flight, phase is "submitting" — the L1
+  // guard in triggerImport refuses re-entry, and the ConfirmDialog
+  // disables its confirm button via the busy prop (L2). The manifest
+  // is preserved so a failed POST can transition cleanly back to
+  // "scanned".
+  | { kind: "submitting"; manifest: FolderScanResponse }
   | { kind: "importing"; jobId: string; status: FolderImportJobStatus | null }
   | { kind: "imported"; status: FolderImportJobStatus }
   | { kind: "partial"; status: FolderImportJobStatus }
@@ -379,14 +386,29 @@ export default function SetupFirstDocumentsPage() {
 
   const triggerImport = useCallback(async () => {
     if (phase.kind !== "scanned") return;
-    setConfirmImport(false);
-    const folderPath = phase.manifest.folder_path;
+    const manifest = phase.manifest;
+    const folderPath = manifest.folder_path;
     // Project name comes from the folder name; the next page lets the
     // user edit it before /setup/projects is called. The folder-import
     // backend (Stream A) creates the project itself using this name.
-    const projectName = phase.manifest.folder_name;
+    const projectName = manifest.folder_name;
+
+    // Alpha-24 item #4: flip phase BEFORE awaiting the POST so any
+    // re-entrant call (dialog double-click, focus regain, browser
+    // auto-resubmit) hits the L1 guard above and returns. The
+    // idempotency key is generated at the moment of submission, not on
+    // dialog open — a deliberate retry after a failed submit produces
+    // a fresh UUID and the server treats it as a new request.
+    const idempotencyKey = crypto.randomUUID();
+    setPhase({ kind: "submitting", manifest });
+    setConfirmImport(false);
+
     try {
-      const res = await setupApi.importFolder(folderPath, projectName);
+      const res = await setupApi.importFolder(
+        folderPath,
+        projectName,
+        idempotencyKey,
+      );
       // Persist suggested project name + slug stub so the next page can
       // resume cleanly even if the user navigates away mid-import.
       try {
@@ -460,12 +482,19 @@ export default function SetupFirstDocumentsPage() {
         }
       }, 1000);
     } catch (err) {
-      setPhase({
-        kind: "failed",
-        status: null,
-        message:
-          err instanceof Error ? err.message : "Could not start the import.",
-      });
+      // L1 fallback: return to "scanned" so a deliberate retry gets a
+      // fresh UUID and a fresh POST. (The "failed" phase is reserved
+      // for terminal errors AFTER a job started — pre-job network /
+      // 5xx errors should let the user re-submit without re-picking
+      // the folder.)
+      setPhase({ kind: "scanned", manifest });
+      // Surface the error in a way the existing UI can render. The
+      // simplest path: alert via the picker error panel.
+      setPickerError(
+        err instanceof Error
+          ? `Could not start the import: ${err.message}`
+          : "Could not start the import — please try again.",
+      );
     }
   }, [phase]);
 
@@ -492,7 +521,9 @@ export default function SetupFirstDocumentsPage() {
     phase.kind === "partial" ||
     phase.kind === "skipped";
   const isBusy =
-    phase.kind === "scanning" || phase.kind === "importing";
+    phase.kind === "scanning" ||
+    phase.kind === "submitting" ||
+    phase.kind === "importing";
 
   return (
     <SetupShell
@@ -1016,6 +1047,7 @@ export default function SetupFirstDocumentsPage() {
 
       <ConfirmDialog
         open={confirmImport}
+        busy={phase.kind === "submitting"}
         title={FIRST_DOCS_COPY.confirmImportDialog.title}
         body={FIRST_DOCS_COPY.confirmImportDialog.body}
         confirmLabel={FIRST_DOCS_COPY.confirmImportDialog.confirm}
