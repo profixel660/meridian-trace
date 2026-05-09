@@ -1004,19 +1004,22 @@ def _step_idempotency_dedupes_parallel_posts(
                 "project_name": "gauntlet-7i",
             }).encode("utf-8")
 
-            def _post() -> str:
-                req = urllib.request.Request(
-                    f"{base_url}/setup/import-folder",
-                    data=body,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Idempotency-Key": token,
-                    },
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 -- localhost
-                    payload = _json.loads(resp.read().decode("utf-8"))
-                    return payload["job_id"]
+            def _post() -> str | None:
+                try:
+                    req = urllib.request.Request(
+                        f"{base_url}/setup/import-folder",
+                        data=body,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Idempotency-Key": token,
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 -- localhost
+                        payload = _json.loads(resp.read().decode("utf-8"))
+                        return payload["job_id"]
+                except (urllib.error.URLError, TimeoutError, _json.JSONDecodeError):
+                    return None
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
                 f1 = ex.submit(_post)
@@ -1024,6 +1027,9 @@ def _step_idempotency_dedupes_parallel_posts(
                 job_id_1 = f1.result()
                 job_id_2 = f2.result()
 
+        if job_id_1 is None or job_id_2 is None:
+            _fail("7i", "parallel POST failed (network or parse error). See backend.log.")
+            return False
         if job_id_1 != job_id_2:
             _fail(
                 "7i",

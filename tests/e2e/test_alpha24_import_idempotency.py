@@ -294,3 +294,55 @@ def test_replay_after_job_reaped_returns_token_record_with_dead_job_id(
     # frontend will route to the existing 'Lost contact' path.
     poll = fastapi_client.get(f"/setup/import-folder/{job_id_first}")
     assert poll.status_code == 404
+
+
+def test_concurrent_posts_with_same_token_dedupe_via_claim(
+    fastapi_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """In-process companion to gauntlet step 7i.
+
+    Two concurrent POSTs with the same Idempotency-Key must produce
+    exactly one job and identical job_ids. Pre-fix (before
+    `_idempotency_claim`), both requests passed the read-only lookup
+    simultaneously and both ran `create_project`, hitting a SQLite
+    lock. The atomic claim path closes the TOCTOU window.
+    """
+    import concurrent.futures
+
+    folder = _seed_folder(tmp_path)
+    body = {"folder_path": str(folder), "project_name": "alpha24-race"}
+
+    def _post() -> tuple[int, str | None]:
+        res = fastapi_client.post(
+            "/setup/import-folder",
+            json=body,
+            headers={"Idempotency-Key": TOKEN_A},
+        )
+        if res.status_code != 200:
+            return res.status_code, None
+        return res.status_code, res.json()["job_id"]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        f1 = ex.submit(_post)
+        f2 = ex.submit(_post)
+        status_1, job_id_1 = f1.result(timeout=10)
+        status_2, job_id_2 = f2.result(timeout=10)
+
+    assert status_1 == 200 and status_2 == 200, (
+        f"Both POSTs must succeed; got status_1={status_1}, status_2={status_2}. "
+        "Pre-fix the race winner could 500 with a SQLite lock."
+    )
+    assert job_id_1 == job_id_2, (
+        f"Concurrent POSTs with the same token must dedupe via _idempotency_claim. "
+        f"Got distinct job_ids: {job_id_1!r} vs {job_id_2!r}."
+    )
+
+    # Exactly one job in the registry.
+    from meridian.wizard import api as wizard_api
+
+    with wizard_api._jobs_lock:
+        assert len(wizard_api._jobs) == 1, (
+            f"Expected exactly 1 job in registry; got {len(wizard_api._jobs)}. "
+            "Race-loser must NOT have constructed a second _ImportJob."
+        )
