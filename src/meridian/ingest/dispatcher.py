@@ -254,6 +254,52 @@ def _detect_mime(path: Path) -> str:
     return "application/octet-stream"
 
 
+def _build_dedupe_result(
+    conn: sqlite3.Connection,
+    *,
+    content_hash: str,
+    file_path: Path,
+) -> IngestResult:
+    """Build :class:`IngestResult` (``deduped=True``) for the row matching ``content_hash``.
+
+    Shared by the SELECT-found-existing branch and the IntegrityError-recovery
+    branch in :func:`ingest_file` so the two dedupe paths can't drift.
+    """
+    existing = conn.execute(
+        "SELECT id FROM source_document WHERE content_hash = ?",
+        (content_hash,),
+    ).fetchone()
+    if existing is None:
+        # The row reported as a UNIQUE-constraint conflict but vanished
+        # before we could re-read it. Surface a clear error rather than
+        # silently fabricate a response.
+        raise RuntimeError(
+            f"content_hash {content_hash!r} reported as duplicate but row not found"
+        )
+    source_id = existing["id"]
+    meta = conn.execute(
+        "SELECT filename FROM source_document WHERE id = ?", (source_id,)
+    ).fetchone()
+    text_row = conn.execute(
+        "SELECT extraction_method, length(text) AS n FROM source_document_text WHERE source_id = ?",
+        (source_id,),
+    ).fetchone()
+    chunk_n = conn.execute(
+        "SELECT COUNT(*) AS n FROM source_document_chunk WHERE source_id = ?",
+        (source_id,),
+    ).fetchone()["n"]
+    return IngestResult(
+        source_id=source_id,
+        filename=meta["filename"],
+        content_hash=content_hash,
+        mime_type=_detect_mime(file_path),
+        extraction_method=text_row["extraction_method"] if text_row else "unknown",
+        text_length=text_row["n"] if text_row else 0,
+        chunk_count=chunk_n,
+        deduped=True,
+    )
+
+
 def ingest_file(
     conn: sqlite3.Connection,
     *,
@@ -272,26 +318,8 @@ def ingest_file(
     ).fetchone()
     if existing:
         # Content-hash dedup (CONTEXT.md §13). Same bytes already imported.
-        meta = conn.execute(
-            "SELECT filename FROM source_document WHERE id = ?", (existing["id"],)
-        ).fetchone()
-        text_row = conn.execute(
-            "SELECT extraction_method, length(text) AS n FROM source_document_text WHERE source_id = ?",
-            (existing["id"],),
-        ).fetchone()
-        chunk_n = conn.execute(
-            "SELECT COUNT(*) AS n FROM source_document_chunk WHERE source_id = ?",
-            (existing["id"],),
-        ).fetchone()["n"]
-        result = IngestResult(
-            source_id=existing["id"],
-            filename=meta["filename"],
-            content_hash=content_hash,
-            mime_type=_detect_mime(file_path),
-            extraction_method=text_row["extraction_method"] if text_row else "unknown",
-            text_length=text_row["n"] if text_row else 0,
-            chunk_count=chunk_n,
-            deduped=True,
+        result = _build_dedupe_result(
+            conn, content_hash=content_hash, file_path=file_path
         )
         _log.info(
             "ingest.finish",
@@ -335,52 +363,79 @@ def ingest_file(
 
     source_id = _new_id()
     now = _now()
-    with transaction(conn):
-        conn.execute(
-            """
-            INSERT INTO source_document
-              (id, filename, relative_path, content_hash, mime_type, size_bytes, imported_at, extraction_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-            """,
-            (
-                source_id,
-                file_path.name,
-                relative_path,
-                content_hash,
-                mime_type,
-                size_bytes,
-                now,
-            ),
-        )
-        conn.execute(
-            """
-            INSERT INTO source_document_text
-              (source_id, extraction_method, extracted_at, text, metadata)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                source_id,
-                extracted.extraction_method,
-                now,
-                extracted.text,
-                json.dumps(extracted.metadata),
-            ),
-        )
-        for chunk in extracted.chunks:
+    try:
+        with transaction(conn):
             conn.execute(
                 """
-                INSERT INTO source_document_chunk
-                  (id, source_id, chunk_kind, locator, text)
+                INSERT INTO source_document
+                  (id, filename, relative_path, content_hash, mime_type, size_bytes, imported_at, extraction_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+                """,
+                (
+                    source_id,
+                    file_path.name,
+                    relative_path,
+                    content_hash,
+                    mime_type,
+                    size_bytes,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO source_document_text
+                  (source_id, extraction_method, extracted_at, text, metadata)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
-                    _new_id(),
                     source_id,
-                    chunk.chunk_kind,
-                    json.dumps(chunk.locator),
-                    chunk.text,
+                    extracted.extraction_method,
+                    now,
+                    extracted.text,
+                    json.dumps(extracted.metadata),
                 ),
             )
+            for chunk in extracted.chunks:
+                conn.execute(
+                    """
+                    INSERT INTO source_document_chunk
+                      (id, source_id, chunk_kind, locator, text)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        _new_id(),
+                        source_id,
+                        chunk.chunk_kind,
+                        json.dumps(chunk.locator),
+                        chunk.text,
+                    ),
+                )
+    except sqlite3.IntegrityError as exc:
+        # Alpha-22 punch list #1: a sibling worker committed this
+        # content_hash between our dedupe SELECT above and this INSERT.
+        # The file IS in the project, just inserted by the sibling, so
+        # recover as a dedupe — the alternative is an opaque
+        # "unclassified" failure surfaced to the user (the SME's
+        # 2026-05-02 testing round saw 127 such phantom failures).
+        # Other UNIQUE-constraint paths (e.g. source_document_chunk.id
+        # collision on a uuid4 — astronomical) propagate normally so a
+        # genuine schema violation is not swallowed.
+        if "content_hash" not in str(exc):
+            raise
+        result = _build_dedupe_result(
+            conn, content_hash=content_hash, file_path=file_path
+        )
+        _log.info(
+            "ingest.finish",
+            filename=result.filename,
+            source_id=result.source_id,
+            content_hash=result.content_hash,
+            mime_type=result.mime_type,
+            deduped=True,
+            chunk_count=result.chunk_count,
+            race_recovered=True,
+        )
+        return result
 
     result = IngestResult(
         source_id=source_id,
