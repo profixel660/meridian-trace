@@ -386,6 +386,7 @@ export default function SetupFirstDocumentsPage() {
 
   const triggerImport = useCallback(async () => {
     if (phase.kind !== "scanned") return;
+    setPickerError(null);
     const manifest = phase.manifest;
     const folderPath = manifest.folder_path;
     // Project name comes from the folder name; the next page lets the

@@ -226,11 +226,6 @@ _idempotency: dict[str, tuple[str, float]] = {}
 _idempotency_lock = Lock()
 
 
-def _idempotency_record(key: str, job_id: str) -> None:
-    with _idempotency_lock:
-        _idempotency[key] = (job_id, time.monotonic())
-
-
 def _idempotency_lookup(key: str) -> tuple[str, float] | None:
     """Return (job_id, age_seconds) if the key is on file and unexpired.
 
