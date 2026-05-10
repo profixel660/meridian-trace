@@ -660,3 +660,216 @@ def project_with_conflicts_mixed_status(fastapi_client, tmp_projects_dir):
     conn.close()
 
     yield slug
+
+
+# --------------------------------------------------------------------------
+# Alpha-26 Task 7: hierarchy fixtures
+# --------------------------------------------------------------------------
+
+
+def _insert_hierarchy_conflicts(conn, conflicts):
+    """Insert source documents, deliverables, and resolved conflicts.
+
+    ``conflicts`` is a list of dicts::
+
+        {
+            "status": "resolved_accept_a" | "resolved_accept_b" | ...,
+            "class_a": "BoD",   # document_class for party A deliverable
+            "class_b": "OSE",   # document_class for party B deliverable
+        }
+
+    For each conflict two deliverables are created (one per source document),
+    then a conflict + two conflict_party rows are inserted.
+
+    ``class_a`` / ``class_b`` may be ``None`` to leave document_class NULL
+    (exercises the "Unclassified" coercion path).
+
+    Foreign-key enforcement must already be disabled on ``conn`` before calling.
+    """
+    import uuid as _uuid
+
+    # Build the minimal set of unique source documents keyed by document_class.
+    # We reuse the same source_document row for the same class.
+    sd_by_class: dict[str | None, str] = {}
+
+    def _ensure_sd(doc_class):
+        if doc_class in sd_by_class:
+            return sd_by_class[doc_class]
+        sd_id = str(_uuid.uuid4())
+        label = doc_class or "null"
+        conn.execute(
+            """
+            INSERT INTO source_document(id, filename, relative_path, mime_type,
+                                        size_bytes, imported_at, content_hash,
+                                        extraction_path, document_class)
+            VALUES (?, ?, ?, 'application/pdf', 1,
+                    '2026-05-10T00:00:00Z', ?, '/', ?)
+            """,
+            (sd_id, f"{label}.pdf", f"{label}.pdf", f"h{sd_id[:8]}", doc_class),
+        )
+        sd_by_class[doc_class] = sd_id
+        return sd_id
+
+    dummy_job = str(_uuid.uuid4())
+    dummy_llm = str(_uuid.uuid4())
+    dummy_group = str(_uuid.uuid4())
+
+    for i, c in enumerate(conflicts):
+        sd_a = _ensure_sd(c["class_a"])
+        sd_b = _ensure_sd(c["class_b"])
+
+        d_a = str(_uuid.uuid4())
+        d_b = str(_uuid.uuid4())
+        c_id = str(_uuid.uuid4())
+
+        for d_id, sd_id in [(d_a, sd_a), (d_b, sd_b)]:
+            conn.execute(
+                """
+                INSERT INTO deliverable(id, extraction_group_id, source_id,
+                                        extraction_job_id, llm_call_id,
+                                        deliverables_summary, flags, flag_context,
+                                        applicable_standards, source_ref,
+                                        gate_outcome, status, auto_route_decision,
+                                        confidence, created_at)
+                VALUES (?, ?, ?, ?, ?,
+                        ?, '[]', '{}',
+                        '[]', '{}',
+                        'inside', 'auto_approved', 'auto_approved',
+                        'high', '2026-05-10T00:00:00Z')
+                """,
+                (
+                    d_id, dummy_group, sd_id,
+                    dummy_job, dummy_llm,
+                    f"Deliverable {i}",
+                ),
+            )
+
+        conn.execute(
+            """
+            INSERT INTO conflict(id, extraction_job_id, llm_call_id, kind,
+                                 status, most_onerous_reasoning,
+                                 created_at, resolved_at)
+            VALUES (?, ?, ?, 'cross_source_content',
+                    ?, ?,
+                    '2026-05-10T00:00:00Z', '2026-05-10T01:00:00Z')
+            """,
+            (c_id, dummy_job, dummy_llm, c["status"], f"reason {i}"),
+        )
+
+        conn.execute(
+            """
+            INSERT INTO conflict_party(conflict_id, party_kind, party_id, party_position)
+            VALUES (?, 'deliverable', ?, 'pos A'),
+                   (?, 'deliverable', ?, 'pos B')
+            """,
+            (c_id, d_a, c_id, d_b),
+        )
+
+    conn.commit()
+
+
+def _make_hierarchy_project(api_client, slug, conflicts):
+    """Create a project via API, insert conflicts, return slug."""
+    from meridian.projects import project_db_path as _project_db_path
+    from meridian.db.connection import connect as _connect
+
+    res = api_client.post("/api/projects", json={"name": slug})
+    assert res.status_code in (200, 409), res.text
+
+    db_path = _project_db_path(slug)
+    conn = _connect(db_path)
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("PRAGMA ignore_check_constraints = ON")
+        _insert_hierarchy_conflicts(conn, conflicts)
+    finally:
+        conn.close()
+
+    return slug
+
+
+@pytest.fixture
+def project_with_resolved_conflicts(api_client, tmp_projects_dir):
+    """Three conflicts: BoD beats OSE twice (accept_a), OSE beats BoD once (accept_b)."""
+    slug = _make_hierarchy_project(
+        api_client,
+        "alpha26-hierarchy-basic",
+        [
+            {"status": "resolved_accept_a", "class_a": "BoD", "class_b": "OSE"},
+            {"status": "resolved_accept_a", "class_a": "BoD", "class_b": "OSE"},
+            {"status": "resolved_accept_b", "class_a": "BoD", "class_b": "OSE"},
+        ],
+    )
+    yield slug
+    from meridian.projects import project_db_path as _project_db_path
+    try:
+        _project_db_path(slug).unlink()
+    except OSError:
+        pass
+
+
+@pytest.fixture
+def project_with_hybrid_and_reject_both(api_client, tmp_projects_dir):
+    """Two conflicts: resolved_hybrid + resolved_reject_both.
+
+    Neither contributes an edge; both count toward resolved_count.
+    We still need distinct source classes so the fixture is realistic.
+    """
+    slug = _make_hierarchy_project(
+        api_client,
+        "alpha26-hierarchy-hybrid",
+        [
+            {"status": "resolved_hybrid",      "class_a": "BoD", "class_b": "OSE"},
+            {"status": "resolved_reject_both",  "class_a": "BoD", "class_b": "OSE"},
+        ],
+    )
+    yield slug
+    from meridian.projects import project_db_path as _project_db_path
+    try:
+        _project_db_path(slug).unlink()
+    except OSError:
+        pass
+
+
+@pytest.fixture
+def project_with_same_class_conflicts(api_client, tmp_projects_dir):
+    """Two conflicts where both parties share the same document class (OSE).
+
+    These should appear in same_class_conflicts, not in edges.
+    Add a cross-class conflict as well so edges is non-empty but clean.
+    """
+    slug = _make_hierarchy_project(
+        api_client,
+        "alpha26-hierarchy-sameclass",
+        [
+            # two same-class OSE vs OSE conflicts
+            {"status": "resolved_accept_a", "class_a": "OSE", "class_b": "OSE"},
+            {"status": "resolved_accept_a", "class_a": "OSE", "class_b": "OSE"},
+            # one cross-class so edges is not empty (ensures the loop is entered)
+            {"status": "resolved_accept_a", "class_a": "BoD", "class_b": "OSE"},
+        ],
+    )
+    yield slug
+    from meridian.projects import project_db_path as _project_db_path
+    try:
+        _project_db_path(slug).unlink()
+    except OSError:
+        pass
+
+
+@pytest.fixture
+def project_with_null_document_class_conflict(api_client, tmp_projects_dir):
+    """One conflict where party A's source document has document_class = NULL."""
+    slug = _make_hierarchy_project(
+        api_client,
+        "alpha26-hierarchy-nullclass",
+        [
+            {"status": "resolved_accept_a", "class_a": None, "class_b": "OSE"},
+        ],
+    )
+    yield slug
+    from meridian.projects import project_db_path as _project_db_path
+    try:
+        _project_db_path(slug).unlink()
+    except OSError:
+        pass

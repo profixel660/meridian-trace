@@ -984,6 +984,172 @@ def projects_conflict_register(
         conn.close()
 
 
+# --------------------------------------------------------------------------
+# Alpha-26 Task 7: /hierarchy endpoint
+# --------------------------------------------------------------------------
+
+
+class HierarchyEdge(BaseModel):
+    winner_class: str
+    loser_class: str
+    wins: int
+    losses: int
+    win_rate: float
+    sample_conflict_ids: list[str]
+
+
+class HierarchyRankedEntry(BaseModel):
+    class_: str = Field(alias="class")
+    wins: int
+    losses: int
+    win_rate: float
+    rank: int
+
+    model_config = {"populate_by_name": True}
+
+
+class HierarchySameClass(BaseModel):
+    class_: str = Field(alias="class")
+    count: int
+
+    model_config = {"populate_by_name": True}
+
+
+class HierarchyResponse(BaseModel):
+    edges: list[HierarchyEdge]
+    ranked: list[HierarchyRankedEntry]
+    resolved_count: int
+    same_class_conflicts: list[HierarchySameClass]
+    computed_at: str
+
+
+@_projects_api.get("/projects/{name}/hierarchy", response_model=HierarchyResponse)
+def projects_hierarchy(name: str) -> HierarchyResponse:
+    """Alpha-26: source-of-truth hierarchy aggregated from resolved conflicts."""
+    from datetime import UTC as _UTC, datetime as _datetime
+
+    db_path = _ensure_project(name)
+    conn = connect(db_path)
+    try:
+        # Pull all resolved_accept_a/b conflicts with both parties (joined twice).
+        rows = conn.execute("""
+            SELECT
+                c.id AS conflict_id,
+                c.status,
+                c.created_at,
+                cp_a.party_id  AS pid_a,
+                cp_a.party_kind AS kind_a,
+                cp_b.party_id  AS pid_b,
+                cp_b.party_kind AS kind_b
+            FROM conflict c
+            JOIN (
+                SELECT conflict_id, MIN(rowid) AS rowid_a FROM conflict_party
+                GROUP BY conflict_id
+            ) ra ON ra.conflict_id = c.id
+            JOIN conflict_party cp_a ON cp_a.rowid = ra.rowid_a
+            JOIN (
+                SELECT conflict_id, MAX(rowid) AS rowid_b FROM conflict_party
+                GROUP BY conflict_id HAVING COUNT(*) >= 2
+            ) rb ON rb.conflict_id = c.id
+            JOIN conflict_party cp_b ON cp_b.rowid = rb.rowid_b
+            WHERE c.status IN ('resolved_accept_a', 'resolved_accept_b')
+        """).fetchall()
+
+        def _class_for(party_kind: str, party_id: str) -> str:
+            if party_kind == "deliverable":
+                r = conn.execute("""
+                    SELECT sd.document_class
+                    FROM deliverable d LEFT JOIN source_document sd ON sd.id = d.source_id
+                    WHERE d.id = ?
+                """, (party_id,)).fetchone()
+            elif party_kind == "audit":
+                r = conn.execute("""
+                    SELECT sd.document_class
+                    FROM audit_record a LEFT JOIN source_document sd ON sd.id = a.source_id
+                    WHERE a.id = ?
+                """, (party_id,)).fetchone()
+            else:
+                r = None
+            if r is None or r["document_class"] is None:
+                return "Unclassified"
+            return str(r["document_class"])
+
+        edge_counts: dict[tuple[str, str], dict] = {}
+        same_class_counts: dict[str, int] = {}
+
+        for r in rows:
+            class_a = _class_for(r["kind_a"], r["pid_a"])
+            class_b = _class_for(r["kind_b"], r["pid_b"])
+            if r["status"] == "resolved_accept_a":
+                winner, loser = class_a, class_b
+            else:  # resolved_accept_b
+                winner, loser = class_b, class_a
+            if winner == loser:
+                same_class_counts[winner] = same_class_counts.get(winner, 0) + 1
+                continue
+            key = (winner, loser)
+            entry = edge_counts.setdefault(key, {"wins": 0, "samples": []})
+            entry["wins"] += 1
+            if len(entry["samples"]) < 3:
+                entry["samples"].append(r["conflict_id"])
+
+        # Compute losses (reverse direction wins)
+        all_pairs = set()
+        for (w, l) in edge_counts.keys():
+            all_pairs.add((w, l))
+            all_pairs.add((l, w))
+        edges: list[HierarchyEdge] = []
+        for (w, l) in all_pairs:
+            wins = edge_counts.get((w, l), {"wins": 0, "samples": []})["wins"]
+            losses = edge_counts.get((l, w), {"wins": 0, "samples": []})["wins"]
+            samples = edge_counts.get((w, l), {"wins": 0, "samples": []})["samples"]
+            if wins == 0:
+                continue
+            edges.append(HierarchyEdge(
+                winner_class=w, loser_class=l,
+                wins=wins, losses=losses,
+                win_rate=wins / max(wins + losses, 1),
+                sample_conflict_ids=samples,
+            ))
+
+        per_class: dict[str, dict] = {}
+        for e in edges:
+            per_class.setdefault(e.winner_class, {"wins": 0, "losses": 0})["wins"] += e.wins
+            per_class.setdefault(e.loser_class, {"wins": 0, "losses": 0})["losses"] += e.wins
+        ranked = sorted(
+            [
+                {"class_": c, "wins": v["wins"], "losses": v["losses"],
+                 "win_rate": v["wins"] / max(v["wins"] + v["losses"], 1)}
+                for c, v in per_class.items()
+            ],
+            key=lambda r: (-r["win_rate"], -r["wins"]),
+        )
+        ranked_entries = [
+            HierarchyRankedEntry(**{**r, "rank": i + 1})
+            for i, r in enumerate(ranked)
+        ]
+
+        same_class = [
+            HierarchySameClass(class_=c, count=n)
+            for c, n in sorted(same_class_counts.items())
+        ]
+
+        resolved_count = conn.execute(
+            "SELECT COUNT(*) FROM conflict WHERE status LIKE 'resolved_%'"
+        ).fetchone()[0]
+
+        return HierarchyResponse(
+            edges=edges,
+            ranked=ranked_entries,
+            resolved_count=resolved_count,
+            same_class_conflicts=same_class,
+            computed_at=_datetime.now(_UTC).isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+        )
+    finally:
+        conn.close()
+
+
 @_projects_api.get("/projects/{name}/conflict-register.xlsx")
 def projects_conflict_register_xlsx(name: str) -> FileResponse:
     """Alpha-26: conflict register Excel export."""
