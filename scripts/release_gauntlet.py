@@ -1630,29 +1630,49 @@ def _step_alpha26_sse_and_conflicts(
         h = _json.loads(h_body.decode("utf-8"))
         _ok("step 7k: hierarchy", f"resolved_count={h.get('resolved_count')}")
 
-        # Subscriber cap: open 5 streams + 1 more = 503
+        # Subscriber cap: probe current active count via /setup/runtime,
+        # open (cap - active) streams expecting success, then one more
+        # expecting 503. Robust to whatever subscribers are still alive
+        # from the SSE consumer thread used in the pipeline-run smoke
+        # (the urllib reader can't be cleanly cancelled mid-read).
+        try:
+            rt_status, rt_body = _probe(
+                f"{base_url}/api/setup/runtime", timeout=5.0,
+            )
+            if rt_status != 200:
+                _fail("step 7k: subscriber cap", f"/setup/runtime returned {rt_status}")
+                return False
+            rt = _json.loads(rt_body.decode("utf-8"))
+            active = rt["events"]["active_subscribers"]
+            cap = rt["events"]["max_subscribers"]
+            available = max(0, cap - active)
+        except Exception as exc:
+            _fail("step 7k: subscriber cap", f"runtime probe failed: {exc}")
+            return False
+
         cap_streams = []
         try:
-            for i in range(5):
+            # Open exactly enough streams to fill the remaining capacity.
+            for i in range(available):
                 req = urllib.request.Request(
                     f"{base_url}/api/projects/{slug}/events",
                     headers={"Accept": "text/event-stream"},
                 )
                 cap_streams.append(urllib.request.urlopen(req, timeout=5.0))
-            # 6th should 503
-            req6 = urllib.request.Request(
+            # Next stream MUST return 503 — cap is now reached.
+            req_over = urllib.request.Request(
                 f"{base_url}/api/projects/{slug}/events",
                 headers={"Accept": "text/event-stream"},
             )
             try:
-                urllib.request.urlopen(req6, timeout=5.0)
-                _fail("step 7k: subscriber cap", "6th subscriber returned 200; expected 503")
+                urllib.request.urlopen(req_over, timeout=5.0)
+                _fail("step 7k: subscriber cap", f"over-cap subscriber returned 200; expected 503 (cap={cap})")
                 return False
             except urllib.error.HTTPError as e:
                 if e.code != 503:
-                    _fail("step 7k: subscriber cap", f"6th subscriber returned {e.code}; expected 503")
+                    _fail("step 7k: subscriber cap", f"over-cap subscriber returned {e.code}; expected 503")
                     return False
-            _ok("step 7k: subscriber cap", "5 active + 6th=503")
+            _ok("step 7k: subscriber cap", f"cap={cap}, opened {available} more, +1 returned 503")
         finally:
             for s in cap_streams:
                 try:
