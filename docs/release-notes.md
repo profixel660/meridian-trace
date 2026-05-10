@@ -4,6 +4,59 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.25.1
+
+Hotfix on the alpha-25 line. The keystone pipeline shipped without the conflict-pass step, so the master register's `flags` column landed empty across all rows and the freshly-built `conflict_summary` column had nothing to render. Caught on the SME's first review.
+
+No schema change. Re-run `Reset-Meridian.ps1` and re-install for a clean run, or run `meridian conflicts <project>` from PowerShell against an already-extracted alpha-25 project to backfill conflicts without resetting.
+
+### What broke
+
+Meridian's CLI workflow has always been **two commands**: `meridian extract` then `meridian conflicts`. The alpha-25 keystone pipeline_worker only wired the first — `run_bootstrap_sweep` then `run_job_over_sources`. The conflict-pass (`run_conflict_pass`, which writes `conflicts_with_source_<id>` tokens into each affected deliverable's `flags` and stamps `flag_context.<token>.conflict_id`) was never called from the GUI auto-trigger path.
+
+The regression hid because:
+- Alpha-25 backend e2e tests use `mock_llm_client`. The mock produced deliverables but not conflicts; tests passed.
+- Gauntlet step 7j only checked the `conflict_summary` *column header* was present, not that any row was populated.
+- The synthetic two-source DOCX corpus the gauntlet uses wouldn't produce cross-document conflicts even with conflict-pass running.
+
+### The fix
+
+`pipeline_worker._run_pipeline` now runs three serial phases instead of two:
+
+1. **bootstrap** (advisory, soft-fail — unchanged).
+2. **extract** (canonical, holds project lock — unchanged).
+3. **conflicts** (NEW — soft-fail like bootstrap). Calls `run_conflict_pass(conn, provider, model)`. Three terminal states:
+   - `succeeded` — pass ran, conflicts (if any) persisted with their reasoning into `flag_context`.
+   - `skipped` — extract produced zero deliverables / audit rows; conflict-pass would have raised `RuntimeError("No deliverables or audit rows present...")`. Logged at INFO; pipeline still ends `phase=done`.
+   - `failed` — pass ran but raised something else (LLM auth, malformed JSON, etc.). Logged at WARNING; pipeline still ends `phase=done` so deliverables already on the master register aren't lost.
+
+The dashboard `PipelineProgressTile` gains a third intermediate render: `phase="conflicts"` shows "Detecting cross-source conflicts…" with the same dimmed-KPIs / hidden-`BaselineBanner` posture as bootstrap and extract. On `phase=done` the tile self-removes; the master register's Excel export now has populated `flags` + `conflict_summary` columns for any deliverable referenced in a pending conflict.
+
+`PipelineStatusResponse` (HTTP) gains `conflict_pass_status: Literal["pending"|"running"|"succeeded"|"failed"|"skipped"]`. The frontend `PipelineStatus` interface mirrors it. No client breakage — the field is additive.
+
+### Tests + gauntlet
+
+Two new backend e2e tests pin the regression so it can't return:
+
+- `test_pipeline_runs_conflict_pass_after_extract` — pipeline run produces at least one `llm_call` row with `purpose='conflict_pass'`. The empty-flags-column failure mode would leave that count at zero.
+- `test_pipeline_conflict_pass_soft_fails_when_extract_produced_nothing` — when extract is no-op'd, conflict-pass marks `skipped` and the pipeline still reaches `phase=done`.
+
+Gauntlet step 7j extends to assert `conflict_pass_status in {"succeeded", "skipped"}` after `phase=done` — `failed` or `pending` here means the pass either errored or never ran.
+
+Backend e2e: **199 passing / 1 skipped** (alpha-25 was 197 → +2 new conflict-pass tests). Gauntlet 17 steps green at the new sub-assertion.
+
+### Backward-compatibility note
+
+The CLI's standalone `meridian conflicts <project>` command is unchanged — calling it on an already-conflict-pass'd project is idempotent at the LLM-call level (records a fresh `llm_call` row) but `_persist_conflicts` upserts on `conflict.id` so a second run on identical input is benign. The GUI's keystone auto-trigger now calls `run_conflict_pass` once per pipeline run; CLI users who prefer the two-command flow can keep doing it.
+
+### Carry-overs to alpha-26 (unchanged from alpha-25)
+
+- Cancel / Ctrl+C on a wedged extract.
+- Quarantine taxonomy add-new flow (typeahead + "+ Add" affordance — confirmed in 2026-05-10 SME-review point #2).
+- Dashboard "what now" guidance for PMs landing on the dashboard for the first time (2026-05-10 SME-review point #1).
+- `--isolated` extract child-process IPC.
+- CLI / wizard data-dir consolidation.
+
 ## What's new in v0.2.0-alpha.25
 
 The keystone: closes punch list item #3 from the SME's 2026-05-02 alpha-22 round — the dashboard "0 extracted, N pending" wall where the SME imported a folder, walked through setup, landed on a buttonless dashboard with no path to advance the pipeline. Plus three additive wins on shared dashboard / export surfaces.
