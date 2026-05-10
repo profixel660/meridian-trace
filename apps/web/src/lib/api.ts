@@ -259,6 +259,8 @@ export interface ProjectCoverage {
   };
   conflicts: {
     pending: number;
+    resolved_count: number;
+    superseded_count: number;
     resolved_accept_a: number;
     resolved_accept_b: number;
     resolved_hybrid: number;

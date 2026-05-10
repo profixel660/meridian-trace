@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { AuthGate } from "@/components/AuthGate";
+import { ConflictsTile } from "@/components/dashboard/ConflictsTile";
+import { HierarchyView } from "@/components/dashboard/HierarchyView";
 import { PipelineProgressTile } from "@/components/dashboard/PipelineProgressTile";
 import { ApiErrorPanel } from "@/components/review/ApiErrorPanel";
 import { ReviewLayout } from "@/components/review/ReviewLayout";
@@ -128,6 +130,14 @@ function DashboardBody({
     pipelinePhase !== "done" &&
     pipelinePhase !== "failed";
 
+  const primaryCTA: "conflicts" | "quarantine" | "audit" | "questions" | "taxonomy" | null =
+    coverage.conflicts.pending > 0 ? "conflicts" :
+    coverage.deliverable_status.quarantined > 0 ? "quarantine" :
+    coverage.audit.pending > 0 ? "audit" :
+    coverage.questions.pending > 0 ? "questions" :
+    coverage.taxonomy.pending_proposals > 0 ? "taxonomy" :
+    null;
+
   return (
     <div className="space-y-8">
       <PipelineProgressTile
@@ -163,77 +173,109 @@ function DashboardBody({
             </Link>
           </div>
         </section>
-      ) : null}
+      ) : (
+        <>
+          {/* KPI tiles */}
+          <section
+            className={`grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 transition-opacity ${
+              pipelineActive ? "opacity-50" : ""
+            }`}
+          >
+            <KpiCard
+              label="Sources"
+              value={coverage.sources_imported}
+              sub={`${coverage.sources_extracted} extracted, ${coverage.sources_pending_extraction} pending`}
+              href={`${base}/sources`}
+            />
+            <KpiCard
+              label="On master register"
+              value={coverage.deliverable_status.auto_approved + coverage.deliverable_status.user_accepted + coverage.deliverable_status.user_edited + coverage.deliverable_status.user_promoted}
+              sub={`${coverage.deliverable_status.total} extracted total`}
+              href={`${base}/master`}
+            />
+            <KpiCard
+              label="Pending decisions"
+              value={coverage.pending_decisions}
+              sub="across all queues"
+              highlight={coverage.pending_decisions > 0}
+            />
+            <KpiCard
+              label="Auto-route rate"
+              value={`${coverage.auto_route_rate_pct.toFixed(1)}%`}
+              sub={`${coverage.review_coverage_pct.toFixed(1)}% reviewed`}
+              glossaryAnchor="/glossary#auto-route-rate"
+            />
+          </section>
 
-      <section
-        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 transition-opacity ${
-          pipelineActive ? "opacity-50" : ""
-        }`}
-      >
-        <KpiCard
-          label="Sources"
-          value={coverage.sources_imported}
-          sub={`${coverage.sources_extracted} extracted, ${coverage.sources_pending_extraction} pending`}
-          href={`${base}/sources`}
-        />
-        <KpiCard
-          label="On master register"
-          value={coverage.deliverable_status.auto_approved + coverage.deliverable_status.user_accepted + coverage.deliverable_status.user_edited + coverage.deliverable_status.user_promoted}
-          sub={`${coverage.deliverable_status.total} extracted total`}
-          href={`${base}/master`}
-        />
-        <KpiCard
-          label="Pending decisions"
-          value={coverage.pending_decisions}
-          sub="across all queues"
-          highlight={coverage.pending_decisions > 0}
-        />
-        <KpiCard
-          label="Auto-route rate"
-          value={`${coverage.auto_route_rate_pct.toFixed(1)}%`}
-          sub={`${coverage.review_coverage_pct.toFixed(1)}% reviewed`}
-          glossaryAnchor="/glossary#auto-route-rate"
-        />
-      </section>
+          {/* Hierarchy view (alpha-26) */}
+          {pipelineActive ? null : <HierarchyView projectSlug={projectName} />}
 
-      {/*
-        Alpha-16: stripped review queues + hand-off tools to focus on
-        the core deliverables-extraction loop. The pages still exist at
-        /projects/[name]/{quarantine,audit,questions,conflicts,taxonomy,
-        tender,evidence,xref} for direct URL access; only the dashboard
-        cards are hidden. Quarantine is kept because it's how the user
-        accepts / edits / rejects a deliverable — load-bearing for the
-        core review path. The rest are useful but downstream of "does
-        the extraction even produce a register?"
-      */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <QueueCard
-          href={`${base}/quarantine`}
-          title="Quarantine"
-          count={coverage.deliverable_status.quarantined}
-          description="Deliverables held back from the master register pending your decision. Accept, edit, or reject."
-        />
-      </section>
+          {/* ConflictsTile (alpha-26) — prominent, above the queue grid */}
+          {pipelineActive ? null : (
+            <ConflictsTile
+              projectSlug={projectName}
+              pendingCount={coverage.conflicts.pending}
+              resolvedCount={coverage.conflicts.resolved_count}
+              isPrimaryCTA={primaryCTA === "conflicts"}
+            />
+          )}
 
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
-          Recent activity
-        </h2>
-        <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-          <Activity
-            label="Last extraction"
-            value={coverage.last_extraction_at}
-          />
-          <Activity
-            label="Last LLM call"
-            value={coverage.last_llm_call_at}
-          />
-          <Activity
-            label="Last review action"
-            value={coverage.last_review_action_at}
-          />
-        </dl>
-      </section>
+          {/* Queue card grid (Quarantine/Audit/Questions/Taxonomy) */}
+          {pipelineActive ? null : (
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <QueueCard
+                href={`${base}/quarantine`}
+                title="Quarantine"
+                count={coverage.deliverable_status.quarantined}
+                description="Deliverables held back from the master register pending your decision."
+                isPrimaryCTA={primaryCTA === "quarantine"}
+              />
+              <QueueCard
+                href={`${base}/audit`}
+                title="Audit"
+                count={coverage.audit.pending}
+                description="Rejected candidates awaiting promote-or-reject."
+                isPrimaryCTA={primaryCTA === "audit"}
+              />
+              <QueueCard
+                href={`${base}/questions`}
+                title="Questions"
+                count={coverage.questions.pending}
+                description="HITL questions that surfaced during extraction."
+                isPrimaryCTA={primaryCTA === "questions"}
+              />
+              <QueueCard
+                href={`${base}/taxonomy`}
+                title="Taxonomy"
+                count={coverage.taxonomy.pending_proposals}
+                description="Proposed trade / service / category values needing approval."
+                isPrimaryCTA={primaryCTA === "taxonomy"}
+              />
+            </section>
+          )}
+
+          {/* Recent activity */}
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
+              Recent activity
+            </h2>
+            <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+              <Activity
+                label="Last extraction"
+                value={coverage.last_extraction_at}
+              />
+              <Activity
+                label="Last LLM call"
+                value={coverage.last_llm_call_at}
+              />
+              <Activity
+                label="Last review action"
+                value={coverage.last_review_action_at}
+              />
+            </dl>
+          </section>
+        </>
+      )}
     </div>
   );
 }
@@ -358,17 +400,28 @@ function QueueCard({
   title,
   count,
   description,
+  isPrimaryCTA = false,
 }: {
   href: string;
   title: string;
   count: number;
   description: string;
+  isPrimaryCTA?: boolean;
 }) {
   return (
     <Link
       href={href}
-      className="group block rounded-lg border border-border bg-surface-elevated p-5 transition hover:border-accent/60"
+      className={`group block rounded-lg border bg-surface-elevated p-5 transition ${
+        isPrimaryCTA
+          ? "border-accent ring-2 ring-accent/30 hover:border-accent"
+          : "border-border hover:border-accent/60"
+      }`}
     >
+      {isPrimaryCTA && (
+        <span className="mb-2 inline-block rounded-full bg-accent px-2 py-0.5 text-[10px] uppercase tracking-wider text-white">
+          Start here
+        </span>
+      )}
       <div className="flex items-baseline justify-between">
         <h3 className="text-base font-semibold text-text-primary">{title}</h3>
         <span
