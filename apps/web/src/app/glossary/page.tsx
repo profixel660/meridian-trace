@@ -166,6 +166,11 @@ const TERMS: Term[] = [
     term: "Air-gap mode",
     body: "A per-project setting that forbids any LLM call to a non-local provider. When air-gap is on, calls to Anthropic / OpenAI / etc. fail loudly at call time rather than silently sending data over the network. Pair with the air-gapped routing preset for a fully-offline configuration (local Ollama for every purpose). Toggle via `meridian routing air-gap-on/-off`.",
   },
+  {
+    id: "source-of-truth-hierarchy",
+    term: "Source-of-truth hierarchy",
+    body: "Every time you resolve a cross-source conflict via Accept A or Accept B, Meridian records which source’s value won. Aggregated across many conflicts, this produces a directed graph: which kind of document tends to trump which other kind. The Source-of-truth Hierarchy on the dashboard shows that graph as either a flow diagram (Sankey ribbons, thickness = win count) or a ranked list (precedence order with win-rate per class). The hierarchy is auto-inferred. If your project has unusual precedence rules (e.g., “in this project Drawings always trump RFIs regardless of who appears first”), you can override individual edges manually — that feature ships in alpha-27.",
+  },
 ];
 
 export default function GlossaryPage() {

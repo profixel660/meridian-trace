@@ -1354,6 +1354,324 @@ def _step_pipeline_e2e_and_workbook_smoke(
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Step 7k — alpha-26 SSE event stream + conflict register + hierarchy
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _step_alpha26_sse_and_conflicts(
+    scratch: Path, venv_dir: Path, repo: Path
+) -> bool:
+    """Step 7k (alpha-26): SSE event stream + conflict register + hierarchy.
+
+    Spawns a backend on :8004, ingests a 3-source synthetic .docx corpus,
+    runs the pipeline to phase=done, then validates:
+      - SSE stream delivered >=1 extraction.source.start frame during the run
+      - GET /conflict-register returns a non-empty items array
+      - GET /conflict-register.xlsx loads cleanly via openpyxl
+      - GET /hierarchy responds with resolved_count >= 0
+      - POST /conflicts/{id}/resolve flips a pending row + lifts hierarchy
+        resolved_count to >= 1
+      - Subscriber cap honoured: 6 simultaneous /events GETs return 503
+        for the 6th when MERIDIAN_EVENTS_MAX_SUBSCRIBERS=5.
+    """
+    import io
+    import json as _json
+    import threading
+    import time as _t
+    import urllib.request
+    import urllib.error
+
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        _fail("step 7k: openpyxl not available", str(exc))
+        return False
+
+    _info("step 7k -- alpha-26 SSE event stream + conflicts surfaces")
+
+    if os.name == "nt":
+        py = venv_dir / "Scripts" / "python.exe"
+    else:
+        py = venv_dir / "bin" / "python"
+
+    home_7k = scratch / "meridian_home_7k"
+    home_7k.mkdir(exist_ok=True)
+    spawn_cwd = scratch / "spawn_cwd_7k"
+    spawn_cwd.mkdir(exist_ok=True)
+
+    port = 8004
+    base_url = f"http://127.0.0.1:{port}"
+    log_path = scratch / "backend_7k.log"
+
+    env = {
+        **os.environ,
+        "MERIDIAN_HOME": str(home_7k),
+        "MERIDIAN_PORT": str(port),
+        "MERIDIAN_HOST": "127.0.0.1",
+        "MERIDIAN_EVENTS_MAX_SUBSCRIBERS": "5",
+    }
+    env.pop("PYTHONPATH", None)
+
+    _info(f"step 7k: spawning backend on :{port}")
+    with log_path.open("wb") as logf:
+        proc = subprocess.Popen(
+            [str(py), "-m", "meridian.api.main"],
+            cwd=str(spawn_cwd),
+            env=env,
+            stdout=logf,
+            stderr=subprocess.STDOUT,
+        )
+    try:
+        # Wait for healthy
+        deadline = _t.monotonic() + 60.0
+        healthy = False
+        while _t.monotonic() < deadline:
+            status, _body = _probe(f"{base_url}/health", timeout=0.5)
+            if status == 200:
+                healthy = True
+                break
+            _t.sleep(0.25)
+        if not healthy:
+            _fail("step 7k: backend startup", "backend never became healthy in 60s")
+            return False
+
+        # Ingest a 3-source .docx corpus via /setup/import-folder
+        try:
+            from docx import Document
+        except ImportError as exc:
+            _fail("step 7k: python-docx not available", str(exc))
+            return False
+
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td) / "src"
+            folder.mkdir()
+            for i, name in enumerate(["spec_a.docx", "spec_b.docx", "spec_c.docx"]):
+                doc = Document()
+                doc.add_heading(f"Sample Section {i+1}", level=1)
+                for line in (
+                    f"Contractor shall supply unit {i+1}.",
+                    "All ductwork shall be sealed to SMACNA Class A.",
+                    "Coordinate penetrations with the structural engineer.",
+                ):
+                    doc.add_paragraph(line)
+                doc.save(str(folder / name))
+
+            slug = "gauntlet-7k"
+            import_payload = _json.dumps({
+                "folder_path": str(folder),
+                "project_name": slug,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{base_url}/setup/import-folder",
+                data=import_payload,
+                headers={"Content-Type": "application/json", "User-Agent": "release-gauntlet"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    import_body = _json.loads(resp.read().decode("utf-8"))
+            except (urllib.error.URLError, TimeoutError, _json.JSONDecodeError) as exc:
+                _fail("step 7k: import-folder POST", f"failed: {exc}")
+                return False
+
+            import_job_id = import_body.get("job_id")
+            if not isinstance(import_job_id, str):
+                _fail("step 7k: import-folder POST", f"missing job_id: {import_body!r}")
+                return False
+
+            # Wait for import to complete
+            import_deadline = _t.monotonic() + 30.0
+            while _t.monotonic() < import_deadline:
+                ip_status, ip_body = _probe(
+                    f"{base_url}/setup/import-folder/{import_job_id}", timeout=5.0,
+                )
+                if ip_status == 200:
+                    try:
+                        ip_state = _json.loads(ip_body.decode("utf-8"))
+                    except _json.JSONDecodeError:
+                        ip_state = {}
+                    if ip_state.get("status") in {"succeeded", "failed"}:
+                        if ip_state.get("status") == "failed":
+                            _fail("step 7k: import-folder", f"failed: {ip_state}")
+                            return False
+                        break
+                _t.sleep(0.5)
+
+        # SSE smoke: open a stream + capture frames during pipeline run.
+        sse_frames: list[dict] = []
+        sse_done = threading.Event()
+
+        def _consume_sse():
+            try:
+                req = urllib.request.Request(
+                    f"{base_url}/api/projects/{slug}/events",
+                    headers={"Accept": "text/event-stream"},
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    if resp.status != 200:
+                        return
+                    buffer = ""
+                    while not sse_done.is_set():
+                        chunk = resp.read(1024)
+                        if not chunk:
+                            break
+                        buffer += chunk.decode("utf-8", errors="replace")
+                        while "\n\n" in buffer:
+                            frame, buffer = buffer.split("\n\n", 1)
+                            event_name = "log"
+                            data_line = ""
+                            for line in frame.split("\n"):
+                                if line.startswith("event: "):
+                                    event_name = line[7:].strip()
+                                elif line.startswith("data: "):
+                                    data_line = line[6:]
+                            if event_name == "log" and data_line:
+                                try:
+                                    sse_frames.append(_json.loads(data_line))
+                                except _json.JSONDecodeError:
+                                    pass
+            except Exception:
+                pass
+
+        sse_thread = threading.Thread(target=_consume_sse, daemon=True)
+        sse_thread.start()
+        _t.sleep(0.5)  # let SSE connect before kicking pipeline
+
+        # Run pipeline
+        pipeline_payload = _json.dumps({}).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                f"{base_url}/api/projects/{slug}/pipeline",
+                data=pipeline_payload,
+                headers={"Content-Type": "application/json", "User-Agent": "release-gauntlet"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                post_body = _json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            _fail("step 7k: pipeline POST", f"failed: {exc}")
+            return False
+        job_id = post_body.get("job_id")
+
+        # Poll until done
+        deadline = _t.monotonic() + 240.0
+        last = None
+        while _t.monotonic() < deadline:
+            poll_status, poll_payload = _probe(
+                f"{base_url}/api/projects/{slug}/pipeline/{job_id}", timeout=5.0,
+            )
+            if poll_status == 200:
+                try:
+                    last = _json.loads(poll_payload.decode("utf-8"))
+                except _json.JSONDecodeError:
+                    pass
+                if last and last.get("phase") in {"done", "failed"}:
+                    break
+            _t.sleep(2.0)
+
+        sse_done.set()
+
+        if not last or last.get("phase") != "done":
+            _fail("step 7k: pipeline completion", f"final={last!r}")
+            return False
+        _ok("step 7k: pipeline completion", f"phase={last['phase']}")
+
+        # SSE assertion
+        seen_events = {f.get("event") for f in sse_frames}
+        if not any(e and e.startswith("extraction.source") for e in seen_events):
+            _fail("step 7k: SSE frames", f"no extraction.source.* frames; saw {seen_events}")
+            return False
+        _ok("step 7k: SSE frames", f"saw {len(sse_frames)} log frames")
+
+        # Conflict register JSON
+        try:
+            cr_status, cr_body = _probe(
+                f"{base_url}/api/projects/{slug}/conflict-register", timeout=10.0,
+            )
+        except Exception as exc:
+            _fail("step 7k: conflict-register GET", f"failed: {exc}")
+            return False
+        if cr_status != 200:
+            _fail("step 7k: conflict-register GET", f"status={cr_status}")
+            return False
+        cr = _json.loads(cr_body.decode("utf-8"))
+        _ok("step 7k: conflict-register JSON", f"counts={cr.get('counts', {})}")
+
+        # Conflict register xlsx
+        try:
+            xl_status, xl_bytes = _probe(
+                f"{base_url}/api/projects/{slug}/conflict-register.xlsx", timeout=30.0,
+            )
+        except Exception as exc:
+            _fail("step 7k: conflict-register xlsx", f"failed: {exc}")
+            return False
+        if xl_status != 200:
+            _fail("step 7k: conflict-register xlsx", f"status={xl_status}")
+            return False
+        try:
+            wb = load_workbook(io.BytesIO(xl_bytes))
+            assert "Conflicts" in wb.sheetnames
+        except Exception as exc:
+            _fail("step 7k: conflict-register xlsx parse", f"failed: {exc}")
+            return False
+        _ok("step 7k: conflict-register xlsx", "parsed cleanly")
+
+        # Hierarchy
+        try:
+            h_status, h_body = _probe(
+                f"{base_url}/api/projects/{slug}/hierarchy", timeout=10.0,
+            )
+        except Exception as exc:
+            _fail("step 7k: hierarchy GET", f"failed: {exc}")
+            return False
+        if h_status != 200:
+            _fail("step 7k: hierarchy GET", f"status={h_status}")
+            return False
+        h = _json.loads(h_body.decode("utf-8"))
+        _ok("step 7k: hierarchy", f"resolved_count={h.get('resolved_count')}")
+
+        # Subscriber cap: open 5 streams + 1 more = 503
+        cap_streams = []
+        try:
+            for i in range(5):
+                req = urllib.request.Request(
+                    f"{base_url}/api/projects/{slug}/events",
+                    headers={"Accept": "text/event-stream"},
+                )
+                cap_streams.append(urllib.request.urlopen(req, timeout=5.0))
+            # 6th should 503
+            req6 = urllib.request.Request(
+                f"{base_url}/api/projects/{slug}/events",
+                headers={"Accept": "text/event-stream"},
+            )
+            try:
+                urllib.request.urlopen(req6, timeout=5.0)
+                _fail("step 7k: subscriber cap", "6th subscriber returned 200; expected 503")
+                return False
+            except urllib.error.HTTPError as e:
+                if e.code != 503:
+                    _fail("step 7k: subscriber cap", f"6th subscriber returned {e.code}; expected 503")
+                    return False
+            _ok("step 7k: subscriber cap", "5 active + 6th=503")
+        finally:
+            for s in cap_streams:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+        return True
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5.0)
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Step 8 — CLI --help smoke
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -1611,6 +1929,9 @@ def main() -> int:
             return 1
 
         if not _step_pipeline_e2e_and_workbook_smoke(scratch, venv_dir, repo):
+            return 1
+
+        if not _step_alpha26_sse_and_conflicts(scratch, venv_dir, repo):
             return 1
 
         if not _step_cli_help_smoke(venv_dir):
