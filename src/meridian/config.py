@@ -259,6 +259,16 @@ class Settings(BaseSettings):
     extraction_max_tokens: int = 64000  # Sonnet 4.x natively supports up to 64k output
     temperature: float = 0.0
 
+    # SSE and live monitor
+    events_max_subscribers: int = Field(
+        default=5,
+        description=(
+            "Maximum simultaneous SSE subscribers across the whole backend. "
+            "Bounds the in-memory subscriber queues for the alpha-26 live "
+            "monitor surface. Override via MERIDIAN_EVENTS_MAX_SUBSCRIBERS=<n>."
+        ),
+    )
+
     # Per-purpose routing. None = inherit from DEFAULT_PURPOSE_ROUTING.
     # Shape: {purpose_name: (provider, model)}
     purpose_routing: dict[str, tuple[str, str]] | None = None
