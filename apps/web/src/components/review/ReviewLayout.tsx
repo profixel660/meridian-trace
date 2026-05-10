@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { LiveMonitor } from "@/components/dashboard/LiveMonitor";
 
 interface QueueCounts {
   quarantine?: number | null;
@@ -22,12 +23,12 @@ interface ReviewLayoutProps {
   children: ReactNode;
 }
 
-// Alpha-16: pruned to the core review surface. The other queues
-// (audit / questions / conflicts / taxonomy) still exist as routes and
-// can be reached by URL; they're hidden from the nav strip until the
-// core deliverables-extraction loop has been validated end-to-end.
 const QUEUES: Array<{ key: keyof QueueCounts; label: string; href: string }> = [
   { key: "quarantine", label: "Quarantine", href: "quarantine" },
+  { key: "conflicts",  label: "Conflicts",  href: "conflicts"  },
+  { key: "audit",      label: "Audit",      href: "audit"      },
+  { key: "questions",  label: "Questions",  href: "questions"  },
+  { key: "taxonomy",   label: "Taxonomy",   href: "taxonomy"   },
 ];
 
 /**
@@ -102,6 +103,12 @@ export function ReviewLayout({
           >
             Master register
           </Link>
+          <Link
+            href={`${base}/conflict-register`}
+            className="rounded-md px-3 py-1.5 text-sm text-text-muted hover:bg-surface hover:text-text-primary"
+          >
+            Conflict register
+          </Link>
         </span>
       </nav>
 
@@ -118,6 +125,8 @@ export function ReviewLayout({
       </header>
 
       {children}
+
+      {projectName && <LiveMonitor projectSlug={projectName} />}
     </div>
   );
 }
