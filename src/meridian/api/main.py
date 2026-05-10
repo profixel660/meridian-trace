@@ -259,6 +259,18 @@ class ConflictItem(BaseModel):
     parties: list[ConflictParty]
 
 
+class ConflictRegisterCounts(BaseModel):
+    all: int
+    pending: int
+    resolved: int
+    superseded: int
+
+
+class ConflictRegisterResponse(BaseModel):
+    items: list[ConflictItem]
+    counts: ConflictRegisterCounts
+
+
 class AuditItem(BaseModel):
     id: str
     source_id: str
@@ -886,6 +898,125 @@ def projects_list_conflicts(
         return items
     finally:
         conn.close()
+
+
+@_projects_api.get(
+    "/projects/{name}/conflict-register",
+    response_model=ConflictRegisterResponse,
+)
+def projects_conflict_register(
+    name: str,
+    status: Literal["all", "pending", "resolved", "superseded"] = Query("all"),
+) -> ConflictRegisterResponse:
+    """Alpha-26: conflict register peer surface (JSON)."""
+    db_path = _ensure_project(name)
+    conn = connect(db_path)
+    try:
+        if status == "all":
+            where = "1=1"
+        elif status == "resolved":
+            where = "status LIKE 'resolved_%'"
+        elif status == "superseded":
+            where = "status = 'superseded'"
+        else:
+            where = f"status = '{status}'"
+
+        conflict_rows = conn.execute(f"""
+            SELECT id, kind, status, most_onerous_party_id,
+                   most_onerous_reasoning, created_at, resolved_at
+            FROM conflict
+            WHERE {where}
+            ORDER BY (status = 'pending') DESC, created_at DESC
+        """).fetchall()
+
+        items: list[ConflictItem] = []
+        for c in conflict_rows:
+            party_rows = conn.execute("""
+                SELECT party_kind, party_id, party_position
+                FROM conflict_party WHERE conflict_id = ?
+            """, (c["id"],)).fetchall()
+            parties: list[ConflictParty] = []
+            for p in party_rows:
+                kind = p["party_kind"]
+                pid = p["party_id"]
+                summary_or_text = ""
+                if kind == "deliverable":
+                    drow = conn.execute(
+                        "SELECT deliverables_summary FROM deliverable WHERE id = ?",
+                        (pid,),
+                    ).fetchone()
+                    if drow is not None:
+                        summary_or_text = drow["deliverables_summary"] or ""
+                elif kind == "audit":
+                    arow = conn.execute(
+                        "SELECT candidate_text FROM audit_record WHERE id = ?",
+                        (pid,),
+                    ).fetchone()
+                    if arow is not None:
+                        summary_or_text = arow["candidate_text"] or ""
+                parties.append(ConflictParty(
+                    party_kind=kind, party_id=pid,
+                    party_position=p["party_position"],
+                    summary_or_text=summary_or_text,
+                ))
+            items.append(ConflictItem(
+                id=c["id"], kind=c["kind"], status=c["status"],
+                most_onerous_party_id=c["most_onerous_party_id"],
+                most_onerous_reasoning=c["most_onerous_reasoning"],
+                created_at=c["created_at"], resolved_at=c["resolved_at"],
+                parties=parties,
+            ))
+
+        counts = ConflictRegisterCounts(
+            all=conn.execute("SELECT COUNT(*) FROM conflict").fetchone()[0],
+            pending=conn.execute(
+                "SELECT COUNT(*) FROM conflict WHERE status = 'pending'"
+            ).fetchone()[0],
+            resolved=conn.execute(
+                "SELECT COUNT(*) FROM conflict WHERE status LIKE 'resolved_%'"
+            ).fetchone()[0],
+            superseded=conn.execute(
+                "SELECT COUNT(*) FROM conflict WHERE status = 'superseded'"
+            ).fetchone()[0],
+        )
+        return ConflictRegisterResponse(items=items, counts=counts)
+    finally:
+        conn.close()
+
+
+@_projects_api.get("/projects/{name}/conflict-register.xlsx")
+def projects_conflict_register_xlsx(name: str) -> FileResponse:
+    """Alpha-26: conflict register Excel export."""
+    from meridian.export.conflict_register import export_conflict_register_xlsx
+
+    db_path = _ensure_project(name)
+    slug = db_path.stem
+    fd, tmp_name = tempfile.mkstemp(suffix=".xlsx", prefix=f"{slug}-conflicts-")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+
+    conn = connect(db_path)
+    try:
+        export_conflict_register_xlsx(conn, output_path=tmp_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        conn.close()
+        raise
+    finally:
+        conn.close()
+
+    def _cleanup() -> None:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
+
+    return FileResponse(
+        path=str(tmp_path),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        filename=f"{slug}-conflicts.xlsx",
+        background=BackgroundTask(_cleanup),
+    )
 
 
 @_projects_api.get("/projects/{name}/audit", response_model=list[AuditItem])

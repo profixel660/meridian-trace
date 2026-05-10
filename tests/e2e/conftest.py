@@ -564,3 +564,99 @@ def project_with_conflicts(tmp_path):
 
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.close()
+
+
+# --------------------------------------------------------------------------
+# Alpha-26 Task 6: conflict-register fixture (JSON + xlsx endpoints)
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def project_with_conflicts_mixed_status(fastapi_client, tmp_projects_dir):
+    """Create an API-reachable project with three conflicts (pending,
+    resolved_accept_a, resolved_reject_both) so the conflict-register
+    surface has multiple statuses to render.
+
+    Unlike ``project_with_conflicts`` (which yields a raw SQLite connection
+    unreachable by the API), this fixture creates the project via the API,
+    then inserts conflict rows directly into the project DB via SQL so
+    ``api_client`` can hit the /conflict-register endpoints.
+
+    Yields the project slug string.
+    """
+    import uuid as _uuid
+
+    from meridian.config import settings as _settings
+    from meridian.db.connection import connect as _connect, initialise as _initialise
+    from meridian.projects import project_db_path as _project_db_path
+
+    slug = "alpha26-conflict-register"
+
+    # Create the project via the API (so settings.projects_dir is populated
+    # and _ensure_project can find the DB when the test hits the endpoints).
+    res = fastapi_client.post(
+        "/api/projects",
+        json={"name": slug, "notes": "alpha-26 conflict register fixture"},
+    )
+    assert res.status_code == 200, f"project creation failed: {res.text}"
+
+    db_path = _project_db_path(slug)
+    assert db_path.exists(), f"DB not found at {db_path}"
+
+    conn = _connect(db_path)
+    # Disable FK + check enforcement so we can insert conflict rows without
+    # building the full extraction_job / llm_call prerequisite graph.
+    conn.execute("PRAGMA foreign_keys = OFF;")
+    conn.execute("PRAGMA ignore_check_constraints = ON;")
+
+    sd_id = str(_uuid.uuid4())
+    job_id = str(_uuid.uuid4())
+    llm_id = str(_uuid.uuid4())
+    c_pending = str(_uuid.uuid4())
+    c_resolved = str(_uuid.uuid4())
+    c_reject = str(_uuid.uuid4())
+
+    # Insert a stub source document so source-lookup joins return a filename.
+    conn.execute(
+        """
+        INSERT INTO source_document (
+            id, filename, relative_path, content_hash, mime_type,
+            size_bytes, imported_at, extraction_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            sd_id, "fixture-source.pdf", "fixture-source.pdf",
+            f"hash_{sd_id}", "application/pdf", 1,
+            "2026-05-10T00:00:00Z", "text_spec",
+        ),
+    )
+
+    # Three conflicts — pending, resolved_accept_a, resolved_reject_both.
+    conn.execute(
+        """
+        INSERT INTO conflict (
+            id, extraction_job_id, llm_call_id, kind,
+            most_onerous_reasoning, status, created_at, resolved_at
+        ) VALUES
+            (?, ?, ?, 'cross_source_content',
+             'The chiller spec ceiling is not enforced in the global OSE document.',
+             'pending', '2026-05-10T00:00:00Z', NULL),
+            (?, ?, ?, 'cross_source_content',
+             'Accepted Source A as canonical; Source B value lower.',
+             'resolved_accept_a', '2026-05-10T00:00:00Z', '2026-05-10T01:00:00Z'),
+            (?, ?, ?, 'cross_source_content',
+             'Both sources rejected; hybrid specification drafted.',
+             'resolved_reject_both', '2026-05-10T00:00:00Z', '2026-05-10T02:00:00Z')
+        """,
+        (
+            c_pending, job_id, llm_id,
+            c_resolved, job_id, llm_id,
+            c_reject, job_id, llm_id,
+        ),
+    )
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA ignore_check_constraints = OFF;")
+    conn.close()
+
+    yield slug
