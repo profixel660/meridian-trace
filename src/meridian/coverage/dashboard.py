@@ -57,6 +57,8 @@ class ConflictCoverage(BaseModel):
     resolved_accept_b: int
     resolved_hybrid: int
     resolved_reject_both: int
+    resolved_count: int = 0      # NEW (alpha-26)
+    superseded_count: int = 0    # NEW (alpha-26)
     total: int
 
 
@@ -187,12 +189,33 @@ def _conflict_coverage(conn: sqlite3.Connection) -> ConflictCoverage:
         "SELECT status, COUNT(*) AS c FROM conflict GROUP BY status"
     ).fetchall()
     counts = {r["status"]: r["c"] for r in rows}
+
+    # Aggregate all resolved variants (alpha-26)
+    resolved_count = int(
+        _scalar(
+            conn,
+            "SELECT COUNT(*) FROM conflict WHERE status LIKE 'resolved_%'",
+        )
+        or 0
+    )
+
+    # Placeholder for superseded conflicts (future; none yet) (alpha-26)
+    superseded_count = int(
+        _scalar(
+            conn,
+            "SELECT COUNT(*) FROM conflict WHERE status = 'superseded'",
+        )
+        or 0
+    )
+
     return ConflictCoverage(
         pending=counts.get("pending", 0),
         resolved_accept_a=counts.get("resolved_accept_a", 0),
         resolved_accept_b=counts.get("resolved_accept_b", 0),
         resolved_hybrid=counts.get("resolved_hybrid", 0),
         resolved_reject_both=counts.get("resolved_reject_both", 0),
+        resolved_count=resolved_count,
+        superseded_count=superseded_count,
         total=sum(counts.values()),
     )
 

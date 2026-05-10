@@ -203,3 +203,26 @@ def test_is_data_present_true_when_a_deliverable_exists(
     cov = api_client.get(f"/api/projects/{slug}/coverage").json()
     assert cov["is_data_present"] is True
     assert cov["deliverable_status"]["total"] > 0
+
+
+def test_coverage_conflicts_includes_resolved_and_superseded_counts(
+    project_with_two_sources_via_api, api_client, mock_llm_client,
+):
+    """Alpha-26: coverage.conflicts.{resolved_count,superseded_count} populated."""
+    slug = project_with_two_sources_via_api
+    res = api_client.post(f"/api/projects/{slug}/pipeline", json={})
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        s = api_client.get(f"/api/projects/{slug}/pipeline/{job_id}").json()
+        if s["phase"] in {"done", "failed"}:
+            break
+        time.sleep(0.1)
+    cov = api_client.get(f"/api/projects/{slug}/coverage").json()
+    conflicts = cov["conflicts"]
+    assert "pending" in conflicts
+    assert "resolved_count" in conflicts
+    assert "superseded_count" in conflicts
+    assert isinstance(conflicts["resolved_count"], int)
+    assert isinstance(conflicts["superseded_count"], int)
