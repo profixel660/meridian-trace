@@ -100,3 +100,47 @@ def test_emit_drops_oldest_on_queue_full():
     first = q.get_nowait()
     # First retained event is c005 (c000-c004 dropped)
     assert first["ctx"]["chunk_id"] == "c005"
+
+
+def test_broadcast_processor_fans_real_structlog_events(monkeypatch):
+    """A real structlog log call lands on a subscriber's queue when the
+    event is in the allow-list."""
+    from meridian.events import broadcaster
+    from meridian.logging import configure_logging, get_logger
+
+    broadcaster._reset_for_tests()
+    configure_logging(console=False)
+    _t, q = broadcaster.subscribe("*")
+    log = get_logger("test")
+    log.info("triage.chunk.completed", chunk_id="c-real", keep=True)
+
+    payload = q.get_nowait()
+    assert payload["event"] == "triage.chunk.completed"
+    assert payload["ctx"]["chunk_id"] == "c-real"
+    assert payload["ctx"]["keep"] is True
+
+
+def test_pipeline_done_emit_reaches_subscribers(
+    project_with_two_sources, mock_llm_client,
+):
+    """Alpha-26: pipeline_worker emits pipeline.done on success transition."""
+    from pathlib import Path
+    from meridian.events import broadcaster
+    from meridian.workers.pipeline_worker import _PipelineJob, _run_pipeline
+
+    broadcaster._reset_for_tests()
+    _t, q = broadcaster.subscribe("*")
+
+    conn, _source_ids, _ = project_with_two_sources
+    db_path = Path(conn.execute("PRAGMA database_list").fetchone()["file"])
+    job = _PipelineJob(id="job-pipeline-done-1", db_path=db_path)
+    _run_pipeline(job, sample_size=2, provider=None, model=None)
+
+    assert job.phase == "done"
+    # Drain queue and find a pipeline.done frame.
+    seen_events = []
+    while not q.empty():
+        seen_events.append(q.get_nowait()["event"])
+    assert "pipeline.done" in seen_events, (
+        f"expected pipeline.done in events; got {seen_events}"
+    )

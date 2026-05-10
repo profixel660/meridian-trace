@@ -88,6 +88,22 @@ def _make_log_filename(log_dir: Path) -> Path:
     return log_dir / f"meridian-{today}.log"
 
 
+def _broadcast_processor(_logger, _method_name, event_dict):
+    """structlog processor that fans events to alpha-26 SSE subscribers.
+
+    Lazy-imports the broadcaster so logging-without-broadcaster (CLI tests
+    that don't import the events package) doesn't blow up on a missing
+    module. Catches every exception so a broadcaster failure NEVER breaks
+    the calling path's logging.
+    """
+    try:
+        from meridian.events.broadcaster import emit
+        emit(event_dict)
+    except Exception:  # noqa: BLE001 — broadcaster MUST NEVER break logging
+        pass
+    return event_dict
+
+
 def configure_logging(
     *,
     project_slug: str | None = None,
@@ -188,6 +204,7 @@ def configure_logging(
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            _broadcast_processor,
         ]
 
         if use_rich_console:

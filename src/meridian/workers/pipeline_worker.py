@@ -150,6 +150,13 @@ def _run_pipeline(
             job.phase = "done"
             job.finished_at = _iso_now()
             job.current_source_filename = None
+        _log.info(
+            "pipeline.done",
+            job_id=job.id,
+            bootstrap_status=job.bootstrap_status,
+            conflict_pass_status=job.conflict_pass_status,
+            extract_total=job.extract_total,
+        )
     except ProjectBusy as exc:
         with job._lock:
             job.phase = "failed"
