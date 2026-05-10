@@ -4,6 +4,74 @@ Round-by-round delta in plain English. Round numbers map to alpha versions for t
 
 When you upgrade, skim the relevant version's notes — anything marked **breaking** needs a manual step (typically `meridian db-migrate <project>`).
 
+## What's new in v0.2.0-alpha.26
+
+Two interconnected feature streams sharing plumbing:
+
+1. **Live process monitor** — a sticky-bottom panel on every project page streaming real-time progress + log events. Heartbeat dot that shifts cyan→green→amber→red on event-age thresholds, gradient progress bar, current activity description, expandable tail of the last few events. Answers "is it hung?" at a glance and doubles as a debug surface.
+2. **Conflicts as a first-class platform feature** — restored queue navigation strip (Quarantine, Conflicts, Audit, Questions, Taxonomy with pending counts), a prominent ConflictsTile on the dashboard with counts-as-CTA self-prioritisation, a peer Conflict register page + xlsx export, and an auto-inferred Source-of-truth Hierarchy view with Sankey ⇄ Ranked-list toggle.
+
+No schema change. Existing projects upgrade with `pip install --upgrade` and no `db-migrate` step.
+
+### The live monitor — SSE end-to-end
+
+Six new endpoints, four new frontend components.
+
+**Backend** (`src/meridian/events/broadcaster.py`): a process-local broadcaster taps the structlog processor chain and fans allow-listed events out to per-subscriber `asyncio.Queue` consumers. Subscriber cap is `Settings.events_max_subscribers` (default 5, override via `MERIDIAN_EVENTS_MAX_SUBSCRIBERS=<n>`). Allow-list covers the load-bearing observability events: `extraction.source.*`, `triage.chunk.completed`, `llm_call.completed`, `pipeline.*` (including a new `pipeline.done` emit added to `pipeline_worker._run_pipeline` on the success transition).
+
+`GET /api/projects/{n}/events` streams `text/event-stream` frames. Heartbeat every 5s on idle. 503 with `subscriber_limit` body when the cap is reached. `/setup/runtime` gains an `events` section reporting `active_subscribers / max_subscribers / broadcaster_enabled` for stuck-subscriber triage without a backend restart.
+
+**Frontend** (`apps/web/src/components/dashboard/LiveMonitor.tsx`): mounted in `ReviewLayout` so it appears on every `/projects/<slug>/*` page. Three render states (collapsed-idle / active-collapsed / expanded) with localStorage-persisted collapse state and one-shot auto-expand on first activity per session. Heartbeat dot uses `box-shadow` glow shifts: cyan (events <2s ago), green (steady), amber (>30s no event), red (>90s). `requestAnimationFrame`-driven last-event-age timer mutates `textContent` directly without React re-renders.
+
+The frontend hook (`apps/web/src/lib/eventStream.ts`) uses `fetch + ReadableStream + manual SSE-frame parser` rather than the browser `EventSource` API — `EventSource` cannot expose HTTP status codes, which makes detecting the 503 subscriber-cap response impossible. The hand-rolled parser is ~30 lines.
+
+### Conflicts as a first-class feature
+
+**Restored navigation:** `ReviewLayout`'s queue strip extends from a single `[Quarantine]` entry (alpha-16 prune) back to all five queues with their pending-count badges. The right-cluster artifacts strip gains a "Conflict register" link alongside Sources + Master register.
+
+**Dashboard:**
+- New `ConflictsTile` component, three render shapes: pending>0 (amber, prominent CTAs + optional Start-here highlight), resolved>0 (green-checkmark "all resolved"), neither (muted informational).
+- New `HierarchyView` section with a Sankey ⇄ Ranked-list toggle persisted to localStorage. Sankey is hand-rolled SVG (no `d3-sankey` dependency); ribbon thickness = win count, hover tooltips deeplink to sample conflicts via the new `?focus=` query param. Ranked list shows precedence order with win-rate per source class.
+- Dashboard restores all four queue cards (Quarantine / Audit / Questions / Taxonomy — Conflicts is the prominent tile above the grid).
+- **Counts-as-CTA self-prioritisation:** the highest-priority pending queue gets a Start-here highlight. Priority order: Conflicts → Quarantine → Audit → Questions → Taxonomy. This replaces a separate "what to do now" widget with a built-in mechanism.
+
+**Conflict register page** (`/projects/<slug>/conflict-register`): peer to the master register, NOT a sub-page of review. Filter chips for All / Pending / Resolved / Superseded with counts. Download xlsx CTA in the layout actions slot. Table renders 10 columns (Source A/B, Value A/B, Kind, Most-onerous reasoning verbatim, Status badge, Resolution, Resolved at). Pending rows expose a `Resolve →` deeplink that navigates to `/conflicts?focus=<id>` and the resolution queue scrolls to the conflict.
+
+**Excel export:** `<slug>-conflicts.xlsx` via a new `meridian.export.conflict_register` module. Single sheet, 9 columns, wrap-text on the reasoning + value columns, freeze pane at A2. Reuses the alpha-24 `BackgroundTask` cleanup pattern for the temp file.
+
+### Source-of-truth hierarchy — auto-inferred
+
+`GET /api/projects/{n}/hierarchy` aggregates resolved-conflict patterns into:
+
+- **Edges:** directed `(winner_class → loser_class)` with `wins`, `losses`, `win_rate`, three sample conflict IDs.
+- **Ranked:** per-source-class precedence ordering with rank + win/loss totals.
+- **`same_class_conflicts`:** OSE-vs-OSE etc. counted separately, NOT in edges.
+- **`resolved_count`:** all four resolved variants (accept_a, accept_b, hybrid, reject_both); only accept_a/b shape edges.
+- NULL `document_class` coerced to literal `"Unclassified"` so the inference is honest about what's being counted.
+
+Refresh triggers: component mount, `pipeline.done` events from the live monitor's event hook, `localStorage["meridian.conflicts.last_resolved_at"]` signal written by `ConflictsQueue` after every resolve.
+
+### Tests + gauntlet
+
+- ~25 new backend e2e tests across SSE wire-format, conflict register filters + xlsx round-trip, hierarchy aggregation (basic, hybrid-skip, self-class, NULL-coercion).
+- Full backend e2e: **222 passing / 1 skipped** (alpha-25.1 was 199 → +23 alpha-26 tests).
+- Release gauntlet **18 steps green** including new step 7k: `_step_alpha26_sse_and_conflicts` validates the full SSE stream + conflict register + hierarchy + subscriber cap on a fresh-install backend.
+- One fixup landed during the gauntlet shakedown: step 7k's subscriber-cap test was assuming zero existing subscribers when the SSE-consumer thread (used during the pipeline-run smoke earlier in the same step) was still holding a slot. Refactored to probe `/setup/runtime` for `active_subscribers` first, then fill `cap - active` slots and assert +1 returns 503.
+
+### Carry-overs to alpha-27+
+
+- Manual hierarchy override (admin UI + stored override edges + override-vs-inferred badge).
+- Quarantine taxonomy combobox + add-new affordance (open since alpha-24 punch list).
+- Pipeline cancel / Ctrl+C support.
+- `--isolated` extract child-process IPC.
+- CLI / wizard data-dir consolidation.
+- Onboarding three small fixes (Tour copy, Step 2 Ollama hyperlink, Step 3 missing Projects link).
+- `?` keyboard-shortcut binding fix.
+- SSE replay-on-reconnect (event-history endpoint).
+- Server-side conflict register pagination (kicks in past 500 conflicts/project).
+- Per-document hierarchy (filename × filename precedence).
+- The `superseded` conflict status (currently schema-deferred — endpoints + counts handle it as a stub).
+
 ## What's new in v0.2.0-alpha.25.1
 
 Hotfix on the alpha-25 line. The keystone pipeline shipped without the conflict-pass step, so the master register's `flags` column landed empty across all rows and the freshly-built `conflict_summary` column had nothing to render. Caught on the SME's first review.
