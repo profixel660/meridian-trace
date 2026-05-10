@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmDialog } from "@/components/review/ConfirmDialog";
 import {
@@ -34,11 +34,26 @@ export function ConflictsQueue({
   items: ConflictItem[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toasts = useToasts();
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const focusId = searchParams.get("focus");
+    if (!focusId) return;
+    const idx = items.findIndex((c) => c.id === focusId);
+    if (idx >= 0) {
+      setSelectedIdx(idx);
+    } else if (items.length > 0) {
+      // Conflict already resolved or superseded since the register loaded
+      toasts.info(
+        "This conflict has been resolved or superseded since you opened the register.",
+      );
+    }
+  }, [searchParams, items, toasts]);
 
   const selected = items[selectedIdx] ?? null;
   const partyA = selected?.parties[0];
@@ -70,6 +85,16 @@ export function ConflictsQueue({
           accept_party_id: pending.party.party_id,
         });
         toasts.success("Conflict resolved.");
+      }
+      try {
+        window.localStorage.setItem(
+          "meridian.conflicts.last_resolved_at",
+          new Date().toISOString(),
+        );
+        // Also dispatch a storage-equivalent event for same-tab consumers
+        window.dispatchEvent(new Event("storage"));
+      } catch {
+        // sessionStorage blocked — HierarchyView falls back to focus event
       }
       setPending(null);
       router.refresh();
