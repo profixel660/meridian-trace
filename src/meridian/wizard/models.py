@@ -587,6 +587,14 @@ class SetupCompleteResponse(SetupStateResponse):
     a follow-up GET."""
 
 
+class _EventsRuntimeStatus(BaseModel):
+    """Alpha-26: broadcaster health snapshot embedded in /setup/runtime."""
+
+    active_subscribers: int
+    max_subscribers: int
+    broadcaster_enabled: bool
+
+
 class RuntimeStatusResponse(BaseModel):
     """Operator-facing runtime introspection — alpha-12.
 
@@ -653,6 +661,13 @@ class RuntimeStatusResponse(BaseModel):
             "logic doesn't need an undefined-check."
         ),
     )
+    events: _EventsRuntimeStatus = Field(
+        description=(
+            "Alpha-26: broadcaster health snapshot — active subscriber count, "
+            "configured cap, and whether the broadcaster is enabled. Used for "
+            "stuck-subscriber triage without a backend restart."
+        ),
+    )
 
 
 class SetupDefaultsResponse(BaseModel):
@@ -697,6 +712,7 @@ class SetupDefaultsResponse(BaseModel):
 
 
 __all__ = [
+    "_EventsRuntimeStatus",
     "ApiKeyOutcome",
     "ApiKeyRequest",
     "ApiKeyResponse",

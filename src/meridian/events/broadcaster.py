@@ -53,6 +53,12 @@ class _Subscriber:
     queue: asyncio.Queue[dict[str, Any]] = field(
         default_factory=lambda: asyncio.Queue(maxsize=200),
     )
+    # The event loop that owns this subscriber's queue. Stored at subscribe()
+    # time so emit() can use call_soon_threadsafe when called from a thread
+    # other than the one running the event loop (e.g. structlog processor
+    # called from a worker thread while the FastAPI event loop is in a
+    # different thread).
+    loop: asyncio.AbstractEventLoop | None = field(default=None)
 
 
 _subscribers: dict[int, _Subscriber] = {}
@@ -72,6 +78,16 @@ def active_count() -> int:
 def subscribe(slug: str) -> tuple[int, asyncio.Queue[dict[str, Any]]]:
     """Register a subscriber. Raises SubscriberLimitExceeded if at cap."""
     global _next_token
+    # Capture the running event loop at subscribe time so emit() can use
+    # call_soon_threadsafe when invoked from a non-event-loop thread (the
+    # typical case in production and in TestClient-based tests where the
+    # ASGI app runs in a background thread while structlog fires from
+    # worker threads or the test thread itself).
+    try:
+        loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+    except RuntimeError:
+        # No event loop running in this thread (e.g. sync unit tests).
+        loop = None
     with _subscribers_lock:
         if len(_subscribers) >= settings.events_max_subscribers:
             raise SubscriberLimitExceeded(
@@ -79,7 +95,7 @@ def subscribe(slug: str) -> tuple[int, asyncio.Queue[dict[str, Any]]]:
             )
         token = _next_token
         _next_token += 1
-        sub = _Subscriber(slug=slug)
+        sub = _Subscriber(slug=slug, loop=loop)
         _subscribers[token] = sub
     _log.info(
         "events.subscriber.registered",
@@ -116,11 +132,53 @@ def emit(event_dict: dict[str, Any]) -> None:
     }
     with _subscribers_lock:
         targets = [
-            s.queue
+            (s.queue, s.loop)
             for s in _subscribers.values()
             if target_slug is None or s.slug == target_slug or s.slug == "*"
         ]
-    for q in targets:
+    for q, loop in targets:
+        _deliver(q, loop, payload)
+
+
+def _deliver(
+    q: asyncio.Queue[dict[str, Any]],
+    loop: asyncio.AbstractEventLoop | None,
+    payload: dict[str, Any],
+) -> None:
+    """Deliver payload to queue, handling cross-thread and drop-oldest semantics.
+
+    When the subscriber's event loop is running in a different thread
+    (e.g. the FastAPI event loop in TestClient's background thread while
+    structlog fires from the test thread), use call_soon_threadsafe so the
+    queue wakes up its awaiting getters correctly. Falls back to put_nowait
+    for same-thread delivery (unit tests, same-loop calls).
+    """
+    # Determine if we need cross-thread delivery.
+    use_threadsafe = False
+    if loop is not None and loop.is_running():
+        try:
+            running = asyncio.get_running_loop()
+            use_threadsafe = running is not loop
+        except RuntimeError:
+            # No running loop in the current thread — definitely cross-thread.
+            use_threadsafe = True
+
+    if use_threadsafe:
+        # Cross-thread: schedule on the subscriber's event loop.
+        def _put_or_drop() -> None:
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                    q.put_nowait(payload)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
+        loop.call_soon_threadsafe(_put_or_drop)
+    else:
+        # Same thread: direct put_nowait (works in unit tests and prod when
+        # emit is called from inside the event loop, e.g. via an async
+        # structlog pipeline).
         try:
             q.put_nowait(payload)
         except asyncio.QueueFull:

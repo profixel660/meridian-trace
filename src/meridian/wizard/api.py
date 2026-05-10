@@ -37,6 +37,7 @@ from meridian.ingest.dwg import ODA_INSTALL_URL, oda_available
 from meridian.logging import get_logger
 from meridian.projects import _slugify, create_project, project_db_path
 from meridian.wizard.models import (
+    _EventsRuntimeStatus,
     ApiKeyRequest,
     ApiKeyResponse,
     FolderImportJobStatusResponse,
@@ -711,6 +712,9 @@ def setup_runtime() -> RuntimeStatusResponse:
     # toggle is reflected immediately on the next probe.
     from meridian.auth.fastapi_dep import auth_disabled as _auth_disabled  # local import
 
+    # Alpha-26: broadcaster health snapshot for stuck-subscriber triage.
+    from meridian.events import broadcaster as _broadcaster  # local import
+
     return RuntimeStatusResponse(
         pid=os.getpid(),
         started_at=_PROCESS_STARTED_AT_ISO,
@@ -728,6 +732,11 @@ def setup_runtime() -> RuntimeStatusResponse:
         structlog_dir=structlog_dir,
         last_import_job=last_import,
         auth_disabled=_auth_disabled(),
+        events=_EventsRuntimeStatus(
+            active_subscribers=_broadcaster.active_count(),
+            max_subscribers=settings.events_max_subscribers,
+            broadcaster_enabled=True,
+        ),
     )
 
 

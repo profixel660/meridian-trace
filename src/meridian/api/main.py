@@ -1478,6 +1478,65 @@ def projects_bootstrap_latest(name: str) -> dict[str, Any]:
         conn.close()
 
 
+@_projects_api.get("/projects/{name}/events")
+async def projects_events_stream(name: str):
+    """Server-sent events stream for the alpha-26 live monitor surface.
+
+    Returns text/event-stream with one frame per allow-listed structlog
+    event. Heartbeat every 5s when idle. Bounded by
+    settings.events_max_subscribers — 503 with subscriber_limit body
+    when the cap is reached.
+    """
+    import asyncio
+    import json as _json
+    from datetime import UTC as _UTC, datetime as _datetime
+
+    from fastapi.responses import StreamingResponse
+    from meridian.events import broadcaster
+    from meridian.config import settings as _settings
+
+    _ensure_project(name)
+
+    try:
+        token, queue = broadcaster.subscribe(name)
+    except broadcaster.SubscriberLimitExceeded:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "subscriber_limit",
+                "limit": _settings.events_max_subscribers,
+                "active": broadcaster.active_count(),
+                "message": (
+                    f"Server has {broadcaster.active_count()} active monitor "
+                    "connections. Close another tab or wait."
+                ),
+            },
+        )
+
+    async def _generator():
+        try:
+            while True:
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    yield f"event: log\ndata: {_json.dumps(payload)}\n\n"
+                except asyncio.TimeoutError:
+                    ts = _datetime.now(_UTC).isoformat(
+                        timespec="milliseconds"
+                    ).replace("+00:00", "Z")
+                    yield f"event: heartbeat\ndata: {{\"ts\":\"{ts}\"}}\n\n"
+        finally:
+            broadcaster.unsubscribe(token)
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @_projects_api.get("/projects/{name}/bootstrap/list")
 def projects_bootstrap_list(name: str) -> list[dict[str, str]]:
     """List past bootstrap proposals (newest first)."""

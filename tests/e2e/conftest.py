@@ -451,6 +451,35 @@ def project_with_two_sources_via_api(fastapi_client, tmp_path) -> str:
 
 
 # --------------------------------------------------------------------------
+# Alpha-26: project_slug + async HTTP client fixtures
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def project_slug(tmp_projects_dir: Path, fastapi_client: TestClient) -> str:
+    """Create a project via the API and return its slug.
+
+    Used by alpha-26 SSE tests that need a real project to exist before
+    opening the events stream (the endpoint calls _ensure_project).
+    """
+    res = fastapi_client.post(
+        "/api/projects",
+        json={"name": "alpha26-fixture", "notes": "SSE e2e fixture"},
+    )
+    assert res.status_code == 200, res.text
+    return "alpha26-fixture"
+
+
+@pytest.fixture
+async def api_client_async(fastapi_client: TestClient):
+    """httpx.AsyncClient against the same FastAPI app for SSE streaming tests."""
+    import httpx
+    transport = httpx.ASGITransport(app=fastapi_client.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
+
+
+# --------------------------------------------------------------------------
 # Conflict-fixture (Task 7 — conflict_summary Excel column)
 # --------------------------------------------------------------------------
 
