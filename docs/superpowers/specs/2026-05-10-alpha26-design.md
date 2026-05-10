@@ -129,12 +129,14 @@ _BROADCAST_ALLOW_LIST: frozenset[str] = frozenset({
     "triage.chunk.orphan_in_progress",
     # LLM call ledger
     "llm_call.completed",
-    # Pipeline (alpha-25 family)
+    # Pipeline (alpha-25 family + alpha-26 done emit)
     "pipeline.bootstrap_soft_failed",
     "pipeline.conflict_pass_skipped_empty_corpus",
     "pipeline.conflict_pass_soft_failed",
     "pipeline.busy",
     "pipeline.failed",
+    "pipeline.done",  # alpha-26 — emitted by pipeline_worker when phase transitions to "done";
+                      # the alpha-25.1 worker is silent on the success path. One-line addition.
 })
 ```
 
@@ -372,18 +374,19 @@ function useEventStream(projectSlug: string): {
   events: MonitorEvent[];
   status: "connecting" | "live" | "subscriber_limit" | "error";
   lastEventAt: number | null;
-} {
-  // EventSource(`/api/projects/${slug}/events`)
-  // - onopen: status = "live"
-  // - onmessage with event "log": prepend to events buffer (max 200 retained)
-  // - onmessage with event "heartbeat": update lastEventAt only
-  // - onerror with res.status === 503: status = "subscriber_limit"
-  // - onerror otherwise: auto-reconnects via EventSource native behaviour
-  // Cleanup: close EventSource on unmount.
-}
+} { ... }
 ```
 
-The hook batches React state updates with a 50 ms debounce so flurries of events (5-10/sec during active extraction) don't cause re-render storms. Buffer is a circular array; oldest evicted past 200.
+The hook uses `fetch(...) + response.body.getReader()` rather than the browser's `EventSource` API — `EventSource` cannot expose HTTP status codes on `onerror`, which makes detecting the 503 subscriber-cap response impossible from the frontend. `fetch` + a manual SSE-frame parser (~30 lines: split on `\n\n`, parse `event:` and `data:` prefixes) lets us see `response.status === 503` immediately and switch to the subscriber_limit state.
+
+Lifecycle:
+
+- Mount: `fetch(/events, { signal })`. On `response.status === 503`: parse `subscriber_limit` body, set status, abort.
+- On 200: read frames in a loop. Each `event: log` frame: prepend to events buffer (max 200 retained, circular). Each `event: heartbeat` frame: update `lastEventAt` only.
+- On stream end (server closed) or fetch error: status = "error", schedule a manual reconnect after 3 s exponential backoff (max 30 s).
+- Unmount: `controller.abort()` cleans up the in-flight fetch.
+
+The hook batches React state updates with a 50 ms debounce so flurries of events (5-10/sec during active extraction) don't cause re-render storms.
 
 ### 6.5 No-progress detection
 
@@ -782,8 +785,8 @@ The first line renders only when `same_class_conflicts` is non-empty; clicking n
 `HierarchyView` re-fetches `/api/projects/{name}/hierarchy` when:
 
 1. Component mount.
-2. The live monitor emits an `extraction.job.finish` or `pipeline.conflict_pass_succeeded` event (consumed via the same event-stream hook the LiveMonitor uses — both can subscribe).
-3. The user resolves a conflict in `/conflicts` and returns to the dashboard (visibilitychange event detection or a `lastConflictResolvedAt` localStorage signal set by `ConflictsQueue`).
+2. The live monitor's event hook receives a `pipeline.done` frame (signals that conflict-pass has just persisted any newly-detected conflicts). Both `HierarchyView` and `LiveMonitor` consume the same `useEventStream` hook output via React context — there's only one underlying SSE connection per page.
+3. The user resolves a conflict in `/conflicts` and returns to the dashboard. Detection: `ConflictsQueue` writes `localStorage["meridian.conflicts.last_resolved_at"]` on each successful resolve; `HierarchyView` reads it on dashboard mount and refetches if newer than the last refetch.
 
 A 600 ms ease transition between Sankey states makes recomputes feel intentional rather than glitchy.
 
