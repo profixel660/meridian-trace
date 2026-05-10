@@ -672,7 +672,13 @@ export interface PipelineResponse {
   job_id: string;
 }
 
-export type PipelinePhase = "pending" | "bootstrap" | "extract" | "done" | "failed";
+export type PipelinePhase =
+  | "pending"
+  | "bootstrap"
+  | "extract"
+  | "conflicts"
+  | "done"
+  | "failed";
 
 export type PipelineBootstrapStatus =
   | "pending"
@@ -680,10 +686,18 @@ export type PipelineBootstrapStatus =
   | "succeeded"
   | "failed";
 
+export type PipelineConflictPassStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped";
+
 export interface PipelineStatus {
   job_id: string;
   phase: PipelinePhase;
   bootstrap_status: PipelineBootstrapStatus;
+  conflict_pass_status: PipelineConflictPassStatus;
   extract_total: number;
   extract_completed: number;
   current_source_filename: string | null;

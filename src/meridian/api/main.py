@@ -313,8 +313,13 @@ class PipelineResponse(BaseModel):
 
 class PipelineStatusResponse(BaseModel):
     job_id: str
-    phase: Literal["pending", "bootstrap", "extract", "done", "failed"]
+    phase: Literal[
+        "pending", "bootstrap", "extract", "conflicts", "done", "failed",
+    ]
     bootstrap_status: Literal["pending", "running", "succeeded", "failed"]
+    conflict_pass_status: Literal[
+        "pending", "running", "succeeded", "failed", "skipped",
+    ]
     extract_total: int
     extract_completed: int
     current_source_filename: str | None
@@ -640,6 +645,7 @@ def _job_to_status(job) -> PipelineStatusResponse:
         job_id=job.id,
         phase=job.phase,
         bootstrap_status=job.bootstrap_status,
+        conflict_pass_status=job.conflict_pass_status,
         extract_total=job.extract_total,
         extract_completed=job.extract_completed,
         current_source_filename=job.current_source_filename,

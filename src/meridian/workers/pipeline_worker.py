@@ -1,8 +1,14 @@
-"""Alpha-25 pipeline worker: bootstrap → extract, serial, threaded.
+"""Alpha-25 pipeline worker: bootstrap → extract → conflict-pass, serial, threaded.
 
 A _PipelineJob represents one async run on a project. The HTTP layer
 spawns a daemon thread per job; the GET endpoint reads from the in-memory
 registry. Mirrors the alpha-24 wizard `_ImportJob` shape.
+
+Alpha-25.1 added the conflict-pass step. The CLI workflow has always been
+two commands (`meridian extract` then `meridian conflicts`); the original
+alpha-25 keystone only wired extract. With conflict-pass missing, the
+master register's `flags` column was empty and the new conflict_summary
+column had nothing to render. The post-extract step closes that gap.
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ from pathlib import Path
 
 from meridian.bootstrap import run_bootstrap_sweep
 from meridian.db.connection import connect
+from meridian.extract.conflict_pass import run_conflict_pass
 from meridian.extract.orchestrator import run_job_over_sources
 from meridian.logging import get_logger
 from meridian.projects import ProjectBusy
@@ -29,8 +36,9 @@ def _iso_now() -> str:
 class _PipelineJob:
     id: str
     db_path: Path
-    phase: str = "pending"  # pending | bootstrap | extract | done | failed
+    phase: str = "pending"  # pending | bootstrap | extract | conflicts | done | failed
     bootstrap_status: str = "pending"  # pending | running | succeeded | failed
+    conflict_pass_status: str = "pending"  # pending | running | succeeded | failed | skipped
     extract_total: int = 0
     extract_completed: int = 0
     current_source_filename: str | None = None
@@ -97,6 +105,47 @@ def _run_pipeline(
             model=model,
             on_source_complete=lambda sid, fn: _bump_completed(job, sid, fn),
         )
+
+        # Phase 3 — conflict-pass (alpha-25.1: closes the regression where
+        # the master register's flags + conflict_summary columns shipped empty
+        # because conflict-pass was never wired into the GUI auto-trigger).
+        # Soft-fail like bootstrap: a failure here is logged + flagged but does
+        # NOT mark the whole pipeline failed — the deliverables produced by
+        # extract are still useful even without cross-source conflict detection.
+        with job._lock:
+            job.phase = "conflicts"
+            job.conflict_pass_status = "running"
+            job.current_source_filename = None
+        try:
+            run_conflict_pass(conn, provider=provider, model=model)
+            with job._lock:
+                job.conflict_pass_status = "succeeded"
+        except RuntimeError as exc:
+            # The conflict-pass raises RuntimeError("No deliverables or audit
+            # rows present...") when extract produced nothing. Treat that as
+            # skipped — empty corpus, no conflicts to detect, not an error.
+            if "No deliverables or audit rows" in str(exc):
+                _log.info(
+                    "pipeline.conflict_pass_skipped_empty_corpus",
+                    job_id=job.id,
+                )
+                with job._lock:
+                    job.conflict_pass_status = "skipped"
+            else:
+                _log.warning(
+                    "pipeline.conflict_pass_soft_failed",
+                    job_id=job.id, error=f"{type(exc).__name__}: {exc}",
+                )
+                with job._lock:
+                    job.conflict_pass_status = "failed"
+        except Exception as exc:  # noqa: BLE001 — soft-fail by design
+            _log.warning(
+                "pipeline.conflict_pass_soft_failed",
+                job_id=job.id, error=f"{type(exc).__name__}: {exc}",
+            )
+            with job._lock:
+                job.conflict_pass_status = "failed"
+
         with job._lock:
             job.phase = "done"
             job.finished_at = _iso_now()

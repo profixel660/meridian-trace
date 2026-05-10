@@ -159,6 +159,27 @@ export function PipelineProgressTile({ projectSlug, onDone, onPhaseChange }: Pro
     );
   }
 
+  if (status.phase === "conflicts") {
+    return (
+      <div className="rounded-lg border border-accent/40 bg-accent/5 p-4">
+        <div className="flex items-center gap-2">
+          <span
+            className="h-2 w-2 animate-pulse rounded-full bg-accent"
+            aria-hidden
+          />
+          <p className="text-sm font-medium text-text-primary">
+            Detecting cross-source conflicts…
+          </p>
+        </div>
+        <p className="mt-1 text-xs text-text-muted">
+          One pass over the master register + audit log. Anything flagged
+          lands in the master register's <code>conflict_summary</code> column
+          (Excel) and the Conflicts review queue.
+        </p>
+      </div>
+    );
+  }
+
   // phase === "extract" (or "pending" — same render: spinner + "starting")
   const completed = status.extract_completed;
   const total = status.extract_total;

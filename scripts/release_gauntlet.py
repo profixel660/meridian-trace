@@ -1277,6 +1277,26 @@ def _step_pipeline_e2e_and_workbook_smoke(
             f"phase={last['phase']} bootstrap={last.get('bootstrap_status')}",
         )
 
+        # 2b. Conflict-pass ran (alpha-25.1 regression pin).
+        #
+        # The original alpha-25 keystone wired bootstrap + extract but missed
+        # conflict-pass — so the master register's flags column shipped empty
+        # and the new conflict_summary column had nothing to render. The fix
+        # adds conflict-pass as the third pipeline step; this assertion
+        # ensures it stays wired. Acceptable terminal states are 'succeeded'
+        # (single source = pass ran, 0 conflicts persisted is fine) or
+        # 'skipped' (zero deliverables produced — extract failed silently).
+        # 'failed' or 'pending' here means conflict-pass either errored or
+        # never ran, which is the regression mode we are pinning.
+        cp_status = last.get("conflict_pass_status")
+        if cp_status not in {"succeeded", "skipped"}:
+            _fail(
+                "step 7j: conflict-pass ran",
+                f"conflict_pass_status={cp_status!r} (expected 'succeeded' or 'skipped')",
+            )
+            return False
+        _ok("step 7j: conflict-pass ran", f"conflict_pass_status={cp_status}")
+
         # 3. Coverage sanity.
         cov_status, cov_payload = _probe(
             f"{base_url}/api/projects/{slug}/coverage", timeout=10.0
