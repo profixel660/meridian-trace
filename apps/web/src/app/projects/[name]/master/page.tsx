@@ -82,12 +82,21 @@ export default function MasterPage() {
       subtitle="Read-only view of every deliverable currently on the master register. Filter by trade / service / category."
       counts={counts}
       actions={
-        <a
-          href={`${API_BASE}/projects/${encodeURIComponent(name)}/export.xlsx`}
-          className="rounded-full border border-border px-4 py-2 text-sm text-text-primary hover:border-text-muted"
-        >
-          Download Excel
-        </a>
+        rows && rows.length > 0 ? (
+          <a
+            href={`${API_BASE}/projects/${encodeURIComponent(name)}/export.xlsx`}
+            className="rounded-full border border-border px-4 py-2 text-sm text-text-primary hover:border-text-muted"
+          >
+            Download Excel
+          </a>
+        ) : (
+          <span
+            className="rounded-full border border-border px-4 py-2 text-sm text-text-muted cursor-not-allowed opacity-50"
+            title="Run an extraction first to generate register rows"
+          >
+            Download Excel
+          </span>
+        )
       }
     >
       {listError ? (
