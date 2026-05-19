@@ -500,7 +500,7 @@ function Activity({ label, value }: { label: string; value: string | null }) {
     <div className="rounded border border-border bg-surface-elevated px-3 py-2">
       <dt className="text-xs uppercase tracking-wide text-text-muted">{label}</dt>
       <dd className="mt-1 font-mono text-xs text-text-primary">
-        {value ? new Date(value).toLocaleString() : "—"}
+        {value ? new Date(value).toLocaleString() : "No activity yet"}
       </dd>
     </div>
   );
