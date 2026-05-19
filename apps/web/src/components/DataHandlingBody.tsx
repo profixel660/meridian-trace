@@ -1,4 +1,3 @@
-import Link from "next/link";
 
 /**
  * Shared body content for the "How your data is handled" page.
@@ -91,12 +90,14 @@ export function DataHandlingBody() {
         <p>
           For projects where document content cannot leave your network,
           Meridian supports local-only routing through{" "}
-          <Link
-            href="/onboarding/recommended-setup"
+          <a
+            href="https://ollama.com"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-accent hover:underline"
           >
             Ollama
-          </Link>
+          </a>
           . In that mode, no document content is sent to any external
           provider. Capability and speed depend on the local model and the
           hardware it runs on.
