@@ -35,10 +35,15 @@ export function OnboardingShell({
 }: OnboardingShellProps) {
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-text-muted">
-        <span>Setup</span>
-        <span aria-hidden="true">•</span>
-        <span>Step {step} of 3</span>
+      <div className="flex items-center justify-between text-xs uppercase tracking-wide text-text-muted">
+        <div className="flex items-center gap-3">
+          <span>Setup</span>
+          <span aria-hidden="true">•</span>
+          <span>Step {step} of 3</span>
+        </div>
+        <Link href="/" className="hover:text-text-primary transition-colors">
+          Projects
+        </Link>
       </div>
 
       <header className="max-w-[70ch] space-y-2">
