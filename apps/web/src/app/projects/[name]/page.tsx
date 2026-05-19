@@ -188,7 +188,7 @@ function DashboardBody({
               href={`${base}/sources`}
             />
             <KpiCard
-              label="On master register"
+              label="Master register"
               value={coverage.deliverable_status.auto_approved + coverage.deliverable_status.user_accepted + coverage.deliverable_status.user_edited + coverage.deliverable_status.user_promoted}
               sub={`${coverage.deliverable_status.total} extracted total`}
               href={`${base}/master`}
@@ -196,8 +196,9 @@ function DashboardBody({
             <KpiCard
               label="Pending decisions"
               value={coverage.pending_decisions}
-              sub="across all queues"
+              sub="quarantine queue"
               highlight={coverage.pending_decisions > 0}
+              href={`${base}/quarantine`}
             />
             <KpiCard
               label="Auto-route rate"
