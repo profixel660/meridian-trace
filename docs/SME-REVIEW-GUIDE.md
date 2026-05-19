@@ -45,7 +45,7 @@ The PC is now clean and ready for the new install.
 2. Right-click **`Install-Meridian.bat`** and choose **Run as administrator**, or open PowerShell and run it directly:
 
 ```powershell
-& "$env:USERPROFILE\Downloads\Install-Meridian.bat"
+Start-Process -FilePath "$env:USERPROFILE\Downloads\Install-Meridian.bat" -Verb RunAs
 ```
 
 Either method works — you may see a Windows security prompt in both cases.

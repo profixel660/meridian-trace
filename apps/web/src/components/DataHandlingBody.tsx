@@ -1,4 +1,3 @@
-
 /**
  * Shared body content for the "How your data is handled" page.
  *
