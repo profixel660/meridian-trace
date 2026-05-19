@@ -23,8 +23,15 @@ You only need to do this if a previous revision is already installed on this mac
 2. Go to the **Slack `#meridian-trace`** project channel.
 3. On the right-hand panel of the window, on the channel home screen, you'll see a **Releases** section — click on the **latest release**. This opens the release page on GitHub.
 4. Scroll down to the list of files under **Assets** and double-click the file named **`Reset-Meridian.ps1`**. The file will appear in your Downloads folder.
-5. In Downloads, right-click the file and choose **Run as administrator** from the menu.
-6. At the prompt, click **Open** to open the file in PowerShell.
+5. In Downloads, right-click the file and choose **Run as administrator** from the menu, or open PowerShell and run it directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Downloads\Reset-Meridian.ps1"
+```
+
+Either method works — you may see a Windows security prompt in both cases.
+
+6. At the prompt, click **Open** to open the file in PowerShell (if using the right-click method).
 7. A security warning will appear — type **`R`** to run once, then press **Enter**.
 8. A warning will ask if you want to make changes to your computer — click **Yes**.
 9. The next prompt will ask you to confirm wiping everything — type **`Y`** then press **Enter**.
@@ -34,8 +41,15 @@ The PC is now clean and ready for the new install.
 
 ## Step 2 — Install the new revision
 
-1. From the same release page (Slack → latest release → Assets), download both **`Install-Meridian.bat`** and **`Install-Meridian.ps1`**. Both files need to be in your Downloads folder before you start.
-2. Right-click **`Install-Meridian.bat`** and choose **Run as administrator**.
+1. From the same release page (Slack → latest release → Assets), download **`Install-Meridian.bat`**. This file needs to be in your Downloads folder before you start.
+2. Right-click **`Install-Meridian.bat`** and choose **Run as administrator**, or open PowerShell and run it directly:
+
+```powershell
+& "$env:USERPROFILE\Downloads\Install-Meridian.bat"
+```
+
+Either method works — you may see a Windows security prompt in both cases.
+
 3. The installer downloads Python (if missing), creates a virtual environment, downloads the latest Meridian wheel from the release, and prompts you for an Anthropic API key. Total time is usually 5–15 minutes, mostly downloading.
 4. When the install finishes, you can delete the two installer files from Downloads — Meridian is now installed under `C:\Meridian` and runs in the background.
 5. The web interface opens in your default browser. Set up your project there (you'll be asked for the API key again — this is normal in the alpha and will be consolidated later).
