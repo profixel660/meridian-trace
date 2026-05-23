@@ -540,7 +540,19 @@ function Ensure-Venv {
 # 8. Pip install Meridian wheel from latest release
 # -----------------------------------------------------------------------------
 function Get-LatestWheelUrl {
-    Say-Info "Looking up latest Meridian release on GitHub..."
+    # Check for a bundled wheel in the same directory as this script first.
+    # When the installer is distributed as a zip alongside the wheel, no
+    # network call is needed at all.
+    if ($PSScriptRoot) {
+        $local = Get-ChildItem -LiteralPath $PSScriptRoot -Filter "*.whl" -ErrorAction SilentlyContinue |
+                 Sort-Object Name -Descending | Select-Object -First 1
+        if ($local) {
+            Say-OK "Found bundled wheel: $($local.Name) -- skipping GitHub download."
+            return @{ LocalPath = $local.FullName; Name = $local.Name; Tag = "bundled" }
+        }
+    }
+
+    Say-Info "No bundled wheel found -- looking up latest Meridian release on GitHub..."
     try {
         $headers = @{ "User-Agent" = "Meridian-Installer"; "Accept" = "application/vnd.github+json" }
         $resp = Invoke-RestMethod -Uri $GITHUB_LATEST_API -Headers $headers -TimeoutSec 30 -ErrorAction Stop
@@ -569,17 +581,22 @@ function Install-MeridianWheel {
     $wheel = Get-LatestWheelUrl
     $tmpDir = Join-Path $env:TEMP "meridian-install"
     if (-not (Test-Path -LiteralPath $tmpDir)) { New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null }
-    $wheelPath = Join-Path $tmpDir $wheel.Name
 
-    Say-Info "Downloading $($wheel.Name)..."
-    try {
-        $ProgressPreference = "SilentlyContinue"
-        Invoke-WebRequest -Uri $wheel.Url -OutFile $wheelPath -UseBasicParsing -TimeoutSec 300
-    } catch {
-        Stop-WithError -Message "Failed to download Meridian wheel: $($_.Exception.Message)" -ExitCode 12 `
-            -NextStep "Check your internet connection. If your network blocks github.com, ask IT to whitelist it."
+    if ($wheel.LocalPath) {
+        $wheelPath = $wheel.LocalPath
+        Say-Info "Using bundled wheel at $wheelPath ($([math]::Round((Get-Item $wheelPath).Length / 1MB, 1)) MB)."
+    } else {
+        $wheelPath = Join-Path $tmpDir $wheel.Name
+        Say-Info "Downloading $($wheel.Name)..."
+        try {
+            $ProgressPreference = "SilentlyContinue"
+            Invoke-WebRequest -Uri $wheel.Url -OutFile $wheelPath -UseBasicParsing -TimeoutSec 300
+        } catch {
+            Stop-WithError -Message "Failed to download Meridian wheel: $($_.Exception.Message)" -ExitCode 12 `
+                -NextStep "Check your internet connection. If your network blocks github.com, ask IT to whitelist it."
+        }
+        Say-OK "Downloaded $([math]::Round((Get-Item $wheelPath).Length / 1MB, 1)) MB."
     }
-    Say-OK "Downloaded $([math]::Round((Get-Item $wheelPath).Length / 1MB, 1)) MB."
 
     $venvPython = Join-Path $MERIDIAN_VENV "Scripts\python.exe"
     $pipLog = Join-Path $tmpDir "pip-install.log"
