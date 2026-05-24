@@ -523,6 +523,22 @@ function Remove-CorruptedDistInfo {
     if ($removed -gt 0) { Say-OK "Removed $removed incomplete dist-info record(s)." }
 }
 
+function Stop-Port8000 {
+    # Stops whatever process is listening on port 8000 before we try to bind it.
+    # Called before pip install (frees venv file locks) and before backend start.
+    # Silent: user sees one plain-English line, not PIDs or port numbers.
+    $conn = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $conn) { return }
+    Say-Info "Meridian was already running — restarting it now."
+    Write-Log "Stopping process PID $($conn.OwningProcess) on port 8000." "INFO"
+    try {
+        Stop-Process -Id $conn.OwningProcess -Force -ErrorAction Stop
+        Start-Sleep -Seconds 1
+    } catch {
+        Say-Warn "Could not stop the existing Meridian process: $($_.Exception.Message)"
+    }
+}
+
 function Ensure-Venv {
     Say-Step "Creating Python virtual environment at $MERIDIAN_VENV..."
     Say-Why  "A virtual environment keeps Meridian's libraries isolated so they cannot break other Python tools on your machine."
@@ -602,6 +618,7 @@ function Install-MeridianWheel {
     Say-Why  "This grabs the official Meridian release from GitHub and installs it (along with its libraries) into the virtual environment."
     $sitePackages = Join-Path $MERIDIAN_VENV "Lib\site-packages"
     Remove-CorruptedDistInfo -SitePackages $sitePackages
+    Stop-Port8000
     $wheel = Get-LatestWheelUrl
     $tmpDir = Join-Path $env:TEMP "meridian-install"
     if (-not (Test-Path -LiteralPath $tmpDir)) { New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null }
@@ -1132,111 +1149,110 @@ function Start-BackendAndOpenBrowser {
     $env:MERIDIAN_HOME         = $MERIDIAN_ROOT
     $env:MERIDIAN_PROJECTS_DIR = $MERIDIAN_PROJECTS
 
-    # If something else already responds on /health, don't double-spawn.
-    if (Test-BackendHealth -Url $MERIDIAN_HEALTH_URL -TimeoutMs 1000) {
-        Say-Info "Backend already responding at $MERIDIAN_HEALTH_URL -- reusing it."
-    } else {
-        # Ensure the runtime directory exists for the PID + log files.
-        if (-not (Test-Path -LiteralPath $MERIDIAN_RUNTIME_DIR)) {
-            New-Item -ItemType Directory -Path $MERIDIAN_RUNTIME_DIR -Force | Out-Null
-        }
+    # Always stop any existing backend before spawning the updated one.
+    # Stop-Port8000 is a no-op if nothing is running.
+    Stop-Port8000
 
-        # ALPHA-12 LAUNCH MODEL -- detached pythonw.exe.
-        #
-        # alpha-4-through-11 launched the backend via `Start-Process` on a
-        # generated .cmd helper. That helper invoked python.exe with cmd.exe
-        # I/O redirection. cmd.exe spawned a console -- visible by default,
-        # which alpha-11's "[debug-phase]" comment intended to make hidden
-        # later, but the deeper problem was console-attachment: closing the
-        # parent terminal sent CTRL_CLOSE_EVENT down the console session and
-        # uvicorn shut down gracefully. The user lived this end-of-alpha-11.
-        #
-        # Fix: spawn pythonw.exe (Windows GUI subsystem, NO console at all)
-        # via Start-Process -WindowStyle Hidden. No console = no
-        # CTRL_CLOSE_EVENT path = backend immune to terminal close, accidental
-        # Quick Edit selection, Ctrl-C from a different shell, etc.
-        # MERIDIAN_BACKEND_LOG env var tells meridian.api.main to redirect
-        # sys.stdout / sys.stderr to backend.log at process startup (since
-        # pythonw.exe has no inherited stderr). The .cmd helper still gets
-        # written for diagnostic re-launch but is no longer the install-time
-        # primary path -- it's a fallback the .bat launchers use when
-        # pythonw is unavailable for some reason.
-        $venvPythonW = $venvPython -replace 'python\.exe$','pythonw.exe'
-        if (-not (Test-Path -LiteralPath $venvPythonW)) {
-            Say-Warn "pythonw.exe not found at $venvPythonW; falling back to python.exe (visible console)."
-            $venvPythonW = $venvPython
-        }
+    # Ensure the runtime directory exists for the PID + log files.
+    if (-not (Test-Path -LiteralPath $MERIDIAN_RUNTIME_DIR)) {
+        New-Item -ItemType Directory -Path $MERIDIAN_RUNTIME_DIR -Force | Out-Null
+    }
 
-        Say-Info "Launching the Meridian backend (detached pythonw.exe + hidden window)."
-        Say-Info "Backend stdout/stderr -> $MERIDIAN_BACKEND_LOG (see also: $MERIDIAN_PID_FILE)."
+    # ALPHA-12 LAUNCH MODEL -- detached pythonw.exe.
+    #
+    # alpha-4-through-11 launched the backend via `Start-Process` on a
+    # generated .cmd helper. That helper invoked python.exe with cmd.exe
+    # I/O redirection. cmd.exe spawned a console -- visible by default,
+    # which alpha-11's "[debug-phase]" comment intended to make hidden
+    # later, but the deeper problem was console-attachment: closing the
+    # parent terminal sent CTRL_CLOSE_EVENT down the console session and
+    # uvicorn shut down gracefully. The user lived this end-of-alpha-11.
+    #
+    # Fix: spawn pythonw.exe (Windows GUI subsystem, NO console at all)
+    # via Start-Process -WindowStyle Hidden. No console = no
+    # CTRL_CLOSE_EVENT path = backend immune to terminal close, accidental
+    # Quick Edit selection, Ctrl-C from a different shell, etc.
+    # MERIDIAN_BACKEND_LOG env var tells meridian.api.main to redirect
+    # sys.stdout / sys.stderr to backend.log at process startup (since
+    # pythonw.exe has no inherited stderr). The .cmd helper still gets
+    # written for diagnostic re-launch but is no longer the install-time
+    # primary path -- it's a fallback the .bat launchers use when
+    # pythonw is unavailable for some reason.
+    $venvPythonW = $venvPython -replace 'python\.exe$','pythonw.exe'
+    if (-not (Test-Path -LiteralPath $venvPythonW)) {
+        Say-Warn "pythonw.exe not found at $venvPythonW; falling back to python.exe (visible console)."
+        $venvPythonW = $venvPython
+    }
+
+    Say-Info "Launching the Meridian backend (detached pythonw.exe + hidden window)."
+    Say-Info "Backend stdout/stderr -> $MERIDIAN_BACKEND_LOG (see also: $MERIDIAN_PID_FILE)."
+    try {
+        # Helper .cmd retained as a diagnostic re-launch path (the new
+        # Start-Meridian.bat invokes it when pythonw fails). Keep the
+        # original visible-cmd shape so the operator can run it
+        # manually if pythonw refuses to start.
+        $launchCmdLines = @(
+            "@echo off",
+            "set `"MERIDIAN_BACKEND_LOG=$MERIDIAN_BACKEND_LOG`"",
+            "`"$venvPython`" -m meridian.api.main 1>>`"$MERIDIAN_BACKEND_LOG`" 2>&1"
+        )
+        Set-Content -LiteralPath $MERIDIAN_LAUNCH_CMD -Value $launchCmdLines -Encoding ASCII
+        Say-Info "Wrote diagnostic launcher: $MERIDIAN_LAUNCH_CMD"
+
+        # Set env var on the parent shell so the child pythonw inherits it.
+        $env:MERIDIAN_BACKEND_LOG = $MERIDIAN_BACKEND_LOG
+        $proc = Start-Process `
+            -FilePath $venvPythonW `
+            -ArgumentList @("-m","meridian.api.main") `
+            -WorkingDirectory $MERIDIAN_ROOT `
+            -WindowStyle Hidden `
+            -PassThru `
+            -ErrorAction Stop
         try {
-            # Helper .cmd retained as a diagnostic re-launch path (the new
-            # Start-Meridian.bat invokes it when pythonw fails). Keep the
-            # original visible-cmd shape so the operator can run it
-            # manually if pythonw refuses to start.
-            $launchCmdLines = @(
-                "@echo off",
-                "set `"MERIDIAN_BACKEND_LOG=$MERIDIAN_BACKEND_LOG`"",
-                "`"$venvPython`" -m meridian.api.main 1>>`"$MERIDIAN_BACKEND_LOG`" 2>&1"
-            )
-            Set-Content -LiteralPath $MERIDIAN_LAUNCH_CMD -Value $launchCmdLines -Encoding ASCII
-            Say-Info "Wrote diagnostic launcher: $MERIDIAN_LAUNCH_CMD"
-
-            # Set env var on the parent shell so the child pythonw inherits it.
-            $env:MERIDIAN_BACKEND_LOG = $MERIDIAN_BACKEND_LOG
-            $proc = Start-Process `
-                -FilePath $venvPythonW `
-                -ArgumentList @("-m","meridian.api.main") `
-                -WorkingDirectory $MERIDIAN_ROOT `
-                -WindowStyle Hidden `
-                -PassThru `
-                -ErrorAction Stop
-            try {
-                Set-Content -LiteralPath $MERIDIAN_PID_FILE -Value $proc.Id -Encoding ASCII
-                Say-OK "Backend started (PID $($proc.Id) -- detached pythonw). Recorded to $MERIDIAN_PID_FILE."
-            } catch {
-                Say-Warn "Backend started (PID $($proc.Id)) but could not write the PID file: $($_.Exception.Message)"
-            }
+            Set-Content -LiteralPath $MERIDIAN_PID_FILE -Value $proc.Id -Encoding ASCII
+            Say-OK "Backend started (PID $($proc.Id) -- detached pythonw). Recorded to $MERIDIAN_PID_FILE."
         } catch {
-            Say-Warn "Could not launch the backend: $($_.Exception.Message). Falling back to terminal setup."
-            Run-CliInitFallback -MeridianExe $meridianExe -Reason "Start-Process raised: $($_.Exception.Message)"
-            return
+            Say-Warn "Backend started (PID $($proc.Id)) but could not write the PID file: $($_.Exception.Message)"
         }
+    } catch {
+        Say-Warn "Could not launch the backend: $($_.Exception.Message). Falling back to terminal setup."
+        Run-CliInitFallback -MeridianExe $meridianExe -Reason "Start-Process raised: $($_.Exception.Message)"
+        return
+    }
 
-        # Poll /health for up to 60 seconds, 250 ms intervals (240 attempts).
-        Say-Info "Waiting for the backend to come up at $MERIDIAN_HEALTH_URL..."
-        $maxAttempts = 240
-        $healthy = $false
-        for ($i = 1; $i -le $maxAttempts; $i++) {
-            if (Test-BackendHealth -Url $MERIDIAN_HEALTH_URL -TimeoutMs 1000) {
-                $healthy = $true
-                Say-OK "Backend is healthy after $([math]::Round($i * 0.25, 1))s."
-                break
-            }
-            Start-Sleep -Milliseconds 250
+    # Poll /health for up to 60 seconds, 250 ms intervals (240 attempts).
+    Say-Info "Waiting for the backend to come up at $MERIDIAN_HEALTH_URL..."
+    $maxAttempts = 240
+    $healthy = $false
+    for ($i = 1; $i -le $maxAttempts; $i++) {
+        if (Test-BackendHealth -Url $MERIDIAN_HEALTH_URL -TimeoutMs 1000) {
+            $healthy = $true
+            Say-OK "Backend is healthy after $([math]::Round($i * 0.25, 1))s."
+            break
         }
+        Start-Sleep -Milliseconds 250
+    }
 
-        if (-not $healthy) {
-            Say-Warn "Backend did not come up in 60 seconds. Falling back to terminal setup."
-            # alpha-3 -- show the last 30 lines of backend.log inline so the
-            # operator doesn't have to hunt for the failure cause.
-            if (Test-Path -LiteralPath $MERIDIAN_BACKEND_LOG) {
-                Write-Host ""
-                Write-Host " Last 30 lines of $MERIDIAN_BACKEND_LOG :" -ForegroundColor Yellow
-                Write-Host " -----------------------------------------" -ForegroundColor Gray
-                try {
-                    Get-Content -LiteralPath $MERIDIAN_BACKEND_LOG -Tail 30 -ErrorAction Stop | ForEach-Object {
-                        Write-Host "   $_" -ForegroundColor Gray
-                    }
-                } catch {
-                    Write-Host "   (could not read backend.log: $($_.Exception.Message))" -ForegroundColor Red
+    if (-not $healthy) {
+        Say-Warn "Backend did not come up in 60 seconds. Falling back to terminal setup."
+        # alpha-3 -- show the last 30 lines of backend.log inline so the
+        # operator doesn't have to hunt for the failure cause.
+        if (Test-Path -LiteralPath $MERIDIAN_BACKEND_LOG) {
+            Write-Host ""
+            Write-Host " Last 30 lines of $MERIDIAN_BACKEND_LOG :" -ForegroundColor Yellow
+            Write-Host " -----------------------------------------" -ForegroundColor Gray
+            try {
+                Get-Content -LiteralPath $MERIDIAN_BACKEND_LOG -Tail 30 -ErrorAction Stop | ForEach-Object {
+                    Write-Host "   $_" -ForegroundColor Gray
                 }
-                Write-Host " -----------------------------------------" -ForegroundColor Gray
-                Write-Host ""
+            } catch {
+                Write-Host "   (could not read backend.log: $($_.Exception.Message))" -ForegroundColor Red
             }
-            Run-CliInitFallback -MeridianExe $meridianExe -Reason "Backend health probe at $MERIDIAN_HEALTH_URL never returned 200 within 60s."
-            return
+            Write-Host " -----------------------------------------" -ForegroundColor Gray
+            Write-Host ""
         }
+        Run-CliInitFallback -MeridianExe $meridianExe -Reason "Backend health probe at $MERIDIAN_HEALTH_URL never returned 200 within 60s."
+        return
     }
 
     # Open the user's default browser. Start-Process on a URL resolves to the
