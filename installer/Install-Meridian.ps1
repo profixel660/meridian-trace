@@ -508,16 +508,19 @@ function Remove-CorruptedDistInfo {
     param([string]$SitePackages)
     if (-not (Test-Path -LiteralPath $SitePackages)) { return }
     $dirs = Get-ChildItem -LiteralPath $SitePackages -Filter "meridian*.dist-info" -Directory -ErrorAction SilentlyContinue
+    $removed = 0
     foreach ($dir in $dirs) {
         if (-not (Test-Path -LiteralPath (Join-Path $dir.FullName "RECORD"))) {
             Say-Info "Removing incomplete package record: $($dir.Name)"
             try {
                 Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
+                $removed++
             } catch {
                 Say-Warn "Could not remove $($dir.FullName): $($_.Exception.Message)"
             }
         }
     }
+    if ($removed -gt 0) { Say-OK "Removed $removed incomplete dist-info record(s)." }
 }
 
 function Ensure-Venv {
