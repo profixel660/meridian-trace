@@ -544,20 +544,8 @@ function Ensure-Venv {
     Say-Why  "A virtual environment keeps Meridian's libraries isolated so they cannot break other Python tools on your machine."
     $venvPython = Join-Path $MERIDIAN_VENV "Scripts\python.exe"
     if (Test-Path -LiteralPath $venvPython) {
-        Write-Host "   A virtual environment already exists at $MERIDIAN_VENV." -ForegroundColor Yellow
-        $answer = Read-Host "   Recreate it from scratch? Type 'yes' to recreate, anything else to keep it"
-        if ($answer -eq "yes") {
-            Stop-LockingPythonProcesses -VenvPath $MERIDIAN_VENV
-            Say-Info "Removing old virtual environment..."
-            try {
-                Remove-Item -LiteralPath $MERIDIAN_VENV -Recurse -Force -ErrorAction Stop
-            } catch {
-                Stop-WithError -Message "Could not remove old venv: $($_.Exception.Message). Close any PowerShell windows that have it activated, then try again." -ExitCode 8
-            }
-        } else {
-            Say-OK "Keeping the existing virtual environment."
-            return
-        }
+        Say-OK "Virtual environment already exists at $MERIDIAN_VENV."
+        return
     }
     try {
         & python -m venv $MERIDIAN_VENV
