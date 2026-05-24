@@ -539,6 +539,14 @@ function Stop-Port8000 {
     }
 }
 
+function Test-IsUpdateInstall {
+    # Returns $true if Meridian is already installed at C:\Meridian.
+    # Used to skip the full setup sequence (Python install, long-path,
+    # API key prompt, shortcut) on subsequent runs.
+    $meridianExe = Join-Path $MERIDIAN_VENV "Scripts\meridian.exe"
+    return (Test-Path -LiteralPath $meridianExe)
+}
+
 function Ensure-Venv {
     Say-Step "Creating Python virtual environment at $MERIDIAN_VENV..."
     Say-Why  "A virtual environment keeps Meridian's libraries isolated so they cannot break other Python tools on your machine."
@@ -1306,18 +1314,35 @@ try {
     Show-Banner
     Ensure-Admin
     # The pre-admin run never reaches here; the elevated re-launch starts fresh.
-    Test-Internet
-    Ensure-Python
-    Enable-LongPaths
-    Ensure-InstallDirs
-    Write-Log "Installer started; user=$env:USERNAME; host=$env:COMPUTERNAME" "BOOT"
-    Ensure-Venv
-    Install-MeridianWheel
-    Prompt-ApiKey
-    Write-ConsoleLauncher
-    Write-BatLaunchers
-    New-DesktopShortcut
-    Start-BackendAndOpenBrowser
+
+    if (Test-IsUpdateInstall) {
+        # Update path: Meridian already installed -- skip Python, long-path,
+        # API key prompt, and shortcut. Just update the wheel and restart.
+        Say-Step "Updating Meridian..."
+        Say-Why  "An existing Meridian installation was found -- running the faster update sequence."
+        Write-Log "Update install; user=$env:USERNAME; host=$env:COMPUTERNAME" "BOOT"
+        Ensure-InstallDirs
+        Ensure-Venv
+        Install-MeridianWheel
+        Write-ConsoleLauncher
+        Write-BatLaunchers
+        Start-BackendAndOpenBrowser
+    } else {
+        # First install: full sequence.
+        Write-Log "Fresh install; user=$env:USERNAME; host=$env:COMPUTERNAME" "BOOT"
+        Test-Internet
+        Ensure-Python
+        Enable-LongPaths
+        Ensure-InstallDirs
+        Ensure-Venv
+        Install-MeridianWheel
+        Prompt-ApiKey
+        Write-ConsoleLauncher
+        Write-BatLaunchers
+        New-DesktopShortcut
+        Start-BackendAndOpenBrowser
+    }
+
     Show-FinalBanner
     Write-Log "Installer finished successfully." "DONE"
     Write-Host "Press Enter to close this window..." -ForegroundColor DarkGray
