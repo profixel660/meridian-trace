@@ -501,6 +501,25 @@ function Stop-LockingPythonProcesses {
     Say-OK "Stray python processes stopped."
 }
 
+function Remove-CorruptedDistInfo {
+    # Deletes any meridian*.dist-info directory missing its RECORD file.
+    # uv/pip warns and can leave the venv broken when RECORD is absent.
+    # Called before every pip install -- silent, no user action needed.
+    param([string]$SitePackages)
+    if (-not (Test-Path -LiteralPath $SitePackages)) { return }
+    $dirs = Get-ChildItem -LiteralPath $SitePackages -Filter "meridian*.dist-info" -Directory -ErrorAction SilentlyContinue
+    foreach ($dir in $dirs) {
+        if (-not (Test-Path -LiteralPath (Join-Path $dir.FullName "RECORD"))) {
+            Say-Info "Removing incomplete package record: $($dir.Name)"
+            try {
+                Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop
+            } catch {
+                Say-Warn "Could not remove $($dir.FullName): $($_.Exception.Message)"
+            }
+        }
+    }
+}
+
 function Ensure-Venv {
     Say-Step "Creating Python virtual environment at $MERIDIAN_VENV..."
     Say-Why  "A virtual environment keeps Meridian's libraries isolated so they cannot break other Python tools on your machine."
@@ -578,6 +597,8 @@ function Get-LatestWheelUrl {
 function Install-MeridianWheel {
     Say-Step "Downloading and installing Meridian..."
     Say-Why  "This grabs the official Meridian release from GitHub and installs it (along with its libraries) into the virtual environment."
+    $sitePackages = Join-Path $MERIDIAN_VENV "Lib\site-packages"
+    Remove-CorruptedDistInfo -SitePackages $sitePackages
     $wheel = Get-LatestWheelUrl
     $tmpDir = Join-Path $env:TEMP "meridian-install"
     if (-not (Test-Path -LiteralPath $tmpDir)) { New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null }
