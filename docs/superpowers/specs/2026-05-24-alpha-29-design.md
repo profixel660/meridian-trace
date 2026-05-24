@@ -109,9 +109,9 @@ Add `chunks_extracted: number` to the interface. Add `chunks_extracted: 0` to `D
 
 Read `state.chunks_extracted` alongside `state.documents_imported`. Pass both to the summary tile value expression. Rename `docCount` to `fileCount` for clarity (local variable only).
 
-#### `apps/web/src/components/setup/copy.ts` — `READY_COPY`
+#### `apps/web/src/app/setup/ready/page.tsx` — docs summary tile value
 
-Update the docs summary tile value builder. Current:
+The docs tile value is inline JSX in the page (not in `copy.ts`). Current:
 
 ```
 docCount === 0 ? "Queued" : `${docCount} imported`
@@ -120,12 +120,16 @@ docCount === 0 ? "Queued" : `${docCount} imported`
 New (approximate):
 
 ```
-chunkCount === 0 && fileCount === 0
+fileCount === 0 && chunkCount === 0
   ? "Queued"
-  : `${chunkCount} chunks from ${fileCount} ${fileCount === 1 ? "document" : "documents"}`
+  : chunkCount === 0
+    ? `${fileCount} ${fileCount === 1 ? "document" : "documents"} imported`
+    : `${chunkCount} chunks from ${fileCount} ${fileCount === 1 ? "document" : "documents"}`
 ```
 
-Update `READY_COPY.hero` to use `fileCount` (it already says "first N documents are being processed" — wording is fine, just ensure variable is file count not chunk count).
+The middle branch (`chunkCount === 0, fileCount > 0`) handles the upgrade case gracefully: existing installs that have not re-imported show the old-style label rather than "0 chunks from N documents".
+
+Pass `fileCount` (not `chunkCount`) to `READY_COPY.hero` — the hero prose already says "first N documents are being processed" which is correct with file count.
 
 ### Schema migration
 
@@ -138,8 +142,7 @@ None required. The wizard state is a JSON sidecar (`~/.meridian/onboarding_state
 | File | Change |
 |---|---|
 | `apps/web/src/components/setup/SetupShell.tsx` | Add "My projects" link to header |
-| `apps/web/src/app/setup/ready/page.tsx` | Fix disabled-button tooltip; read `chunks_extracted` |
-| `apps/web/src/components/setup/copy.ts` | Update docs tile label to "N chunks from M documents" |
+| `apps/web/src/app/setup/ready/page.tsx` | Fix disabled-button tooltip; read `chunks_extracted`; update docs tile value expression |
 | `apps/web/src/lib/setupClient.ts` | Add `chunks_extracted` to `SetupState` + default |
 | `src/meridian/wizard/api.py` | Add `_ImportJob.chunks`; increment in job loop; pass to `mark_documents_imported`; wire `_state_to_response` |
 | `src/meridian/wizard/state.py` | Add `gui_chunks_extracted`; extend `mark_documents_imported`; persist/load |
