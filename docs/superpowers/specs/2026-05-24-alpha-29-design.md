@@ -39,7 +39,7 @@ Approximate placement in the header `<div>`:
 The disabled "Open my project" `<button>` has a single `title` prop. Change it to distinguish two error kinds:
 
 - `completeError.kind === "incomplete"` → keep existing: `"Finish setup before opening the project"`
-- `completeError.kind === "generic"` (backend unreachable) → change to: `"Meridian is unreachable — use 'My projects' to navigate away, or try again"`
+- `completeError.kind === "generic"` (backend unreachable) → change to: `"Meridian stopped responding — use 'My projects' to navigate away, or try again"`
 
 One ternary on the existing `title` attribute. No other changes to the ready page.
 
