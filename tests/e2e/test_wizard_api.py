@@ -2351,3 +2351,28 @@ def test_idempotent_replay_emits_structured_log(
     assert kwargs["job_id"] == expected_job_id
     assert kwargs["idempotency_token"] == token
     assert kwargs["age_seconds"] >= 0
+
+
+def test_alpha29_mark_documents_imported_tracks_chunks(
+    tmp_projects_dir: Path,
+) -> None:
+    """chunks param is accumulated and survives a round-trip to disk."""
+    from meridian.wizard.state import load_wizard_state, mark_documents_imported
+
+    state = load_wizard_state()
+    mark_documents_imported(state, count=4, chunks=96)
+
+    assert state.gui_chunks_extracted == 96
+    assert state.gui_documents_imported == 4
+
+    reloaded = load_wizard_state()
+    assert reloaded.gui_chunks_extracted == 96
+    assert reloaded.gui_documents_imported == 4
+
+
+def test_alpha29_chunks_extracted_zero_on_fresh_state(
+    fastapi_client: TestClient,
+) -> None:
+    """Fresh install returns chunks_extracted: 0 from /setup/state."""
+    body = fastapi_client.get("/setup/state").json()
+    assert body["chunks_extracted"] == 0

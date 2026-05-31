@@ -105,6 +105,7 @@ _GUI_KEY_PROJECT_DIR = "gui_first_project_dir"
 _GUI_KEY_DOCS_IMPORTED = "gui_documents_imported"
 _GUI_KEY_DOCS_SKIPPED = "gui_documents_skipped"
 _GUI_KEY_COMPLETED_AT = "gui_wizard_completed_at"
+_GUI_KEY_CHUNKS_EXTRACTED = "gui_chunks_extracted"
 
 # Step names tracked in completed_steps that gate "complete".
 _REQUIRED_GUI_STEPS = ("api_key", "first_project")
@@ -139,6 +140,7 @@ class WizardState:
         gui_documents_imported: int = 0,
         gui_documents_skipped: bool = False,
         gui_wizard_completed_at: str | None = None,
+        gui_chunks_extracted: int = 0,
     ) -> None:
         self.cli = cli
         self.gui_first_project_name = gui_first_project_name
@@ -146,6 +148,7 @@ class WizardState:
         self.gui_documents_imported = gui_documents_imported
         self.gui_documents_skipped = gui_documents_skipped
         self.gui_wizard_completed_at = gui_wizard_completed_at
+        self.gui_chunks_extracted = gui_chunks_extracted
 
     # --- Derived flags --------------------------------------------------
 
@@ -188,6 +191,10 @@ class WizardState:
     @property
     def documents_imported(self) -> int:
         return self.gui_documents_imported
+
+    @property
+    def chunks_extracted(self) -> int:
+        return self.gui_chunks_extracted
 
     @property
     def documents_skipped(self) -> bool:
@@ -279,6 +286,7 @@ def load_wizard_state() -> WizardState:
         gui_documents_imported=_int_or_zero(raw.get(_GUI_KEY_DOCS_IMPORTED)),
         gui_documents_skipped=bool(raw.get(_GUI_KEY_DOCS_SKIPPED, False)),
         gui_wizard_completed_at=_str_or_none(raw.get(_GUI_KEY_COMPLETED_AT)),
+        gui_chunks_extracted=_int_or_zero(raw.get(_GUI_KEY_CHUNKS_EXTRACTED)),
     )
 
 
@@ -291,6 +299,7 @@ def save_wizard_state(state: WizardState) -> None:
     payload[_GUI_KEY_DOCS_IMPORTED] = state.gui_documents_imported
     payload[_GUI_KEY_DOCS_SKIPPED] = state.gui_documents_skipped
     payload[_GUI_KEY_COMPLETED_AT] = state.gui_wizard_completed_at
+    payload[_GUI_KEY_CHUNKS_EXTRACTED] = state.gui_chunks_extracted
 
     p = state_path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -330,9 +339,10 @@ def mark_first_project(
     save_wizard_state(state)
 
 
-def mark_documents_imported(state: WizardState, *, count: int) -> None:
+def mark_documents_imported(state: WizardState, *, count: int, chunks: int = 0) -> None:
     """Increment the persisted import counter; mark the CLI's first_doc step."""
     state.gui_documents_imported = max(0, state.gui_documents_imported) + count
+    state.gui_chunks_extracted = max(0, state.gui_chunks_extracted) + chunks
     if count > 0:
         state.cli.first_doc_imported = True
         state.cli.mark("first_doc")
