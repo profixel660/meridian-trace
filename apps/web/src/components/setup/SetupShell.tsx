@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   type ReactNode,
   useCallback,
@@ -124,6 +125,12 @@ export function SetupShell({
           <span className="text-xs uppercase tracking-wide text-text-muted">
             {SHELL_COPY.brand}
           </span>
+          <Link
+            href="/"
+            className="text-xs text-text-muted hover:text-text-primary transition-colors"
+          >
+            My projects
+          </Link>
         </div>
         <StepNav current={step} completed={completed} />
         <button
