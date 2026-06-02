@@ -48,6 +48,8 @@ export interface SetupState {
   first_project_dir: string | null;
   /** Number of documents imported into the first project. */
   documents_imported: number;
+  /** Number of chunks extracted from imported documents (0 before first import). */
+  chunks_extracted: number;
   /** True if the user explicitly skipped the documents step. */
   documents_skipped: boolean;
   /** Next wizard step the user should land on. */
@@ -66,6 +68,7 @@ export const DEFAULT_SETUP_STATE: SetupState = {
   first_project_name: null,
   first_project_dir: null,
   documents_imported: 0,
+  chunks_extracted: 0,
   documents_skipped: false,
   next_step: "api_key",
 };
