@@ -193,7 +193,8 @@ function ReadyPageInner() {
   }, [stateLoaded, retryNonce, state.first_project_slug]);
 
   const skipped = state.documents_skipped || skippedHint;
-  const docCount = state.documents_imported;
+  const fileCount = state.documents_imported;
+  const chunkCount = state.chunks_extracted;
   const projectSlug =
     state.first_project_slug ||
     (typeof window !== "undefined"
@@ -259,7 +260,7 @@ function ReadyPageInner() {
             <h1 className="text-3xl font-semibold tracking-tight text-text-primary">
               {READY_COPY.title}
             </h1>
-            {READY_COPY.hero({ docCount, skipped })}
+            {READY_COPY.hero({ docCount: fileCount, skipped })}
           </header>
 
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -277,9 +278,11 @@ function ReadyPageInner() {
               value={
                 skipped
                   ? "None yet — import from the Sources screen"
-                  : docCount === 0
+                  : fileCount === 0 && chunkCount === 0
                     ? "Queued"
-                    : `${docCount} imported`
+                    : chunkCount === 0
+                      ? `${fileCount} ${fileCount === 1 ? "document" : "documents"} imported`
+                      : `${chunkCount} chunks from ${fileCount} ${fileCount === 1 ? "document" : "documents"}`
               }
             />
             <SummaryTile
@@ -301,7 +304,9 @@ function ReadyPageInner() {
                 title={
                   completeInFlight
                     ? "Verifying setup…"
-                    : "Finish setup before opening the project"
+                    : completeError?.kind === "generic"
+                      ? "Meridian stopped responding — use 'My projects' to navigate away, or try again"
+                      : "Finish setup before opening the project"
                 }
               >
                 {READY_COPY.ctas.open} →
