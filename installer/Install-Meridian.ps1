@@ -529,7 +529,7 @@ function Stop-Port8000 {
     # Silent: user sees one plain-English line, not PIDs or port numbers.
     $conn = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $conn) { return }
-    Say-Info "Meridian was already running — restarting it now."
+    Say-Info "Meridian was already running -- restarting it now."
     Write-Log "Stopping process PID $($conn.OwningProcess) on port 8000." "INFO"
     try {
         Stop-Process -Id $conn.OwningProcess -Force -ErrorAction Stop
