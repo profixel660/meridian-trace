@@ -2376,3 +2376,33 @@ def test_alpha29_chunks_extracted_zero_on_fresh_state(
     """Fresh install returns chunks_extracted: 0 from /setup/state."""
     body = fastapi_client.get("/setup/state").json()
     assert body["chunks_extracted"] == 0
+
+
+def test_alpha29_chunks_extracted_in_setup_state_after_import(
+    fastapi_client: TestClient,
+    tmp_projects_dir: Path,
+    synthetic_docx: Path,
+    stub_anthropic_valid: None,
+    stub_keyring: dict[tuple[str, str], str],
+) -> None:
+    """After a successful import /setup/state returns chunks_extracted > 0."""
+    fastapi_client.post("/setup/api-key", json={"key": "sk-ant-test"})
+    fastapi_client.post(
+        "/setup/projects",
+        json={
+            "name": "Chunk Count Test",
+            "slug": "chunk-count-test",
+            "projects_dir": str(tmp_projects_dir),
+        },
+    )
+    response = fastapi_client.post(
+        "/setup/import",
+        json={"project_slug": "chunk-count-test", "paths": [str(synthetic_docx)]},
+    )
+    assert response.status_code == 200, response.text
+    job_id = response.json()["job_id"]
+    _wait_for_job(fastapi_client, job_id)
+
+    state = fastapi_client.get("/setup/state").json()
+    assert state["documents_imported"] == 1
+    assert state["chunks_extracted"] > 0, "chunk count must be tracked after import"

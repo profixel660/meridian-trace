@@ -108,6 +108,10 @@ class SetupStateResponse(BaseModel):
         default=0,
         description="How many documents the wizard imported (0 if skipped).",
     )
+    chunks_extracted: int = Field(
+        default=0,
+        description="Total chunks extracted across all imported documents (0 on fresh install or before first import).",
+    )
     documents_skipped: bool = Field(
         default=False,
         description="True if the user explicitly skipped the document-import step.",

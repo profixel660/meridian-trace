@@ -176,6 +176,7 @@ def _check_rate_limit(ip: str) -> bool:
 class _ImportJob:
     __slots__ = (
         "_persisted",
+        "chunks",
         "completed",
         "current_file",
         "db_path",
@@ -193,6 +194,7 @@ class _ImportJob:
         self.total = total
         self.completed = 0
         self.imported = 0
+        self.chunks = 0
         self.deduped = 0
         # Structured error store. The legacy flat list[str] view used by
         # alpha-10-and-earlier responses is derived in the response
@@ -486,6 +488,7 @@ def _run_import_job(job: _ImportJob, *, db_path: Path, paths: Iterable[str]) -> 
                     file_outcome = "deduped"
                 else:
                     job.imported += 1
+                    job.chunks += result.chunk_count
                     file_outcome = "imported"
             except Exception as exc:  # noqa: BLE001 — surface every error to UI
                 code = _classify_ingest_error(exc)
@@ -567,6 +570,7 @@ def _state_to_response(state: WizardState) -> SetupStateResponse:
         first_project_name=state.gui_first_project_name,
         first_project_dir=state.gui_first_project_dir,
         documents_imported=state.documents_imported,
+        chunks_extracted=state.chunks_extracted,
         documents_skipped=state.documents_skipped,
         next_step=state.next_step,  # type: ignore[arg-type]
     )
@@ -1033,7 +1037,7 @@ def setup_import_status(job_id: str) -> ImportJobStatusResponse:
     if job.status == "succeeded" and not job._persisted:
         if job.imported > 0:
             state = load_wizard_state()
-            mark_documents_imported(state, count=job.imported)
+            mark_documents_imported(state, count=job.imported, chunks=job.chunks)
         # mark persisted regardless, even if imported==0 (all-deduped) —
         # the subsequent poll should not re-mark.
         job._persisted = True
@@ -1349,7 +1353,7 @@ def setup_import_folder_status(job_id: str) -> FolderImportJobStatusResponse:
     if job.status == "succeeded" and not job._persisted:
         if job.imported > 0:
             state = load_wizard_state()
-            mark_documents_imported(state, count=job.imported)
+            mark_documents_imported(state, count=job.imported, chunks=job.chunks)
         job._persisted = True
 
     return FolderImportJobStatusResponse(
