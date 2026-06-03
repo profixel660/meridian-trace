@@ -97,7 +97,7 @@ export function ConflictsQueue({
         // sessionStorage blocked — HierarchyView falls back to focus event
       }
       setPending(null);
-      router.refresh();
+      router.push(`/projects/${encodeURIComponent(projectName)}/conflict-register`);
     } catch (err) {
       toasts.error(explainQueueError(err), () => void submit());
     } finally {
