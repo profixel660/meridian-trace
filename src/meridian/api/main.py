@@ -951,9 +951,15 @@ def projects_conflict_register(
                 kind = p["party_kind"]
                 pid = p["party_id"]
                 summary_or_text = ""
+                drow = None
                 if kind == "deliverable":
                     drow = conn.execute(
-                        "SELECT deliverables_summary FROM deliverable WHERE id = ?",
+                        """
+                        SELECT d.deliverables_summary, sd.filename AS source_filename
+                        FROM deliverable d
+                        LEFT JOIN source_document sd ON sd.id = d.source_id
+                        WHERE d.id = ?
+                        """,
                         (pid,),
                     ).fetchone()
                     if drow is not None:
@@ -965,10 +971,14 @@ def projects_conflict_register(
                     ).fetchone()
                     if arow is not None:
                         summary_or_text = arow["candidate_text"] or ""
+                source_filename: str | None = None
+                if kind == "deliverable" and drow is not None:
+                    source_filename = drow["source_filename"]
                 parties.append(ConflictParty(
                     party_kind=kind, party_id=pid,
                     party_position=p["party_position"],
                     summary_or_text=summary_or_text,
+                    source_filename=source_filename,
                 ))
             items.append(ConflictItem(
                 id=c["id"], kind=c["kind"], status=c["status"],
