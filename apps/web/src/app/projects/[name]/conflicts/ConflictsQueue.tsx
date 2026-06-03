@@ -97,6 +97,9 @@ export function ConflictsQueue({
         // sessionStorage blocked — HierarchyView falls back to focus event
       }
       setPending(null);
+      // items is a stale snapshot from page load — never mutated in-place.
+      // Length === 1 means this was the only pending conflict on this mount.
+      // If optimistic local removal is ever added, replace this with a live count.
       if (items.length <= 1) {
         router.push(`/projects/${encodeURIComponent(projectName)}/conflict-register`);
       } else {
