@@ -172,6 +172,7 @@ export interface ConflictParty {
   party_id: string;
   party_position: string | null;
   summary_or_text: string;
+  source_filename: string | null;
 }
 
 export interface ConflictItem {

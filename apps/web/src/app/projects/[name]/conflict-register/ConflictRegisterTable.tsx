@@ -55,14 +55,14 @@ export function ConflictRegisterTable({ projectSlug, items }: Props) {
             return (
               <tr key={c.id} className="border-t border-border">
                 <td className="px-3 py-2 text-text-muted">{idx + 1}</td>
-                <td className="px-3 py-2 text-text-primary">
-                  {partyA?.summary_or_text ? "—" : "—"}
+                <td className="px-3 py-2 text-text-muted font-mono text-[10px]">
+                  {partyA?.source_filename ?? "—"}
                 </td>
                 <td className="px-3 py-2 text-text-primary whitespace-pre-wrap">
                   {partyA?.party_position ?? ""}
                 </td>
-                <td className="px-3 py-2 text-text-primary">
-                  {partyB?.summary_or_text ? "—" : "—"}
+                <td className="px-3 py-2 text-text-muted font-mono text-[10px]">
+                  {partyB?.source_filename ?? "—"}
                 </td>
                 <td className="px-3 py-2 text-text-primary whitespace-pre-wrap">
                   {partyB?.party_position ?? ""}
