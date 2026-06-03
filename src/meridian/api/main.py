@@ -874,6 +874,8 @@ def projects_list_conflicts(
                     ).fetchone()
                     if drow is not None:
                         summary_or_text = drow["deliverables_summary"] or ""
+                    source_filename: str | None = drow["source_filename"] if drow is not None else None
+                # audit parties: source_filename not yet fetched (source_document join is a future task)
                 elif kind == "audit":
                     arow = conn.execute(
                         "SELECT candidate_text FROM audit_record WHERE id = ?",
@@ -881,9 +883,7 @@ def projects_list_conflicts(
                     ).fetchone()
                     if arow is not None:
                         summary_or_text = arow["candidate_text"] or ""
-                source_filename: str | None = None
-                if kind == "deliverable" and drow is not None:
-                    source_filename = drow["source_filename"]
+                    source_filename: str | None = None
                 parties.append(
                     ConflictParty(
                         party_kind=kind,
@@ -964,6 +964,8 @@ def projects_conflict_register(
                     ).fetchone()
                     if drow is not None:
                         summary_or_text = drow["deliverables_summary"] or ""
+                    source_filename: str | None = drow["source_filename"] if drow is not None else None
+                # audit parties: source_filename not yet fetched (source_document join is a future task)
                 elif kind == "audit":
                     arow = conn.execute(
                         "SELECT candidate_text FROM audit_record WHERE id = ?",
@@ -971,9 +973,7 @@ def projects_conflict_register(
                     ).fetchone()
                     if arow is not None:
                         summary_or_text = arow["candidate_text"] or ""
-                source_filename: str | None = None
-                if kind == "deliverable" and drow is not None:
-                    source_filename = drow["source_filename"]
+                    source_filename: str | None = None
                 parties.append(ConflictParty(
                     party_kind=kind, party_id=pid,
                     party_position=p["party_position"],

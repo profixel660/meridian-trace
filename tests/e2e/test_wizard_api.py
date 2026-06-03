@@ -2413,6 +2413,10 @@ def test_alpha30_conflict_party_includes_source_filename(
     tmp_projects_dir: Path,
 ) -> None:
     """GET /api/projects/{name}/conflicts returns source_filename on deliverable parties."""
+    from meridian.api.main import ConflictParty
+    assert "source_filename" in ConflictParty.model_fields, (
+        "ConflictParty Pydantic model is missing source_filename field"
+    )
     # Create a project so the endpoint returns 200 (not 404).
     slug = "alpha30-source-filename"
     res = fastapi_client.post(
