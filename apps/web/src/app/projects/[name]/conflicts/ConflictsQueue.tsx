@@ -97,7 +97,11 @@ export function ConflictsQueue({
         // sessionStorage blocked — HierarchyView falls back to focus event
       }
       setPending(null);
-      router.push(`/projects/${encodeURIComponent(projectName)}/conflict-register`);
+      if (items.length <= 1) {
+        router.push(`/projects/${encodeURIComponent(projectName)}/conflict-register`);
+      } else {
+        router.push(`/projects/${encodeURIComponent(projectName)}/conflicts?status=pending`);
+      }
     } catch (err) {
       toasts.error(explainQueueError(err), () => void submit());
     } finally {
