@@ -161,9 +161,12 @@ export default function SourcesPage() {
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <Stat label="Deliverables" value={s.deliverables_count} />
-                <Stat label="Audit rows" value={s.audit_count} />
+                <Stat label="Candidates reviewed" value={s.audit_count} />
                 <Stat label="MIME" value={s.mime_type} />
-                <Stat label="Extraction path" value={s.extraction_path} mono />
+                <Stat
+                  label="Extraction method"
+                  value={EXTRACTION_PATH_LABEL[s.extraction_path] ?? s.extraction_path}
+                />
               </dl>
               {s.quality_scan_summary ? (
                 <p className="mt-3 rounded border border-border bg-background p-3 text-xs text-text-muted">
@@ -177,6 +180,15 @@ export default function SourcesPage() {
     </ReviewLayout>
   );
 }
+
+const EXTRACTION_PATH_LABEL: Record<string, string> = {
+  text_spec: "Text specification",
+  bod_import: "Basis of Design import",
+  drawing: "Drawing",
+  demarcation: "Demarcation schedule",
+  excluded: "Excluded from extraction",
+  pending: "Pending extraction",
+};
 
 function Stat({
   label,
