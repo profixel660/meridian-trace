@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { Tooltip } from "@/components/review/Tooltip";
 import { SetupShell } from "@/components/setup/SetupShell";
@@ -96,6 +96,7 @@ function SetupFirstProjectPageInner() {
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
   const [autoName, setAutoName] = useState<AutoName | null>(null);
   const [autoNameLoading, setAutoNameLoading] = useState(false);
+  const outcomeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setTauri(isInTauri());
@@ -271,6 +272,26 @@ function SetupFirstProjectPageInner() {
       });
     }
   }, [canSubmit, name, slug, projectsDir]);
+
+  // Auto-advance to the ready step the moment the project is confirmed — the
+  // success panel is below the fold on smaller screens and users won't see it.
+  useEffect(() => {
+    if (outcome.kind === "created") {
+      router.push("/setup/ready");
+    }
+  }, [outcome.kind, router]);
+
+  // Scroll any visible outcome panel (conflict, error, invalid) into view so
+  // users aren't left wondering why the button appears to do nothing.
+  useEffect(() => {
+    if (
+      outcome.kind !== "idle" &&
+      outcome.kind !== "creating" &&
+      outcome.kind !== "created"
+    ) {
+      outcomeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [outcome.kind]);
 
   const handleContinue = () => router.push("/setup/ready");
 
@@ -448,6 +469,7 @@ function SetupFirstProjectPageInner() {
           </button>
         </div>
 
+        <div ref={outcomeRef}>
         {outcome.kind === "created" ? (
           <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-4">
             <p className="text-sm font-medium text-emerald-300">
@@ -551,6 +573,7 @@ function SetupFirstProjectPageInner() {
             <p className="mt-1 text-sm text-text-muted">{outcome.message}</p>
           </div>
         ) : null}
+        </div>
       </div>
 
     </SetupShell>
